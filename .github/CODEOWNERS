@@ -1,0 +1,11 @@
+# 프론트엔드 폴더 내 코드 변경 시 Frontend 팀 자동 소환
+/frontend/ @Cinderellllllla/Frontend
+
+# 백엔드 폴더 내 코드 변경 시 Backend 팀 자동 소환
+/backend/ @Cinderellllllla/Backend
+
+# 데이터/AI 파이프라인 폴더 내 코드 변경 시 Data 팀 자동 소환
+/data/ @Cinderellllllla/Data
+
+# 루트 경로의 공통 문서(README 등) 변경 시 형상 관리자 지정
+/README.md @Jonyk101
