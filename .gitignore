@@ -1,0 +1,81 @@
+# ==========================================
+# 1. OS Generated Files (Mac & Windows)
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# IDEs (IntelliJ, PyCharm, VS Code)
+# IntelliJ / JetBrains 생성 파일
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.code-workspace
+
+# ==========================================
+# 3. Vibe Coding & AI Tools (Cursor, Aider, Claude 등)
+# ==========================================
+# 팀 공통 규칙인 .cursorrules는 Git에 포함시키고, 개인 캐시/히스토리만 무시
+.cursor/
+.cursorignore
+.aider*
+.claude/
+.windsurf/
+*.Prompts.md
+
+# ==========================================
+# 4. Environment Variables & Secrets (보안 필수!)
+# ==========================================
+.env
+.env.*
+!.env.example
+application-secret*.properties
+application-secret*.yml
+application-local*.properties
+application-local*.yml
+*.pem
+*.key
+
+# ==========================================
+# 5. Backend (Java / Spring Boot / Gradle)
+# ==========================================
+backend/bin/
+backend/out/
+backend/target/
+!backend/.mvn/wrapper/maven-wrapper.properties
+
+# ==========================================
+# 6. Frontend (Node / React / Vite)
+# ==========================================
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================================
+# 7. ML (Python / FastAPI / Jupyter)
+# ==========================================
+ml/__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+ml/.venv/
+ml/venv/
+ml/env/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# 대용량 원본 데이터셋 무시 (필요 시 모델 파일은 예외 처리)
+ml/data/*.csv
+ml/data/*.parquet
