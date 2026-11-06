@@ -51,7 +51,7 @@ backend/.gradle/
 backend/build/
 backend/bin/
 backend/out/
-!backend/gradle/wrapper/gradle-wrapper.jar
+!backend/.mvn/wrapper/gradle-wrapper.jar
 
 # ==========================================
 # 6. Frontend (Node / React / Vite)
