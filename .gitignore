@@ -47,11 +47,10 @@ application-local*.yml
 # ==========================================
 # 5. Backend (Java / Spring Boot / Gradle)
 # ==========================================
-backend/.gradle/
-backend/build/
 backend/bin/
 backend/out/
-!backend/.mvn/wrapper/gradle-wrapper.jar
+backend/target/
+!backend/.mvn/wrapper/maven-wrapper.properties
 
 # ==========================================
 # 6. Frontend (Node / React / Vite)
