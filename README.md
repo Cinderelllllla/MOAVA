@@ -33,28 +33,28 @@
 
 ## 기술 스택 (Tech Stack)
 
-### 🎨 Frontend
+###  Frontend
 * **Core:** React (CSR), JavaScript, HTML/CSS
 * **Library:** Kakao Maps JavaScript SDK, Recharts (시각화), STOMP (웹소켓 클라이언트)
 
-### ⚙️ Backend
+###  Backend
 * **Core:** Spring Boot 3.x (Java 17)
 * **Security & Auth:** Spring Security, JWT, BCrypt
 * **Features:** WebSocket/STOMP (채팅), `@Scheduled` (공공데이터 캐싱), `@Async` (알림)
 
-### 🤖 AI / Data
+###  AI / Data
 * **Core:** Python, FastAPI (모델 서빙)
 * **ML/Data:** NumPy, Pandas, scikit-learn, LightGBM, XGBoost
 
-### 🗄️ Database & Search
+###  Database & Search
 * **RDBMS:** Oracle DB (MyBatis / JPA)
 * **Search Engine:** Elasticsearch (지도 색인 및 모임 초고속 검색)
 
-### 🌐 External APIs
+###  External APIs
 * **공공/통계:** KOSIS 국가통계포털, 금융감독원 금융상품한눈에
 * **서비스 연동:** Kakao Local (지오코딩), SOLAPI (SMS/알림 발송)
 
-### 🤝 협업 툴
+###  협업 툴
 * Git / GitHub (코드 리뷰 및 형상 관리)
 * Jira (이슈 및 스프린트 추적)
 * Notion (문서 아카이빙)
@@ -62,7 +62,7 @@
 
 ---
 
-## ✨ 핵심 주요 기능 (Key Features)
+##  주요 기능
 
 1. **AI 기반 납입액 추천 및 위험도 감지**
     * 사용자 수입/지출 데이터를 바탕으로 가용액을 산출하고, 15.5만 건의 신용 데이터 학습 모델을 통해 **연체 위험 확률 예측 및 모임 건강도 시각화**.
@@ -73,11 +73,11 @@
 4. **투명한 금융 증빙 및 관리자(ADMIN) 권한 견제**
     * 회원의 이체 증빙을 모임장이 1차 승인하고, ADMIN이 크로스 체크하여 거래 참조번호(`MOAVA-01001` 포맷)를 발급하는 이중 확인 체계.
 5. **실시간 알림 및 채팅 소통**
-    * 모임별 인앱 채팅방 제공 및 주요 이벤트(경고, 순서 확정 등) 발생 시 SOLAPI 연동 SMS 알림 발송.
+    * 모임별 채팅방 제공 및 주요 이벤트(경고, 순서 확정 등) 발생 시 SOLAPI 연동 SMS 알림 발송.
 
 ---
 
-## 🏗 시스템 아키텍처 요약
+##  시스템 아키텍처 요약
 
 ```text
                        ┌──────────────────────────────────────┐
