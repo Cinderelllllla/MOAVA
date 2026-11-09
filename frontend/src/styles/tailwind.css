@@ -1,0 +1,18 @@
+/* Tailwind v4 — 기존 CSS(base/themes/layout/pages/spec)의 보조 도구로만 사용
+   preflight(브라우저 기본 스타일 초기화)는 기존 디자인을 깨뜨리므로 넣지 않고, theme + utilities만 가져옵니다.
+   사용 예: <div className="flex gap-3 mt-4 items-center">  (여백·정렬·숨김 같은 자잘한 조정)
+   규칙: 색상·카드·버튼 같은 '디자인'은 기존 클래스(card, btn primary, pill …)를 쓰고,
+         Tailwind는 레이아웃 유틸리티(flex/grid/gap/m-/p-/hidden/text-center …)에만 씁니다. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* 기존 디자인 토큰을 Tailwind 색상으로도 쓸 수 있게 노출: bg-moava-blue, text-moava-ink, border-moava-line … */
+@theme {
+  --color-moava-blue: var(--blue);
+  --color-moava-blue2: var(--blue2);
+  --color-moava-ink: var(--ink);
+  --color-moava-muted: var(--muted);
+  --color-moava-pale: var(--pale);
+  --color-moava-line: var(--line);
+  --color-moava-bg: var(--bg);
+}
