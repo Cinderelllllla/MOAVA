@@ -1,0 +1,203 @@
+/* ============================================================
+   MOAVA · themes.css — 테마(v9 밝음 / v9meeting 어두움 네이비·민트), 테마 설정 패널, 매칭·추천 레이아웃
+   원본: MOAVA_9안_최종1029.html (2026-10-29) · 분리: 2026-11-09
+   ============================================================ */
+/* MOAVA 9안 Sky Breeze Bold / 현재 V10 Clean Sky — 공통 기능, 스타일만 전환 */
+.theme-picker{display:inline-flex;align-items:center;gap:7px;padding:5px 7px 5px 10px;border-radius:12px;background:#eef7ff;border:1px solid #d1e5f7;white-space:nowrap;color:#397eaf;font-size:12px;font-weight:800}
+.theme-picker-label{font-size:12px}
+.theme-choice{border:0;background:transparent;color:inherit;font-size:12px;font-weight:800;max-width:200px;cursor:pointer;padding:5px 2px;outline-offset:3px}
+.auth-card>.theme-picker{display:flex;width:max-content;max-width:100%;margin:0 auto 20px}
+html[data-theme="v9meeting"] .theme-picker{background:#edf7ff;border-color:#d1e5f7}
+/* 9안: 기존 Sky Breeze Bold의 깊은 네이비/코발트 대비, 선명한 블루 배너와 둥근 카드 */
+html[data-theme="v9"]{--ink:#203d60;--muted:#6986a5;--blue:#187bd3;--blue2:#4bb3ed;--pale:#e5f3ff;--line:#d5e5f5;--bg:#f3f8ff;--shadow:0 16px 42px rgba(28,91,157,.11)}
+html[data-theme="v9"] body{background:radial-gradient(ellipse 900px 550px at 97% -10%,#d1eaff 0%,transparent 72%),radial-gradient(ellipse 800px 500px at 6% 90%,#e3f2ff 0%,transparent 78%),#f3f8ff;color:var(--ink)}
+html[data-theme="v9"] .sidebar{background:linear-gradient(175deg,#d6ebff 0%,#edf7ff 52%,#d9ecff 100%);border-right:1px solid #c4ddf5;box-shadow:7px 0 34px rgba(31,99,165,.08)}
+html[data-theme="v9"] .brand-logo{background:linear-gradient(140deg,#4ab4f4,#187bd3);border:1px solid #8fc8f1;box-shadow:0 8px 20px #2c90d43d}
+html[data-theme="v9"] .brand b{color:#155b9d}
+html[data-theme="v9"] .nav-label{color:#7b9cb9}
+html[data-theme="v9"] .nav-btn{color:#416f99;border-radius:14px}
+html[data-theme="v9"] .nav-btn:hover{background:#ffffffde;color:#126fbd}
+html[data-theme="v9"] .nav-btn.active{background:linear-gradient(105deg,#238cdb,#4bb3ed);color:white;box-shadow:0 9px 22px #278cd943}
+html[data-theme="v9"] .side-foot{background:#ffffffd9;border-color:#cce4f8;color:#587d9f}
+html[data-theme="v9"] .topbar{background:#ffffffeb;border-bottom-color:#d4e7f7}
+html[data-theme="v9"] .topbar strong{color:#245b8d}
+html[data-theme="v9"] .eyebrow{color:#338fd4}
+html[data-theme="v9"] .card{border-color:#dceaf7;border-radius:23px;box-shadow:0 12px 33px #276ba515;transition:border-color .18s,box-shadow .18s,transform .18s}
+html[data-theme="v9"] .card:hover{border-color:#b8dafa;box-shadow:0 16px 40px #276ba51e}
+html[data-theme="v9"] .hero{background:linear-gradient(115deg,#146bb6 0%,#2c99dd 52%,#8bcff4 100%);border:1px solid #429cdd;box-shadow:0 18px 44px #237dbe3b;min-height:240px}
+html[data-theme="v9"] .hero h2{color:white;text-shadow:0 2px 12px #07518a44}
+html[data-theme="v9"] .hero .btn{background:white;color:#166db0;border-color:white;box-shadow:0 8px 23px #135e9c38}
+html[data-theme="v9"] .btn.primary{background:linear-gradient(110deg,#1679cd,#329fe5);box-shadow:0 6px 16px #258bd52d}
+html[data-theme="v9"] .btn.soft,html[data-theme="v9"] .info{background:#e5f3ff;color:#176cb2;border-color:#c7e5fb}
+html[data-theme="v9"] .stat .value{color:#175f9c}
+html[data-theme="v9"] .pill{background:#e5f3ff;color:#247db9}
+html[data-theme="v9"] .pill.warn{background:#fff1e4;color:#af7b37}
+html[data-theme="v9"] .pill.danger{background:#fff0f4;color:#b24d68}
+html[data-theme="v9"] .list-item.selected{background:#e5f3ff;border-color:#2c8edb}
+html[data-theme="v9"] .step.current,html[data-theme="v9"] .tab.active{background:#238cdb}
+html[data-theme="v9"] .bar.income{background:linear-gradient(#64c3f8,#1779c8)}
+html[data-theme="v9"] .bar.expense{background:linear-gradient(#d4e9fd,#83b5e7)}
+html[data-theme="v9"] .auth{background:radial-gradient(circle at 85% 15%,#c0e4ff,transparent 30%),linear-gradient(135deg,#e5f3ff,#f5fbff)}
+html[data-theme="v9"] .auth-card{border-color:#cce3f8;box-shadow:0 22px 55px #468bc333}
+html[data-theme="v9"] .theme-picker{background:#ddecff;border-color:#b7d8f4;color:#155f9d}
+html[data-theme="v9"] .detail-panel{background:#eaf6ff;border-color:#a9d5f4}
+@media(max-width:950px){.top-actions .theme-picker-label{display:none}.top-actions .theme-choice{max-width:145px}}
+@media(max-width:510px){.top-actions{flex-wrap:wrap;justify-content:flex-end}.topbar{height:auto;min-height:70px;padding-top:9px;padding-bottom:9px}.top-actions .theme-choice{max-width:115px}.top-actions .pill{display:none}}
+@media(prefers-reduced-motion:reduce){html[data-theme="v9"] .card{transition:none}}
+
+/* 9안 회의 반영 원본 디자인: moava-v9-meeting-update.zip의
+   원본 팔레트(#10233e, #17b897, #f5f7fa)와 컴포넌트 톤을 V10 구조에 재현.
+   기능/데이터/권한은 V10 그대로 유지합니다. */
+html[data-theme="v9meeting"]{--ink:#172b42;--muted:#8190a1;--blue:#17b897;--blue2:#0f9f85;--pale:#e7f8f3;--line:#e8edf2;--bg:#f5f7fa;--shadow:0 8px 32px rgba(25,46,76,.045)}
+html[data-theme="v9meeting"] body{background:#f5f7fa;color:#172b42}
+html[data-theme="v9meeting"] .sidebar{background:#10233e;color:#e5edf5;border-right:0;box-shadow:none}
+html[data-theme="v9meeting"] .brand-logo{background:#17b897;color:#fff;border:0;box-shadow:none;border-radius:13px;transform:rotate(-7deg)}
+html[data-theme="v9meeting"] .brand b{color:#fff}
+html[data-theme="v9meeting"] .brand small{color:#8da5b8}
+html[data-theme="v9meeting"] .nav-label{color:#6f8aa3}
+html[data-theme="v9meeting"] .nav-btn{color:#a8bdcf;border-radius:10px}
+html[data-theme="v9meeting"] .nav-btn:hover{background:#1a3554;color:#fff}
+html[data-theme="v9meeting"] .nav-btn.active{background:#1c455c;color:#7ff0ce;box-shadow:none}
+html[data-theme="v9meeting"] .side-foot{background:#192f49;border-color:#304760;color:#b8c9d8}
+html[data-theme="v9meeting"] .topbar{background:#fff;border-bottom:1px solid #e8edf2}
+html[data-theme="v9meeting"] .topbar strong{color:#172b42}
+html[data-theme="v9meeting"] .eyebrow{color:#139f84}
+html[data-theme="v9meeting"] .card{background:#fff;border:1px solid #e8edf2;border-radius:16px;box-shadow:0 8px 32px rgba(25,46,76,.045)}
+html[data-theme="v9meeting"] .hero{background:linear-gradient(112deg,#122b46 10%,#18516a 80%,#167c7b 130%);border:0;border-radius:20px;box-shadow:none}
+html[data-theme="v9meeting"] .hero h2{color:#fff}
+html[data-theme="v9meeting"] .hero .btn{background:#fff;color:#124c55;border-color:#fff}
+html[data-theme="v9meeting"] .btn.primary{background:#17b897;border-color:#17b897;color:#fff;box-shadow:none}
+html[data-theme="v9meeting"] .btn.soft{background:#eaf7f3;color:#108b72;border-color:#eaf7f3}
+html[data-theme="v9meeting"] .stat .value{color:#172b42}
+html[data-theme="v9meeting"] .stat .symbol{background:#eff8f7;color:#15a98b}
+html[data-theme="v9meeting"] .pill{background:#eef4f8;color:#557287}
+html[data-theme="v9meeting"] .pill.warn{background:#fff6e6;color:#b37d24}
+html[data-theme="v9meeting"] .pill.danger{background:#fff0f0;color:#d54e4e}
+html[data-theme="v9meeting"] .list-item.selected{background:#e7f8f3;border-color:#17b897}
+html[data-theme="v9meeting"] .step.current,html[data-theme="v9meeting"] .tab.active{background:#17b897;color:white}
+html[data-theme="v9meeting"] .bar.income{background:linear-gradient(#6ee8c4,#0da88f)}
+html[data-theme="v9meeting"] .bar.expense{background:linear-gradient(#e0ebf0,#a6bec9)}
+html[data-theme="v9meeting"] .info{background:#e7f8f3;color:#108b72;border-color:#d1eee5}
+html[data-theme="v9meeting"] .detail-panel{background:#f0faf6;border-color:#cbe8df}
+html[data-theme="v9meeting"] .auth{background:radial-gradient(circle at 85% 15%,#e4f5f0,transparent 30%),linear-gradient(135deg,#f5f7fa,#edf4f5)}
+html[data-theme="v9meeting"] .auth-card{border-color:#e8edf2;box-shadow:0 16px 48px rgba(25,46,76,.11)}
+html[data-theme="v9meeting"] .theme-picker{background:#e7f8f3;border-color:#cbe8df;color:#0e826b}
+html[data-theme="v9meeting"] .map-pin.active{background:#17b897;border-color:#0f9f85}
+
+/* V9-only theme picker, exclusively inside My Account */
+.theme-settings{margin:18px 0;padding:20px;border-radius:16px;border:1px solid var(--line);background:var(--pale)}
+.theme-settings h2{margin:0 0 8px}
+.theme-settings-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
+.theme-option{display:flex;align-items:center;gap:12px;padding:16px;border:2px solid var(--line);background:#fff;border-radius:14px;cursor:pointer}
+.theme-option.chosen{border-color:var(--blue);box-shadow:0 0 0 3px rgba(35,140,219,.10)}
+.theme-option input{accent-color:var(--blue);width:18px;height:18px}
+.theme-option span:last-child{display:grid;gap:5px}.theme-option small{color:#6584a2}
+.theme-swatch{display:block;width:40px;height:38px;flex-shrink:0;border-radius:10px}
+.theme-swatch.sky{background:linear-gradient(135deg,#d8edff 50%,#258fe0 50%)}
+.theme-swatch.mint{background:linear-gradient(135deg,#10233e 50%,#17b897 50%)}
+.matching-layout{display:grid;grid-template-columns:minmax(260px,.95fr) minmax(260px,1fr) minmax(360px,1.35fr);gap:16px;align-items:start}
+.matching-layout>section{min-width:0}.matching-layout .matching-info .card{position:sticky;top:16px}
+.matching-list h2{font-size:18px;margin:4px 0 14px}.matching-list .list-item{margin-bottom:10px}
+.group-choice{cursor:pointer;transition:background .2s,border-color .2s,box-shadow .2s,transform .2s}
+.group-choice:hover{border-color:var(--blue);transform:translateY(-1px)}
+.group-choice.selected{border:2px solid var(--blue)!important;background:var(--pale)!important;box-shadow:0 0 0 3px rgba(35,140,219,.10)}
+.group-info-full>h2{font-size:19px;margin:13px 0 10px;overflow-wrap:anywhere}.group-info-full>p{line-height:1.65}
+.group-info-rows{display:grid;gap:0;margin-top:14px;border-top:1px solid var(--line)}
+.group-info-rows>div{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.group-info-rows span{color:var(--muted)}.group-info-rows strong{text-align:right;overflow-wrap:anywhere}
+.group-info-full .actions{display:flex;flex-wrap:wrap}.group-info-full .info p{margin:7px 0 0}
+.group-info-empty{padding:30px 8px;text-align:center;color:var(--muted)}.empty-cloud{font-size:32px}
+.journey-recommend-layout{display:grid;grid-template-columns:minmax(270px,.8fr) minmax(0,1.6fr);gap:18px;align-items:start;margin-top:15px}
+.journey-recommend-info{border:1px solid var(--line);border-radius:15px;background:var(--pale);padding:20px;position:sticky;top:16px}
+.journey-recommend-info h3{margin:0 0 14px}.journey-recommend-list .list-item{margin-bottom:10px}
+html[data-theme="v9meeting"] .theme-settings{background:#eaf8f3}
+html[data-theme="v9meeting"] .group-choice.selected{background:#e7f8f3!important;border-color:#17b897!important;box-shadow:0 0 0 3px rgba(23,184,151,.13)}
+html[data-theme="v9meeting"] .theme-option.chosen{border-color:#17b897}
+html[data-theme="v9meeting"] .journey-recommend-info{background:#eaf8f3}
+@media(max-width:1350px){.matching-layout{grid-template-columns:minmax(250px,1fr) minmax(320px,1.3fr)}.matching-info{grid-column:1}.matching-list{grid-column:1}.matching-map{grid-column:2;grid-row:1 / span 2}}
+@media(max-width:900px){.matching-layout{grid-template-columns:1fr}.matching-info,.matching-list,.matching-map{grid-column:1;grid-row:auto}.matching-info .card{position:static}.journey-recommend-layout{grid-template-columns:1fr}.journey-recommend-info{position:static}.theme-settings-options{grid-template-columns:1fr}}
+
+/* Mint theme completeness pass: eliminate blue accents across ALL shared components. */
+html[data-theme="v9meeting"]{
+  --ink:#173e38;--muted:#64877e;--blue:#12ae91;--blue2:#42c9ad;
+  --pale:#e5f7f1;--line:#cfe9df;--bg:#f3f8f5;
+}
+html[data-theme="v9meeting"] body{background:#f3f8f5;color:var(--ink)}
+html[data-theme="v9meeting"] .step{background:#dff5ed;color:#16866f}
+html[data-theme="v9meeting"] .step.done{background:#c7f0e2;color:#08765f}
+html[data-theme="v9meeting"] .step.current{background:#17b897;color:#fff}
+html[data-theme="v9meeting"] .map{border-color:#bce7d8;background:radial-gradient(ellipse at 25% 35%,#d2f2e5 0 15%,transparent 16%),radial-gradient(ellipse at 75% 55%,#d5f0e7 0 14%,transparent 15%),linear-gradient(135deg,#f3fcf8,#ddf5e9)}
+html[data-theme="v9meeting"] .map-pin{background:#18a98d;border-color:#fff;box-shadow:0 6px 17px #0b8c6b44;color:#fff;cursor:pointer}
+html[data-theme="v9meeting"] .map-pin.active{background:#087c67;border-color:#adf3db;outline:3px solid #a4ebd4}
+html[data-theme="v9meeting"] .map-hint{color:#287b67;background:#f5fff9e8}
+html[data-theme="v9meeting"] .btn:not(.danger):not(.primary):not(.soft){border-color:#bce7d8;color:#087f68}
+html[data-theme="v9meeting"] .btn.primary{background:#17b897;border-color:#17b897;color:#fff}
+html[data-theme="v9meeting"] .btn.soft{background:#e2f6ed;color:#087d66;border-color:#c8eddf}
+html[data-theme="v9meeting"] .info,html[data-theme="v9meeting"] .detail-panel{background:#e2f6ed;color:#126e5c;border-color:#bce9d9}
+html[data-theme="v9meeting"] .journey-recommend-info{background:#e8f7f1;border-color:#c6e9dc}
+html[data-theme="v9meeting"] .group-info-rows>div{border-color:#cfe9df}
+html[data-theme="v9meeting"] .group-choice{border-color:#cce8dd;background:#fff}
+html[data-theme="v9meeting"] .group-choice.selected{border-color:#0bb795!important;background:#e0f6ed!important;box-shadow:0 0 0 3px #14b89622}
+html[data-theme="v9meeting"] .group-choice:hover{border-color:#13b598}
+html[data-theme="v9meeting"] .list-item{border-color:#d5ebe2;background:#fbfefd}
+html[data-theme="v9meeting"] .list-item.selected{background:#e0f6ed;border-color:#12b493}
+html[data-theme="v9meeting"] .stat .value,html[data-theme="v9meeting"] .metric{color:#0d9479}
+html[data-theme="v9meeting"] .tab{background:#e3f5ed;color:#168b73}
+html[data-theme="v9meeting"] .tab.active{background:#17b897;color:#fff}
+html[data-theme="v9meeting"] .pill{background:#e4f6ee;color:#117d67}
+html[data-theme="v9meeting"] .pill.warn{background:#fff6e6;color:#a47324}
+html[data-theme="v9meeting"] .pill.danger{background:#fff0f0;color:#c34d4d}
+html[data-theme="v9meeting"] .chart-labels,html[data-theme="v9meeting"] .muted{color:#6a9185}
+html[data-theme="v9meeting"] .bar.income{background:linear-gradient(#69e3c4,#0c9f83)}
+html[data-theme="v9meeting"] .bar.expense{background:linear-gradient(#d5f2e6,#8fcdb7)}
+html[data-theme="v9meeting"] input:focus,html[data-theme="v9meeting"] select:focus,html[data-theme="v9meeting"] textarea:focus{outline-color:#17b897;border-color:#17b897}
+html[data-theme="v9meeting"] .checkline input{accent-color:#17b897}
+html[data-theme="v9meeting"] .theme-settings{background:#e6f6ee;border-color:#c9e7d9}
+html[data-theme="v9meeting"] .theme-option.chosen{border-color:#17b897;box-shadow:0 0 0 3px #17b89722}
+html[data-theme="v9meeting"] .group-info-full .info{background:#dff5ec;color:#126f5d}
+html[data-theme="v9meeting"] .value{color:#0f957c}
+html[data-theme="v9meeting"] .eyebrow{color:#119c80}
+html[data-theme="v9meeting"] .card:hover{border-color:#b8e8d7}
+html[data-theme="v9meeting"] .auth-link .toggle{color:#0c957b}
+html[data-theme="v9meeting"] .map-pin:hover{background:#087c67;transform:scale(1.08)}
+html[data-theme="v9meeting"] .map-pin.active:hover{transform:scale(1.13)}
+/* Reliable pointer targeting; decorative map streets never block pins. */
+.map::before{pointer-events:none}
+.map-pin{z-index:5;cursor:pointer;pointer-events:auto;transition:background .16s,transform .16s,box-shadow .16s}
+.map-pin:hover{transform:scale(1.08)}
+.map-pin.active:hover{transform:scale(1.13)}
+.group-choice .btn{position:relative;z-index:2;cursor:pointer}
+.selection-flash{animation:group-select-glow .32s ease-out}
+@keyframes group-select-glow{from{filter:brightness(1.05)}to{filter:brightness(1)}}
+@media(prefers-reduced-motion:reduce){.selection-flash{animation:none}.map-pin{transition:none}}
+
+/* 2026-10-21: retain original neutral white-gray page background in mint theme */
+html[data-theme="v9meeting"]{--bg:#f3f6fa}
+html[data-theme="v9meeting"] body{background:#f3f6fa}
+/* Header quick links and unread notifications */
+.profile-link{border:0;cursor:pointer;font:inherit;transition:filter .2s}
+.profile-link:hover{filter:brightness(.93)}
+.notification-trigger{position:relative;overflow:visible!important}
+.notification-count{position:absolute;top:-7px;right:-9px;min-width:18px;height:18px;border-radius:12px;padding:0 4px;display:flex;align-items:center;justify-content:center;background:#f0546c;color:#fff;font-size:10px;font-weight:800;box-shadow:0 0 0 2px #fff}
+/* Recommendation inline simulator (no page navigation) */
+.inline-sim{display:grid;gap:14px}
+.inline-sim-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.inline-sim-fields .field{min-width:0}
+.inline-sim-fields input{width:100%;min-width:0}
+.quick-results{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.quick-results>div{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px;min-width:0}
+.quick-results small{display:block;color:var(--muted);font-size:11px}
+.quick-results strong{display:block;color:var(--blue);font-size:18px;margin-top:5px;overflow-wrap:anywhere}
+.quick-results .quick-total{grid-column:1/-1;background:var(--pale)}
+@media(max-width:480px){.inline-sim-fields{grid-template-columns:1fr}}
+
+/* Shared compact theme switcher at the bottom of every sidebar */
+.sidebar-theme{margin:14px 10px 18px;padding:10px;border-radius:12px;border:1px solid rgba(77,143,192,.25);background:rgba(255,255,255,.36)}
+.sidebar-theme-title{display:block;font-size:11px;font-weight:800;letter-spacing:.04em;margin-bottom:8px;color:inherit}
+.sidebar-theme-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sidebar-theme-btn{font-size:11px;font-weight:800;border:1px solid rgba(92,145,190,.28);border-radius:8px;background:rgba(255,255,255,.65);color:inherit;padding:8px 3px;white-space:nowrap}
+.sidebar-theme-btn.selected{border-color:var(--blue);background:var(--pale);color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue)}
+html[data-theme="v9meeting"] .sidebar-theme{background:rgba(255,255,255,.055);border-color:rgba(177,222,215,.24)}
+html[data-theme="v9meeting"] .sidebar-theme-btn{background:rgba(255,255,255,.06);color:#d5e8e7;border-color:rgba(177,222,215,.2)}
+html[data-theme="v9meeting"] .sidebar-theme-btn.selected{background:#0e6b64;color:#fff;border-color:#21b89c}
+.notice-read{opacity:.72}
