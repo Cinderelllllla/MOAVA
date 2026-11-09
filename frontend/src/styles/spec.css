@@ -1,0 +1,15 @@
+/* ============================================================
+   MOAVA · spec.css — 2026-11-09 명세서 v3.2 반영 화면 보정
+   (AI 제안 패널 · 미납 감지 표 · 증빙 보완 상태 · 폼 검증)
+   ============================================================ */
+.pill.mine{background:var(--blue);color:#fff;border-color:var(--blue)}
+.policy-table td .pill{font-size:10px}
+.ops-todo .todo{font-family:inherit}
+.card.stat{border:1px solid var(--line)}
+.moava-invalid{border:2px solid #c76565!important;outline:none!important}
+.moava-validation-error{color:#b64d4d;font-size:12px;margin-top:5px}
+.actions a.btn{text-decoration:none}
+.policy-fold+.policy-fold{margin-top:12px}
+/* React: NavLink/Link가 <a>로 렌더되므로 버튼 모양 유지 */
+a.nav-btn,a.btn,a.toggle{text-decoration:none;cursor:pointer}
+a.nav-btn{display:flex;box-sizing:border-box}
