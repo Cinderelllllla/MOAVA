@@ -4,6 +4,7 @@ import com.moava.proofs.dto.PaymentProofCreateRequest;
 import com.moava.proofs.dto.PaymentProofDto;
 import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.ProofGroupDto;
+import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.mapper.PaymentProofMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
 
 @Service
 @RequiredArgsConstructor
@@ -191,4 +193,39 @@ public class PaymentProofService {
             try { Files.deleteIfExists(p); } catch (IOException ignored) { }
         }
     }
+    @Transactional(readOnly = true)
+    public List<PaymentProofListDto> getProofList(Long groupId, Long memberId) {
+        // 1. 모임 존재 확인 (등록 때 만든 findGroupForProof 재사용)
+        ProofGroupDto group = paymentProofMapper.findGroupForProof(groupId);
+        if (group == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+
+        // 2. 권한: 모임장이면 전체, ACTIVE 구성원이면 본인 것만
+        boolean isOwner = memberId.equals(group.getOwnerId());
+        if (!isOwner && paymentProofMapper.countActiveMember(groupId, memberId) == 0) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "모임 구성원만 증빙 목록을 볼 수 있습니다.");
+        }
+
+        List<PaymentProofListDto> list =
+                paymentProofMapper.findProofList(groupId, isOwner ? null : memberId);
+
+        // 3. 타인 이름 마스킹 (F03-2)
+        for (PaymentProofListDto p : list) {
+            if (!memberId.equals(p.getMemberId())) {
+                p.setMemberName(maskName(p.getMemberName()));
+            }
+        }
+        return list;
+    }
+
+    // F03-2: 3자 이상 → 첫·끝 글자 빼고 ○, 2자 → 둘째 글자 ○, 1자 → 이름+○
+    private String maskName(String name) {
+        if (name == null || name.isEmpty()) return name;
+        int len = name.length();
+        if (len == 1) return name + "○";
+        if (len == 2) return name.charAt(0) + "○";
+        return name.charAt(0) + "○".repeat(len - 2) + name.charAt(len - 1);
+    }
+
 }
