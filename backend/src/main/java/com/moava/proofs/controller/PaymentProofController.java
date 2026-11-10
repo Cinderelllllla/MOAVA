@@ -1,13 +1,16 @@
 package com.moava.proofs.controller;
 
+
 import com.moava.proofs.dto.PaymentProofCreateRequest;
 import com.moava.proofs.service.PaymentProofService;
 import lombok.RequiredArgsConstructor;
+import com.moava.proofs.dto.PaymentProofListDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
 
 import java.util.List;
 import java.util.Map;
@@ -35,4 +38,12 @@ public class PaymentProofController {
         Long id = paymentProofService.registerProof(memberId, req, files);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("paymentProofId", id));
     }
+
+    @GetMapping
+    public ResponseEntity<List<PaymentProofListDto>> getProofList(
+            @PathVariable Long groupId,
+            @RequestHeader("X-Member-Id") Long memberId) {   // JWT 연동 전 임시 헤더
+        return ResponseEntity.ok(paymentProofService.getProofList(groupId, memberId));
+    }
+
 }

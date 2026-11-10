@@ -66,4 +66,32 @@
         )
     </insert>
 
+    <select id="findProofList" resultType="com.moava.proofs.dto.PaymentProofListDto">
+        SELECT p.PAYMENT_PROOF_ID AS paymentProofId,
+        p.GROUP_ID         AS groupId,
+        g.TITLE            AS groupTitle,
+        p.MEMBER_ID        AS memberId,
+        m.NAME             AS memberName,
+        p.PAY_MONTH        AS payMonth,
+        p.ROUND_NO         AS roundNo,
+        p.AMOUNT           AS amount,
+        p.PAY_DATE         AS payDate,
+        p.STATUS           AS status,
+        p.REF_NO           AS refNo,
+        p.REVIEW_MEMO      AS reviewMemo,
+        p.RESUBMIT_COUNT   AS resubmitCount,
+        p.CREATED_AT       AS createdAt,
+        (SELECT COUNT(*)
+        FROM PAYMENT_PROOF_FILE f
+        WHERE f.PAYMENT_PROOF_ID = p.PAYMENT_PROOF_ID) AS fileCount
+        FROM PAYMENT_PROOF p
+        JOIN GYE_GROUP g ON g.GROUP_ID = p.GROUP_ID
+        JOIN MEMBER m    ON m.MEMBER_ID = p.MEMBER_ID
+        WHERE p.GROUP_ID = #{groupId}
+        <if test="memberId != null">
+            AND p.MEMBER_ID = #{memberId}
+        </if>
+        ORDER BY p.PAY_MONTH DESC, p.ROUND_NO DESC, p.PAYMENT_PROOF_ID DESC
+    </select>
+
 </mapper>

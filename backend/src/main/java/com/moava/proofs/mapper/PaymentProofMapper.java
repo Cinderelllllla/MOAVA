@@ -2,9 +2,12 @@ package com.moava.proofs.mapper;
 
 import com.moava.proofs.dto.PaymentProofDto;
 import com.moava.proofs.dto.PaymentProofFileDto;
+import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.dto.ProofGroupDto;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 @Mapper
 public interface PaymentProofMapper {
@@ -30,4 +33,7 @@ public interface PaymentProofMapper {
 
     // 증빙 파일 메타 저장
     int insertProofFile(PaymentProofFileDto dto);
+
+    List<PaymentProofListDto> findProofList(@Param("groupId") Long groupId,
+                                            @Param("memberId") Long memberId);
 }
