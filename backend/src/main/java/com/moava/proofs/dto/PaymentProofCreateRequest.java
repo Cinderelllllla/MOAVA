@@ -1,6 +1,7 @@
 package com.moava.proofs.dto;
 
 import lombok.Data;
+import org.springframework.format.annotation.DateTimeFormat;
 import java.time.LocalDate;
 
 // F22 증빙 등록 요청 값 (파일은 MultipartFile로 따로 받음)
@@ -10,5 +11,6 @@ public class PaymentProofCreateRequest {
     private String payMonth;    // 귀속 월 'YYYYMM' (예: 202611)
     private Integer roundNo;    // 납입 회차 1 ~ 운영 기간
     private Long amount;        // 납입액 (원 단위)
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate payDate;  // 실제 납입일
 }
