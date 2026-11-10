@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- namespace = Mapper 인터페이스의 전체 경로 (정확히 일치해야 연결됨) -->
+<mapper namespace="com.moava.proofs.mapper.PaymentProofMapper">
+
+    <!-- 모임 기본 정보 -->
+    <select id="findGroupForProof" resultType="com.moava.proofs.dto.ProofGroupDto">
+        SELECT GROUP_ID, OWNER_ID, AMOUNT, MONTHS, STATUS
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+    </select>
+
+    <!-- ACTIVE 구성원 여부 -->
+    <select id="countActiveMember" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_MEMBER
+        WHERE GROUP_ID  = #{groupId}
+        AND MEMBER_ID = #{memberId}
+        AND STATUS    = 'ACTIVE'
+    </select>
+
+    <!-- 중복 제출: 상태와 무관하게 1건이라도 있으면 중복 (REVISION은 같은 행 재제출) -->
+    <select id="countDuplicateProof" resultType="int">
+        SELECT COUNT(*)
+        FROM PAYMENT_PROOF
+        WHERE GROUP_ID  = #{groupId}
+        AND MEMBER_ID = #{memberId}
+        AND PAY_MONTH = #{payMonth}
+        AND ROUND_NO  = #{roundNo}
+    </select>
+
+    <!-- 파일 해시 재사용 -->
+    <select id="countFileHash" resultType="int">
+        SELECT COUNT(*)
+        FROM PAYMENT_PROOF_FILE
+        WHERE FILE_HASH = #{fileHash}
+    </select>
+
+    <!-- 증빙 저장: INSERT 전에 시퀀스로 PK를 받아 dto.paymentProofId에 넣음 -->
+    <insert id="insertProof" parameterType="com.moava.proofs.dto.PaymentProofDto">
+        <selectKey keyProperty="paymentProofId" resultType="long" order="BEFORE">
+            SELECT SEQ_PAYMENT_PROOF.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO PAYMENT_PROOF (
+        PAYMENT_PROOF_ID, GROUP_ID, MEMBER_ID, PAY_MONTH, ROUND_NO,
+        AMOUNT, PAY_DATE, STATUS
+        ) VALUES (
+        #{paymentProofId}, #{groupId}, #{memberId}, #{payMonth}, #{roundNo},
+        #{amount}, #{payDate}, 'PENDING'
+        )
+    </insert>
+
+    <!-- 증빙 파일 메타 저장 -->
+    <insert id="insertProofFile" parameterType="com.moava.proofs.dto.PaymentProofFileDto">
+        <selectKey keyProperty="fileId" resultType="long" order="BEFORE">
+            SELECT SEQ_PAYMENT_PROOF_FILE.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO PAYMENT_PROOF_FILE (
+        FILE_ID, PAYMENT_PROOF_ID, SORT_NO, FILE_PATH, ORIGIN_NAME,
+        MIME_TYPE, FILE_SIZE, FILE_HASH, ENCRYPTED_YN, KEY_VER
+        ) VALUES (
+        #{fileId}, #{paymentProofId}, #{sortNo}, #{filePath}, #{originName},
+        #{mimeType}, #{fileSize}, #{fileHash}, #{encryptedYn}, #{keyVer}
+        )
+    </insert>
+
+</mapper>
