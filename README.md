@@ -38,7 +38,7 @@
 * **Library:** Kakao Maps JavaScript SDK, Recharts (시각화), STOMP (웹소켓 클라이언트)
 
 ###  Backend
-* **Core:** Spring Boot 3.x (Java 17)
+* **Core:** Spring Boot 4.1.0 (Java 17)
 * **Security & Auth:** Spring Security, JWT, BCrypt
 * **Features:** WebSocket/STOMP (채팅), `@Scheduled` (공공데이터 캐싱), `@Async` (알림)
 
