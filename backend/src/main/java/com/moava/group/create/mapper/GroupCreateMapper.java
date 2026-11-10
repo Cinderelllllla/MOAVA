@@ -60,4 +60,10 @@ public interface GroupCreateMapper {
 );
 
 
+    String findActiveMemberName(
+        @Param("memberId") Long memberId
+    ); //회원 이름을 조회하는 기능
+
+
+
 }

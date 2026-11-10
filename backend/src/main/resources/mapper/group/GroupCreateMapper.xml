@@ -120,5 +120,18 @@
     </insert>
 
 
+    <select id="findActiveMemberName" resultType="java.lang.String">
+        SELECT NAME
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+        AND STATUS = 'ACTIVE'
+        AND BANNED_YN = 'N'
+        //회원 이름을 조회하는 기능
+    </select>
+
+
+
+
+
 
 </mapper>
