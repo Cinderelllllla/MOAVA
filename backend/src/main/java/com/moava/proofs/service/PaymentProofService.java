@@ -5,6 +5,7 @@ import com.moava.proofs.dto.PaymentProofDto;
 import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.ProofGroupDto;
 import com.moava.proofs.dto.PaymentProofListDto;
+import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.mapper.PaymentProofMapper;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -91,7 +94,7 @@ public class PaymentProofService {
         }
 
         // 6~7. 파일 개수·형식·크기·매직 넘버 + 해시 중복 검사 (재제출과 공통)
-        List<String> hashes = validateFiles(files);
+        List<String> hashes = validateFiles(files, null);
 
         // 8. 같은 모임·회원·귀속 월·회차 중복 제출 차단 (F22-03)
         if (paymentProofMapper.countDuplicateProof(
@@ -127,7 +130,7 @@ public class PaymentProofService {
     // ---------- 내부 도우미 ----------
 
     // 파일 개수·크기·MIME·매직 넘버 검사 + SHA-256 해시 중복 검사 → 해시 목록 반환 (등록·재제출 공통)
-    private List<String> validateFiles(List<MultipartFile> files) {
+    private List<String> validateFiles(List<MultipartFile> files, Long excludeProofId) {
         if (files == null || files.isEmpty() || files.size() > MAX_FILES) {
             throw badRequest("증빙 파일은 1~5개까지 등록할 수 있습니다.");
         }
@@ -150,7 +153,7 @@ public class PaymentProofService {
             if (!seen.add(hash)) {
                 throw badRequest("동일한 파일을 중복으로 첨부할 수 없습니다.");
             }
-            if (paymentProofMapper.countFileHash(hash) > 0) {
+            if (paymentProofMapper.countFileHash(hash, excludeProofId) > 0) {
                 throw badRequest("이미 등록된 증빙 파일입니다.");
             }
             hashes.add(hash);
@@ -324,6 +327,71 @@ public class PaymentProofService {
         // TODO F23: 회원 알림(NOTIFICATION), 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION)
 
         return decision;
+    }
+
+    /**
+     * F22-05 보완 재제출 (증빙 작성자)
+     * - REVISION 상태만 가능. 귀속 월·회차·금액은 기존 값 유지, 납입일·파일만 교체
+     * - 본인 증빙의 기존 파일은 다시 첨부 가능 (다른 증빙 파일 재사용은 계속 차단)
+     * @return 재제출 후 누적 횟수
+     */
+    @Transactional
+    public int resubmitProof(Long memberId, Long groupId, Long proofId,
+                             PaymentProofResubmitRequest req, List<MultipartFile> files) {
+
+        // 1. 필수값
+        if (memberId == null || req == null || req.getPayDate() == null) {
+            throw badRequest("필수 입력값이 누락되었습니다.");
+        }
+
+        // 2. 증빙 존재 (이 모임의 증빙인지까지 확인)
+        PaymentProofDto proof = paymentProofMapper.findProofForReview(groupId, proofId);
+        if (proof == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
+        }
+
+        // 3. 작성자 본인만
+        if (!memberId.equals(proof.getMemberId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인이 제출한 증빙만 재제출할 수 있습니다.");
+        }
+
+        // 4. 보완 요청(REVISION) 상태만
+        if (!"REVISION".equals(proof.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "보완 요청 상태의 증빙만 재제출할 수 있습니다.");
+        }
+
+        // 5. 새 파일 검사 (본인 증빙의 기존 파일은 해시 중복 검사에서 제외)
+        List<String> hashes = validateFiles(files, proofId);
+
+        // 6. 상태·납입일·재제출 횟수 갱신 (REVISION 조건 UPDATE → 0건이면 다른 요청이 먼저 처리한 것)
+        if (paymentProofMapper.updateProofResubmit(proofId, req.getPayDate()) == 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 처리된 증빙입니다.");
+        }
+
+        // 7. 기존 파일 메타 삭제 → 새 파일 저장 (SORT_NO는 1부터 다시)
+        List<String> oldPaths = paymentProofMapper.findProofFilePaths(proofId);
+        paymentProofMapper.deleteProofFiles(proofId);
+        saveFiles(proofId, files, hashes);
+
+        // 8. 기존 디스크 파일 삭제 (DB 작업이 모두 끝난 뒤)
+        Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
+        List<Path> oldFiles = new ArrayList<>();
+        for (String p : oldPaths) {
+            oldFiles.add(base.resolve(p).normalize());
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    deleteQuietly(oldFiles);
+                }
+            });
+        } else {
+            deleteQuietly(oldFiles);
+        }
+
+        // TODO: 모임장 알림(F35), AUDIT_LOG(PROOF_RESUBMIT) — 공통 모듈 머지 후 연결
+        return proof.getResubmitCount() + 1;
     }
 
     // F03-2: 3자 이상 → 첫·끝 글자 빼고 ○, 2자 → 둘째 글자 ○, 1자 → 이름+○

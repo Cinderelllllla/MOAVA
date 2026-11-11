@@ -5,6 +5,7 @@ import com.moava.proofs.dto.PaymentProofCreateRequest;
 import com.moava.proofs.service.PaymentProofService;
 import lombok.RequiredArgsConstructor;
 import com.moava.proofs.dto.PaymentProofListDto;
+import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -60,6 +61,26 @@ public class PaymentProofController {
 
         String status = paymentProofService.reviewProof(memberId, groupId, proofId, req);
         return ResponseEntity.ok(Map.of("proofId", proofId, "status", status));
+    }
+
+    /**
+     * F22-05 보완 재제출 (multipart/form-data)
+     * - 폼 필드: payDate
+     * - 파일: files (1~5개, 전체 교체)
+     */
+    @PutMapping(value = "/{proofId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> resubmitProof(
+            @PathVariable Long groupId,
+            @PathVariable Long proofId,
+            @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
+            @ModelAttribute PaymentProofResubmitRequest req,
+            @RequestPart("files") List<MultipartFile> files) {
+
+        int resubmitCount = paymentProofService.resubmitProof(memberId, groupId, proofId, req, files);
+        return ResponseEntity.ok(Map.of(
+                "proofId", proofId,
+                "status", "PENDING",
+                "resubmitCount", resubmitCount));
     }
 
 }
