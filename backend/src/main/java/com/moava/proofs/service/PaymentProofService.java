@@ -13,8 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -129,6 +131,7 @@ public class PaymentProofService {
         proof.setRoundNo(req.getRoundNo());
         proof.setAmount(req.getAmount());
         proof.setPayDate(req.getPayDate());
+
         paymentProofMapper.insertProof(proof);
 
         // 10. 파일을 디스크에 UUID 이름으로 저장 + 메타 INSERT
@@ -170,6 +173,7 @@ public class PaymentProofService {
 
     // ---------- 내부 도우미 ----------
 
+
     private ResponseStatusException badRequest(String message) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
@@ -192,6 +196,32 @@ public class PaymentProofService {
         for (Path p : paths) {
             try { Files.deleteIfExists(p); } catch (IOException ignored) { }
         }
+    }
+    // 파일 앞부분(매직 넘버)으로 실제 형식 확인 — Content-Type 위조 차단 (REQ-SEC-02)
+    private boolean hasValidSignature(MultipartFile f, String type) {
+        byte[] head;
+        try (InputStream in = f.getInputStream()) {
+            head = in.readNBytes(12);   // WebP 판별에 12바이트 필요
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일 확인 중 오류가 발생했습니다.", e);
+        }
+        return switch (type) {
+            case "image/jpeg"      -> startsWith(head, 0, 0xFF, 0xD8, 0xFF);
+            case "image/png"       -> startsWith(head, 0, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+            case "application/pdf" -> startsWith(head, 0, 0x25, 0x50, 0x44, 0x46);              // "%PDF"
+            case "image/webp"      -> startsWith(head, 0, 0x52, 0x49, 0x46, 0x46)                // "RIFF"
+                    && startsWith(head, 8, 0x57, 0x45, 0x42, 0x50);              // "WEBP"
+            default -> false;
+        };
+    }
+
+    // data의 offset 위치부터 sig 바이트들과 일치하는지
+    private boolean startsWith(byte[] data, int offset, int... sig) {
+        if (data.length < offset + sig.length) return false;
+        for (int i = 0; i < sig.length; i++) {
+            if ((data[offset + i] & 0xFF) != sig[i]) return false;
+        }
+        return true;
     }
     @Transactional(readOnly = true)
     public List<PaymentProofListDto> getProofList(Long groupId, Long memberId) {
