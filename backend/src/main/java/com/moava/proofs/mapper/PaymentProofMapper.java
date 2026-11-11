@@ -36,4 +36,14 @@ public interface PaymentProofMapper {
 
     List<PaymentProofListDto> findProofList(@Param("groupId") Long groupId,
                                             @Param("memberId") Long memberId);
+
+    // F23: 심사할 증빙 1건 조회 (경로의 groupId와 일치하는 것만, 없으면 null)
+    PaymentProofDto findProofForReview(@Param("groupId") Long groupId,
+                                       @Param("proofId") Long proofId);
+
+    // F23: 심사 결과 반영 (PENDING일 때만 변경 → 반환값 0이면 이미 처리된 것)
+    int updateProofReview(@Param("proofId") Long proofId,
+                          @Param("status") String status,
+                          @Param("reviewedBy") Long reviewedBy,
+                          @Param("reviewMemo") String reviewMemo);
 }
