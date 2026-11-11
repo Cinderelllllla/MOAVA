@@ -17,7 +17,7 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/groups/{groupId}/proofs")   // 화면 경로 S12 /groups/{id}/proofs 기준
+@RequestMapping("/api/v1/groups/{groupId}/payment-proofs")   // 화면 경로 S12 /groups/{id}/proofs 기준
 public class PaymentProofController {
 
     private final PaymentProofService paymentProofService;
