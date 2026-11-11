@@ -26,7 +26,9 @@ public interface PaymentProofMapper {
                             @Param("roundNo") Integer roundNo);
 
     // 같은 파일 해시가 이미 등록됐는지 (REQ-SEC-02)
-    int countFileHash(@Param("fileHash") String fileHash);
+    // excludeProofId: 재제출 시 본인 증빙의 기존 파일은 제외 (등록 시 null)
+    int countFileHash(@Param("fileHash") String fileHash,
+                      @Param("excludeProofId") Long excludeProofId);
 
     // 증빙 저장 → 실행 후 dto.paymentProofId에 시퀀스 값이 채워짐
     int insertProof(PaymentProofDto dto);
@@ -46,4 +48,14 @@ public interface PaymentProofMapper {
                           @Param("status") String status,
                           @Param("reviewedBy") Long reviewedBy,
                           @Param("reviewMemo") String reviewMemo);
+
+    // F22-05: 재제출 시 지울 기존 파일 경로 목록
+    List<String> findProofFilePaths(@Param("proofId") Long proofId);
+
+    // F22-05: 기존 파일 메타 삭제 (전체 교체 방식)
+    int deleteProofFiles(@Param("proofId") Long proofId);
+
+    // F22-05: REVISION → PENDING, 납입일 갱신, 재제출 횟수 +1 (REVISION일 때만 → 0이면 이미 처리됨)
+    int updateProofResubmit(@Param("proofId") Long proofId,
+                            @Param("payDate") java.time.LocalDate payDate);
 }

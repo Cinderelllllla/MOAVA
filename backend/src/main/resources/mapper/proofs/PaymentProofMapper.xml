@@ -31,11 +31,14 @@
         AND ROUND_NO  = #{roundNo}
     </select>
 
-    <!-- 파일 해시 재사용 -->
+    <!-- 파일 해시 재사용 (재제출이면 본인 증빙의 기존 파일은 제외) -->
     <select id="countFileHash" resultType="int">
         SELECT COUNT(*)
         FROM PAYMENT_PROOF_FILE
         WHERE FILE_HASH = #{fileHash}
+        <if test="excludeProofId != null">
+            AND PAYMENT_PROOF_ID != #{excludeProofId}
+        </if>
     </select>
 
     <!-- 증빙 저장: INSERT 전에 시퀀스로 PK를 받아 dto.paymentProofId에 넣음 -->
@@ -100,6 +103,7 @@
         MEMBER_ID        AS memberId,
         PAY_MONTH        AS payMonth,
         ROUND_NO         AS roundNo,
+        RESUBMIT_COUNT   AS resubmitCount,
         STATUS           AS status
         FROM PAYMENT_PROOF
         WHERE PAYMENT_PROOF_ID = #{proofId}
@@ -115,6 +119,29 @@
         REVIEW_MEMO = #{reviewMemo, jdbcType=VARCHAR}
         WHERE PAYMENT_PROOF_ID = #{proofId}
         AND STATUS = 'PENDING'
+    </update>
+
+    <!-- F22-05: 기존 파일 경로 (디스크에서 지울 때 사용) -->
+    <select id="findProofFilePaths" resultType="string">
+        SELECT FILE_PATH
+        FROM PAYMENT_PROOF_FILE
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+    </select>
+
+    <!-- F22-05: 기존 파일 메타 전체 삭제 -->
+    <delete id="deleteProofFiles">
+        DELETE FROM PAYMENT_PROOF_FILE
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+    </delete>
+
+    <!-- F22-05: 재제출. REVIEW_MEMO는 보완 사유 기록으로 유지 -->
+    <update id="updateProofResubmit">
+        UPDATE PAYMENT_PROOF
+        SET STATUS         = 'PENDING',
+        PAY_DATE       = #{payDate},
+        RESUBMIT_COUNT = RESUBMIT_COUNT + 1
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+        AND STATUS = 'REVISION'
     </update>
 
 </mapper>
