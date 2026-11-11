@@ -68,6 +68,4 @@ public interface PayoutOrderMapper {
                         @Param("actorId") Long actorId,
                         @Param("eventType") String eventType,
                         @Param("description") String description);
-
-    void updateMemberAssignedRound(Long groupId, Long applicantId, Integer roundNo);
 }
