@@ -4,7 +4,7 @@ package com.moava.group.create.service;
 import com.moava.group.create.dto.GroupCreateRequest;
 import com.moava.group.create.dto.GroupCreateResponse;
 import com.moava.group.create.mapper.GroupCreateMapper;
-
+import java.nio.charset.StandardCharsets;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +28,7 @@ public class GroupCreateService {
 
     @Transactional
     //@Transactional이 핵심
-    // 모임, 모임장, 계좌, 감사 로그 중 하나라도 저장에 실패하면 DB 변경이 전체 롤백되도록 구성
+    // 모임, 모임장, 계좌, 감사 로그 저장을 하나의 트랜잭션으로 처리
     public GroupCreateResponse createGroup(
             GroupCreateRequest request,
             Long authenticatedMemberId
@@ -90,6 +90,17 @@ public class GroupCreateService {
 
         String accountNoLast4 =
                 accountNumber.substring(accountNumber.length() - 4);
+        if (holderNameEnc.getBytes(StandardCharsets.UTF_8).length > 80) {
+                throw new IllegalArgumentException(
+                         "예금주 이름이 암호화 저장 길이 제한을 초과합니다."
+                );
+        }
+
+        if (accountNoEnc.getBytes(StandardCharsets.UTF_8).length > 100) {
+                throw new IllegalArgumentException(
+                        "계좌번호가 암호화 저장 길이 제한을 초과합니다."
+                );
+        }        
 
         // 7. 모임 계좌 등록 (인증 대기)
         mapper.insertGroupAccount(
