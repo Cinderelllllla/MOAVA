@@ -6,7 +6,7 @@
 
     <!-- 모임 기본 정보 조회 -->
     <select id="selectGroupInfo" resultType="map">
-        SELECT GROUP_ID, MAX_MEMBERS, STATUS, ORDER_CONFIRMED_YN
+        SELECT GROUP_ID, OWNER_ID, MAX_MEMBERS, STATUS, ORDER_CONFIRMED_YN
         FROM GYE_GROUP
         WHERE GROUP_ID = #{groupId}
     </select>
@@ -28,16 +28,16 @@
         WHERE PAYOUT_REQUEST_ID = #{payoutRequestId}
     </select>
 
-    <!-- 2. [AI 제안] 모임원 연체 확률(RISK_SCORE) 내림차순 순번 조회 -->
+    <!-- [수정 1] RISK_SCORE: PROB, SCORED_AT 컬럼 적용 -->
     <select id="selectAiSuggestedRound" resultType="int">
         SELECT SUGGESTED_ROUND
         FROM (
                  SELECT gm.MEMBER_ID,
-                        ROW_NUMBER() OVER (ORDER BY NVL(rs.OVERDUE_PROB, 0.35) DESC, gm.MEMBER_ID ASC) AS SUGGESTED_ROUND
+                        ROW_NUMBER() OVER (ORDER BY NVL(rs.PROB, 0.35) DESC, gm.MEMBER_ID ASC) AS SUGGESTED_ROUND
                  FROM GYE_MEMBER gm
                           LEFT JOIN (
-                     SELECT MEMBER_ID, OVERDUE_PROB,
-                            ROW_NUMBER() OVER (PARTITION BY MEMBER_ID ORDER BY CREATED_AT DESC) AS RN
+                     SELECT MEMBER_ID, PROB,
+                            ROW_NUMBER() OVER (PARTITION BY MEMBER_ID ORDER BY SCORED_AT DESC) AS RN
                      FROM RISK_SCORE
                  ) rs ON gm.MEMBER_ID = rs.MEMBER_ID AND rs.RN = 1
                  WHERE gm.GROUP_ID = #{groupId}
@@ -89,20 +89,20 @@
           AND MEMBER_ID != #{excludeMemberId}
     </select>
 
-    <!-- 3. [동의 요청] CONSENT 초기 데이터 생성 -->
+    <!-- 3. [동의 요청] CONSENT 초기 데이터 생성 (AGREED_AT 명시) -->
     <insert id="insertInitialConsent">
         INSERT INTO CONSENT (
-            CONSENT_ID, GROUP_ID, CONSENT_TYPE, TARGET_ID, MEMBER_ID, AGREED_YN
+            CONSENT_ID, CONSENT_TYPE, TARGET_ID, GROUP_ID, MEMBER_ID, AGREED_YN, AGREED_AT
         ) VALUES (
-                     SEQ_CONSENT.NEXTVAL, #{groupId}, 'ORDER', #{targetId}, #{memberId}, 'N'
+                     SEQ_CONSENT.NEXTVAL, 'ORDER', #{targetId}, #{groupId}, #{memberId}, 'N', SYSDATE
                  )
     </insert>
 
-    <!-- 4. [동의] 모임원 개별 동의 업데이트 -->
+    <!-- [수정 4] CONSENT: RESPONDED_AT -> AGREED_AT 변경 -->
     <update id="updateMemberConsent">
         UPDATE CONSENT
         SET AGREED_YN = #{agreedYn},
-            RESPONDED_AT = SYSDATE
+            AGREED_AT = SYSDATE
         WHERE CONSENT_TYPE = 'ORDER'
           AND TARGET_ID = #{targetId}
           AND MEMBER_ID = #{memberId}
@@ -136,21 +136,20 @@
           AND PAYOUT_REQUEST_ID != #{excludeRequestId}
     </select>
 
-    <!-- 모임원 확정 수령 회차 업데이트 -->
-    <update id="updateMemberAssignedRound">
-        UPDATE GYE_MEMBER
-        SET PAYOUT_ROUND = #{roundNo}
-        WHERE GROUP_ID = #{groupId}
-          AND MEMBER_ID = #{memberId}
-    </update>
-
-    <!-- 미확정 ACTIVE 회원 수 조회 -->
+    <!-- [수정 2] GYE_MEMBER.PAYOUT_ROUND 컬럼 없음 반영:
+         PAYOUT_REQUEST에서 STATUS='CONFIRMED'를 받지 못한 ACTIVE 회원 수 조회 -->
     <select id="countUnconfirmedActiveMembers" resultType="int">
         SELECT COUNT(*)
-        FROM GYE_MEMBER
-        WHERE GROUP_ID = #{groupId}
-          AND STATUS = 'ACTIVE'
-          AND PAYOUT_ROUND IS NULL
+        FROM GYE_MEMBER gm
+        WHERE gm.GROUP_ID = #{groupId}
+          AND gm.STATUS = 'ACTIVE'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM PAYOUT_REQUEST pr
+            WHERE pr.GROUP_ID = gm.GROUP_ID
+              AND pr.MEMBER_ID = gm.MEMBER_ID
+              AND pr.STATUS = 'CONFIRMED'
+        )
     </select>
 
     <!-- 모임 전체 수령 순서 확정 완료 플래그 업데이트 -->
@@ -160,44 +159,56 @@
         WHERE GROUP_ID = #{groupId}
     </update>
 
-    <!-- 신청·동의 현황 목록 조회 -->
-    <select id="selectPayoutRequestList" resultType="com.moava.group.procedures.dto.PayoutOrderDto$StatusResponse">
-        SELECT pr.PAYOUT_REQUEST_ID AS payoutRequestId,
-               pr.GROUP_ID          AS groupId,
-               pr.MEMBER_ID         AS memberId,
-               m.NAME               AS memberName,
-               pr.ROUND_NO          AS roundNo,
-               pr.REASON            AS reason,
+    <!-- 신청·동의 현황 목록 조회 (PayoutOrderDTO 대소문자 반영) -->
+    <select id="selectPayoutRequestList" resultType="com.moava.group.procedures.dto.PayoutOrderDTO$StatusResponse">
+        SELECT pr.PAYOUT_REQUEST_ID  AS payoutRequestId,
+               pr.GROUP_ID           AS groupId,
+               pr.MEMBER_ID          AS memberId,
+               m.NAME                AS memberName,
+               pr.ROUND_NO           AS roundNo,
+               pr.REASON             AS reason,
                pr.AI_SUGGESTED_ROUND AS aiSuggestedRound,
-               pr.STATUS            AS status,
+               pr.STATUS             AS status,
                (SELECT COUNT(*) FROM CONSENT c
                 WHERE c.CONSENT_TYPE = 'ORDER' AND c.TARGET_ID = pr.PAYOUT_REQUEST_ID AND c.AGREED_YN = 'Y') AS agreedCount,
                (SELECT COUNT(*) FROM GYE_MEMBER gm
                 WHERE gm.GROUP_ID = pr.GROUP_ID AND gm.STATUS = 'ACTIVE' AND gm.MEMBER_ID != pr.MEMBER_ID) AS targetCount,
-               pr.CREATED_AT        AS createdAt,
-               pr.DECIDED_AT        AS decidedAt
+               pr.CREATED_AT         AS createdAt,
+               pr.DECIDED_AT         AS decidedAt
         FROM PAYOUT_REQUEST pr
                  JOIN MEMBER m ON pr.MEMBER_ID = m.MEMBER_ID
         WHERE pr.GROUP_ID = #{groupId}
         ORDER BY pr.ROUND_NO ASC, pr.CREATED_AT DESC
     </select>
 
-    <!-- 알림 등록 -->
+    <!-- [수정 5] NOTIFICATION: NOTIF_TYPE (NOT NULL) 컬럼 추가 -->
     <insert id="insertNotification">
         INSERT INTO NOTIFICATION (
-            NOTIFICATION_ID, MEMBER_ID, TITLE, BODY, READ_YN, CREATED_AT
+            NOTIFICATION_ID, MEMBER_ID, NOTIF_TYPE, TITLE, BODY, READ_YN, DELETED_YN, SMS_SENT_YN, CREATED_AT
         ) VALUES (
-                     SEQ_NOTIFICATION.NEXTVAL, #{memberId}, #{title}, #{body}, 'N', SYSDATE
+                     SEQ_NOTIFICATION.NEXTVAL, #{memberId}, #{notifType}, #{title}, #{body}, 'N', 'N', 'N', SYSDATE
                  )
     </insert>
 
-    <!-- 6. 감사 로그 등록 (ORDER_REQUEST / ORDER_CONSENT_REQ / ORDER_CONFIRM) -->
+    <!-- [수정 3] AUDIT_LOG: ACTOR_MEMBER_ID, EVENT_TYPE, DESCRIPTION 컬럼 적용 -->
     <insert id="insertAuditLog">
         INSERT INTO AUDIT_LOG (
-            AUDIT_LOG_ID, GROUP_ID, ACTOR_ID, ACTION_TYPE, DETAIL, CREATED_AT
+            AUDIT_LOG_ID, GROUP_ID, ACTOR_MEMBER_ID, EVENT_TYPE, DESCRIPTION, CREATED_AT
         ) VALUES (
-                     SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{actorId}, #{actionType}, #{detail}, SYSDATE
+                     SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{actorId}, #{eventType}, #{description}, SYSDATE
                  )
     </insert>
+
+    <update id="upsertMemberConsent">
+        MERGE INTO CONSENT c
+        USING DUAL
+        ON (c.CONSENT_TYPE = 'ORDER' AND c.TARGET_ID = #{targetId} AND c.MEMBER_ID = #{memberId})
+        WHEN MATCHED THEN
+            UPDATE SET c.AGREED_YN = #{agreedYn},
+                       c.AGREED_AT = SYSDATE
+        WHEN NOT MATCHED THEN
+            INSERT (CONSENT_ID, CONSENT_TYPE, TARGET_ID, GROUP_ID, MEMBER_ID, AGREED_YN, AGREED_AT)
+            VALUES (SEQ_CONSENT.NEXTVAL, 'ORDER', #{targetId}, #{groupId}, #{memberId}, #{agreedYn}, SYSDATE)
+    </update>
 
 </mapper>
