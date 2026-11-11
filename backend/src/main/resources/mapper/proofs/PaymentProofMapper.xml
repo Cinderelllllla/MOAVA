@@ -92,6 +92,29 @@
             AND p.MEMBER_ID = #{memberId}
         </if>
         ORDER BY p.PAY_MONTH DESC, p.ROUND_NO DESC, p.PAYMENT_PROOF_ID DESC
+    </select>    <!-- F23: 심사할 증빙 1건 (다른 모임의 증빙 ID를 넣는 것을 막으려고 GROUP_ID도 같이 확인) -->
+
+    <select id="findProofForReview" resultType="com.moava.proofs.dto.PaymentProofDto">
+        SELECT PAYMENT_PROOF_ID AS paymentProofId,
+        GROUP_ID         AS groupId,
+        MEMBER_ID        AS memberId,
+        PAY_MONTH        AS payMonth,
+        ROUND_NO         AS roundNo,
+        STATUS           AS status
+        FROM PAYMENT_PROOF
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+        AND GROUP_ID = #{groupId}
     </select>
+
+    <!-- F23: 심사 결과 반영. STATUS = 'PENDING' 조건으로 두 번 처리되는 것을 막음 -->
+    <update id="updateProofReview">
+        UPDATE PAYMENT_PROOF
+        SET STATUS      = #{status},
+        REVIEWED_BY = #{reviewedBy},
+        REVIEWED_AT = SYSDATE,
+        REVIEW_MEMO = #{reviewMemo, jdbcType=VARCHAR}
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+        AND STATUS = 'PENDING'
+    </update>
 
 </mapper>

@@ -5,6 +5,7 @@ import com.moava.proofs.dto.PaymentProofCreateRequest;
 import com.moava.proofs.service.PaymentProofService;
 import lombok.RequiredArgsConstructor;
 import com.moava.proofs.dto.PaymentProofListDto;
+import com.moava.proofs.dto.PaymentProofReviewRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -44,6 +45,21 @@ public class PaymentProofController {
             @PathVariable Long groupId,
             @RequestHeader("X-Member-Id") Long memberId) {   // JWT 연동 전 임시 헤더
         return ResponseEntity.ok(paymentProofService.getProofList(groupId, memberId));
+    }
+
+    /**
+     * F23 증빙 승인·보완 요청 (모임장)
+     * - 요청 본문(JSON): {"decision": "CONFIRMED" | "REVISION", "reviewMemo": "사유"}
+     */
+    @PatchMapping("/{proofId}/review")
+    public ResponseEntity<Map<String, Object>> reviewProof(
+            @PathVariable Long groupId,
+            @PathVariable Long proofId,
+            @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
+            @RequestBody PaymentProofReviewRequest req) {
+
+        String status = paymentProofService.reviewProof(memberId, groupId, proofId, req);
+        return ResponseEntity.ok(Map.of("proofId", proofId, "status", status));
     }
 
 }

@@ -6,6 +6,7 @@ import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.ProofGroupDto;
 import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.mapper.PaymentProofMapper;
+import com.moava.proofs.dto.PaymentProofReviewRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -100,6 +101,9 @@ public class PaymentProofService {
             if (!ALLOWED_MIME.containsKey(f.getContentType())) {
                 throw badRequest("JPG, PNG, WebP, PDF 파일만 등록할 수 있습니다.");
             }
+            if (!hasValidSignature(f, f.getContentType())) {          // 추가
+                throw badRequest("파일 내용이 선택한 형식과 일치하지 않습니다.");   // 추가
+            }
         }
 
         // 7. 파일 해시: 같은 요청 안 중복 + 기등록 파일 재사용 차단 (F22-04)
@@ -132,7 +136,13 @@ public class PaymentProofService {
         proof.setAmount(req.getAmount());
         proof.setPayDate(req.getPayDate());
 
-        paymentProofMapper.insertProof(proof);
+        try {                                                         // ← 여기부터
+            paymentProofMapper.insertProof(proof);
+        } catch (DuplicateKeyException e) {
+            // 8번 검사 직후 같은 증빙이 동시에 들어온 경우 (UK_PAYMENT_PROOF_1 위반)
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "해당 모임·귀속 월·회차에 이미 제출한 증빙이 있습니다.");
+        }                                                             // ← 여기까지 교체
 
         // 10. 파일을 디스크에 UUID 이름으로 저장 + 메타 INSERT
         //     중간에 실패하면 DB는 @Transactional로 롤백되고, 이미 쓴 파일은 여기서 지움
@@ -247,6 +257,64 @@ public class PaymentProofService {
             }
         }
         return list;
+    }
+
+    /**
+     * F23 증빙 승인·보완 요청 (모임장)
+     * @param memberId 로그인 회원 ID (JWT 연동 전까지는 Controller에서 임시로 받음)
+     * @return 변경된 상태 (CONFIRMED / REVISION)
+     */
+    @Transactional
+    public String reviewProof(Long memberId, Long groupId, Long proofId, PaymentProofReviewRequest req) {
+
+        // 1. 결정 값 확인
+        String decision = req.getDecision();
+        if (!"CONFIRMED".equals(decision) && !"REVISION".equals(decision)) {
+            throw badRequest("심사 결과는 CONFIRMED 또는 REVISION만 가능합니다.");
+        }
+
+        // 2. 모임 존재 + 모임장 확인 (REQ-SEC-04 서버 재검증)
+        ProofGroupDto group = paymentProofMapper.findGroupForProof(groupId);
+        if (group == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        if (!group.getOwnerId().equals(memberId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 모임장만 승인할 수 있어요.");
+        }
+
+        // 3. 증빙 존재 (이 모임의 증빙인지까지 확인)
+        PaymentProofDto proof = paymentProofMapper.findProofForReview(groupId, proofId);
+        if (proof == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
+        }
+
+        // 4. 확인 대기(PENDING) 상태만 심사 가능
+        if (!"PENDING".equals(proof.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "확인 대기 중인 증빙만 심사할 수 있습니다.");
+        }
+
+        // 5. 보완 요청이면 사유 필수, 승인이면 사유 저장 안 함
+        String memo = null;
+        if ("REVISION".equals(decision)) {
+            if (req.getReviewMemo() == null || req.getReviewMemo().isBlank()) {
+                throw badRequest("보완 사유를 입력해 주세요.");
+            }
+            memo = req.getReviewMemo().trim();
+            if (memo.length() > 500) {   // DDL REVIEW_MEMO VARCHAR2(500)
+                throw badRequest("보완 사유는 500자 이하로 입력해 주세요.");
+            }
+        }
+
+        // 6. 상태 변경 (PENDING 조건 UPDATE → 0건이면 그 사이에 다른 요청이 먼저 처리한 것)
+        int updated = paymentProofMapper.updateProofReview(proofId, decision, memberId, memo);
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 처리된 증빙입니다.");
+        }
+
+        // TODO F23: 승인 시 같은 모임·회원·귀속 월 OVERDUE_CASE → RESOLVED (F26 미납 감지와 함께 구현)
+        // TODO F23: 회원 알림(NOTIFICATION), 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION)
+
+        return decision;
     }
 
     // F03-2: 3자 이상 → 첫·끝 글자 빼고 ○, 2자 → 둘째 글자 ○, 1자 → 이름+○
