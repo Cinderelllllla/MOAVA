@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from decimal import Decimal
 from pathlib import Path
 
@@ -35,6 +36,14 @@ class RiskService:
         self._feature_set = set(self.features)
         with scores_path.open(encoding="utf-8", newline="") as f:
             self.scores: dict[str, float] = {r["persona_id"]: float(r["default_probability"]) for r in csv.DictReader(f)}
+                    # 시연용 계정 연결표 {회원 번호: 가상 인물 ID}. 여기 없는 회원은 persona_of() 의 계산식을 따른다.
+        self.demo: dict[int, str] = {}
+        demo_path = model_dir / "demo_members.json"
+        if demo_path.exists():
+            self.demo = {int(k): v for k, v in json.loads(demo_path.read_text(encoding="utf-8")).items()}
+            unknown = [v for v in self.demo.values() if v not in self.scores]
+            if unknown:
+                raise RuntimeError(f"{demo_path} 에 없는 가상 인물 ID 가 있습니다: {unknown}")
 
     @staticmethod
     def _result(probability: float, source: str, features_used: int | None = None) -> RiskResult:
@@ -49,6 +58,15 @@ class RiskService:
         if key not in self.scores:
             raise UnknownPersona(persona_id)
         return self._result(self.scores[key], "persona")
+    
+    def persona_of(self, member_id: int) -> str:
+        """회원 번호 -> 가상 인물 ID. 시연용 연결표가 우선이고, 없으면 회원 번호로 계산한다."""
+        if member_id in self.demo:
+            return self.demo[member_id]
+        return f"SYN{(member_id - 1) % len(self.scores) + 1:09d}"
+
+    def by_member(self, member_id: int) -> RiskResult:
+        return self.by_persona(self.persona_of(member_id))
 
     def by_features(self, features: dict[str, float]) -> RiskResult:
         known = {k: v for k, v in features.items() if k in self._feature_set}
@@ -59,6 +77,8 @@ class RiskService:
         return self._result(p, "features", len(known))
 
     def assess(self, subject: Subject) -> RiskResult:
+        if subject.member_id is not None:
+            return self.by_member(subject.member_id)
         if subject.persona_id is not None:
             return self.by_persona(subject.persona_id)
         return self.by_features(subject.features)
