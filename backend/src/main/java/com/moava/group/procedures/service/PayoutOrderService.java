@@ -100,6 +100,7 @@ public class PayoutOrderService {
         for (Long targetMemberId : otherMembers) {
             payoutOrderMapper.insertInitialConsent(groupId, payoutRequestId, targetMemberId);
             payoutOrderMapper.insertNotification(targetMemberId,
+                    "CONSENT_REQUEST",
                     "수령 순서 변경 동의 요청",
                     roundNo + "회차 수령 순서 신청에 대한 동의를 진행해 주세요.");
         }
@@ -127,7 +128,7 @@ public class PayoutOrderService {
         if ("N".equals(yn)) {
             payoutOrderMapper.updatePayoutRequestStatus(payoutRequestId, "REJECTED");
             Long applicantId = ((Number) req.get("MEMBER_ID")).longValue();
-            payoutOrderMapper.insertNotification(applicantId,
+            payoutOrderMapper.insertNotification(applicantId,"CONSENT_REQUEST",
                     "수령 순서 신청 반려(재조정)",
                     "모임원 중 반대가 발생하여 수령 순서 신청이 반려되었습니다. 회차를 재조정해 주세요.");
             return "반대 처리되어 해당 신청 건이 재조정(REJECTED) 상태로 변경되었습니다.";
@@ -172,6 +173,7 @@ public class PayoutOrderService {
         List<Long> allMembers = payoutOrderMapper.selectOtherActiveMemberIds(groupId, -1L);
         for (Long memberId : allMembers) {
             payoutOrderMapper.insertNotification(memberId,
+                    "ORDER_CONFIRMED",
                     "수령 순서 확정 안내",
                     roundNo + "회차 수령 순서가 최종 확정되었습니다.");
         }
