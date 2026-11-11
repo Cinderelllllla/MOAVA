@@ -90,35 +90,8 @@ public class PaymentProofService {
             throw badRequest("모임 약정 납입액과 일치해야 합니다.");
         }
 
-        // 6. 파일 개수 · 형식 · 크기
-        if (files == null || files.isEmpty() || files.size() > MAX_FILES) {
-            throw badRequest("증빙 파일은 1~5개까지 등록할 수 있습니다.");
-        }
-        for (MultipartFile f : files) {
-            if (f.isEmpty() || f.getSize() > MAX_FILE_SIZE) {
-                throw badRequest("파일은 1MB 이하만 등록할 수 있습니다.");
-            }
-            if (!ALLOWED_MIME.containsKey(f.getContentType())) {
-                throw badRequest("JPG, PNG, WebP, PDF 파일만 등록할 수 있습니다.");
-            }
-            if (!hasValidSignature(f, f.getContentType())) {          // 추가
-                throw badRequest("파일 내용이 선택한 형식과 일치하지 않습니다.");   // 추가
-            }
-        }
-
-        // 7. 파일 해시: 같은 요청 안 중복 + 기등록 파일 재사용 차단 (F22-04)
-        List<String> hashes = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
-        for (MultipartFile f : files) {
-            String hash = sha256(f);
-            if (!seen.add(hash)) {
-                throw badRequest("동일한 파일을 중복으로 첨부할 수 없습니다.");
-            }
-            if (paymentProofMapper.countFileHash(hash) > 0) {
-                throw badRequest("이미 등록된 증빙 파일입니다.");
-            }
-            hashes.add(hash);
-        }
+        // 6~7. 파일 개수·형식·크기·매직 넘버 + 해시 중복 검사 (재제출과 공통)
+        List<String> hashes = validateFiles(files);
 
         // 8. 같은 모임·회원·귀속 월·회차 중복 제출 차단 (F22-03)
         if (paymentProofMapper.countDuplicateProof(
@@ -136,16 +109,58 @@ public class PaymentProofService {
         proof.setAmount(req.getAmount());
         proof.setPayDate(req.getPayDate());
 
-        try {                                                         // ← 여기부터
+        try {
             paymentProofMapper.insertProof(proof);
         } catch (DuplicateKeyException e) {
             // 8번 검사 직후 같은 증빙이 동시에 들어온 경우 (UK_PAYMENT_PROOF_1 위반)
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "해당 모임·귀속 월·회차에 이미 제출한 증빙이 있습니다.");
-        }                                                             // ← 여기까지 교체
+        }
 
-        // 10. 파일을 디스크에 UUID 이름으로 저장 + 메타 INSERT
-        //     중간에 실패하면 DB는 @Transactional로 롤백되고, 이미 쓴 파일은 여기서 지움
+        // 10. 파일 저장 + 메타 INSERT (재제출과 공통)
+        saveFiles(proof.getPaymentProofId(), files, hashes);
+
+        // TODO: 모임장 알림(F35 NotificationService), AUDIT_LOG(PROOF_UPLOAD) — 공통 모듈 머지 후 연결
+        return proof.getPaymentProofId();
+    }
+
+    // ---------- 내부 도우미 ----------
+
+    // 파일 개수·크기·MIME·매직 넘버 검사 + SHA-256 해시 중복 검사 → 해시 목록 반환 (등록·재제출 공통)
+    private List<String> validateFiles(List<MultipartFile> files) {
+        if (files == null || files.isEmpty() || files.size() > MAX_FILES) {
+            throw badRequest("증빙 파일은 1~5개까지 등록할 수 있습니다.");
+        }
+        for (MultipartFile f : files) {
+            if (f.isEmpty() || f.getSize() > MAX_FILE_SIZE) {
+                throw badRequest("파일은 1MB 이하만 등록할 수 있습니다.");
+            }
+            if (!ALLOWED_MIME.containsKey(f.getContentType())) {
+                throw badRequest("JPG, PNG, WebP, PDF 파일만 등록할 수 있습니다.");
+            }
+            if (!hasValidSignature(f, f.getContentType())) {
+                throw badRequest("파일 내용이 선택한 형식과 일치하지 않습니다.");
+            }
+        }
+
+        List<String> hashes = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (MultipartFile f : files) {
+            String hash = sha256(f);
+            if (!seen.add(hash)) {
+                throw badRequest("동일한 파일을 중복으로 첨부할 수 없습니다.");
+            }
+            if (paymentProofMapper.countFileHash(hash) > 0) {
+                throw badRequest("이미 등록된 증빙 파일입니다.");
+            }
+            hashes.add(hash);
+        }
+        return hashes;
+    }
+
+    // 파일을 UUID 이름으로 저장 + PAYMENT_PROOF_FILE INSERT (등록·재제출 공통)
+    // 중간에 실패하면 이미 쓴 파일은 지우고 예외를 다시 던짐 → DB는 @Transactional로 롤백
+    private void saveFiles(Long proofId, List<MultipartFile> files, List<String> hashes) {
         Path dir = Paths.get(uploadDir, "proofs").toAbsolutePath().normalize();
         List<Path> savedFiles = new ArrayList<>();
         try {
@@ -158,7 +173,7 @@ public class PaymentProofService {
                 savedFiles.add(target);
 
                 PaymentProofFileDto meta = new PaymentProofFileDto();
-                meta.setPaymentProofId(proof.getPaymentProofId());
+                meta.setPaymentProofId(proofId);
                 meta.setSortNo(i + 1);
                 meta.setFilePath("proofs/" + storedName);
                 meta.setOriginName(originName(f));
@@ -176,13 +191,7 @@ public class PaymentProofService {
             deleteQuietly(savedFiles);
             throw e;
         }
-
-        // TODO: 모임장 알림(F35 NotificationService), AUDIT_LOG(PROOF_UPLOAD) — 공통 모듈 머지 후 연결
-        return proof.getPaymentProofId();
     }
-
-    // ---------- 내부 도우미 ----------
-
 
     private ResponseStatusException badRequest(String message) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
