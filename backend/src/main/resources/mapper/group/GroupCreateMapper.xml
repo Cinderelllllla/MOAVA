@@ -1,4 +1,3 @@
-
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper
   PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
@@ -65,7 +64,7 @@
             #{memberId},
             'ACTIVE'
         )
-        //모임 생성 시 Service에서 다음 두 메서드를 순서대로 호출
+        <!-- 암호화가 완료된 값만 전달받아 저장하는 구조 -->
     </insert>
 
 
@@ -96,7 +95,7 @@
             #{registeredBy},
             'CURRENT'
         )
-        //암호화가 완료된 값만 전달받아 저장하는 구조
+        <!-- 암호화가 완료된 값만 전달받아 저장하는 구조 -->
     </insert>
 
 
@@ -115,8 +114,8 @@
             'GROUP_CREATE',
             #{description}
         )
-        //감사 로그에는 모임 ID와 생성 회원 ID, 작업 종류 정도만 기록하고 
-            계좌번호나 암호화 키 등 민감정보는 기록 x
+        <!--감사 로그에는 모임 ID와 생성 회원 ID, 작업 종류 정도만 기록하고 
+            계좌번호나 암호화 키 등 민감정보는 기록 x-->
     </insert>
 
 
@@ -126,7 +125,7 @@
         WHERE MEMBER_ID = #{memberId}
         AND STATUS = 'ACTIVE'
         AND BANNED_YN = 'N'
-        //회원 이름을 조회하는 기능
+        <!--회원 이름을 조회하는 기능-->
     </select>
 
 

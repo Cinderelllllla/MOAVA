@@ -9,10 +9,6 @@ import java.math.BigDecimal;
 @Mapper
 public interface GroupCreateMapper {
 
-    int countActiveMember(
-        @Param("memberId") Long memberId
-    );
-
     int insertOwnerMember(
     @Param("groupId") Long groupId,
     @Param("memberId") Long memberId
