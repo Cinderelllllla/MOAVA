@@ -10,6 +10,7 @@ class Subject(BaseModel):
     """평가 대상. persona_id(데이터셋 가상 인물 ID) 또는 features(신용 지표) 중 정확히 하나."""
     model_config = ConfigDict(extra="forbid")
 
+    member_id: Optional[int] = Field(None, ge=1, description="서비스 회원 번호. 가상 인물로 자동 연결된다.", examples=[37])
     persona_id: Optional[str] = Field(None, description="데이터셋 가상 인물 ID. 예: SYN000000001", examples=["SYN000000001"])
     features: Optional[dict[str, float]] = Field(
         None, description="신용 지표 {컬럼명: 값}. 빠진 지표는 결측으로 처리된다. 컬럼명은 GET /risk/model 참고.",
@@ -17,8 +18,9 @@ class Subject(BaseModel):
 
     @model_validator(mode="after")
     def _exactly_one(self):
-        if (self.persona_id is None) == (self.features is None):
-            raise ValueError("persona_id 와 features 중 정확히 하나만 보내야 합니다.")
+        given = [v for v in (self.member_id, self.persona_id, self.features) if v is not None]
+        if len(given) != 1:
+            raise ValueError("member_id, persona_id, features 중 정확히 하나만 보내야 합니다.")
         if self.features is not None:
             if not self.features:
                 raise ValueError("features 가 비어 있습니다.")
@@ -37,20 +39,6 @@ class RiskResult(BaseModel):
     features_used: Optional[int] = Field(None, description="features 로 예측했을 때 모델이 인식한 지표 수")
 
 
-class PredictBatchRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    persona_ids: list[str] = Field(min_length=1, max_length=1000)
-
-
-class PredictBatchItem(RiskResult):
-    persona_id: str
-
-
-class PredictBatchResponse(BaseModel):
-    results: list[PredictBatchItem]
-    not_found: list[str] = Field(description="점수 테이블에 없는 ID")
-
-
 class ContributionRequest(Subject):
     monthly_income: int = Field(ge=0, description="월소득(원)")
     monthly_expense: int = Field(ge=0, description="월 지출(원). 고정지출 + 변동지출 합계")
@@ -67,25 +55,22 @@ class ContributionResponse(BaseModel):
     risk: RiskResult
 
 
-class Member(Subject):
-    member_id: str = Field(min_length=1, description="서비스 회원 식별자(응답에 그대로 돌려줌)")
-
-
 class PayoutOrderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    members: list[Member] = Field(min_length=2, max_length=100)
+    member_ids: list[int] = Field(min_length=2, max_length=100, description="모임원 회원 번호 목록")
 
     @model_validator(mode="after")
-    def _unique(self):
-        ids = [m.member_id for m in self.members]
-        if len(ids) != len(set(ids)):
-            raise ValueError("member_id 가 중복됩니다.")
+    def _check(self):
+        if any(m < 1 for m in self.member_ids):
+            raise ValueError("member_ids 는 1 이상이어야 합니다.")
+        if len(self.member_ids) != len(set(self.member_ids)):
+            raise ValueError("member_ids 가 중복됩니다.")
         return self
 
 
 class PayoutOrderItem(BaseModel):
     order: int = Field(description="추천 수령 회차 (1부터)")
-    member_id: str
+    member_id: int
     risk: RiskResult
 
 
