@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.notification.common.mapper.NotificationMapper">
+
+    <!-- 회원 1명 -->
+    <insert id="insertForMember" parameterType="com.moava.notification.common.dto.NotificationInsert">
+        <selectKey keyProperty="notificationId" resultType="long" order="BEFORE">
+            SELECT SEQ_NOTIFICATION.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO NOTIFICATION
+            (NOTIFICATION_ID, MEMBER_ID, ADMIN_ID, NOTIF_TYPE, TITLE, BODY, LINK_PAGE, REF_ID)
+        VALUES
+            (#{notificationId}, #{memberId}, NULL, #{notifType}, #{title}, #{body},
+             #{linkPage, jdbcType=VARCHAR}, #{refId, jdbcType=NUMERIC})
+    </insert>
+
+    <!-- 모임 ACTIVE 회원 전원 (행위자 등 제외) : 한 번의 INSERT ... SELECT -->
+    <insert id="insertForGroup">
+        INSERT INTO NOTIFICATION
+            (NOTIFICATION_ID, MEMBER_ID, ADMIN_ID, NOTIF_TYPE, TITLE, BODY, LINK_PAGE, REF_ID)
+        SELECT SEQ_NOTIFICATION.NEXTVAL, gm.MEMBER_ID, NULL,
+               #{row.notifType}, #{row.title}, #{row.body},
+               #{row.linkPage, jdbcType=VARCHAR}, #{row.refId, jdbcType=NUMERIC}
+          FROM GYE_MEMBER gm
+         WHERE gm.GROUP_ID = #{groupId}
+           AND gm.STATUS = 'ACTIVE'
+        <if test="exclude != null and !exclude.isEmpty()">
+           AND gm.MEMBER_ID NOT IN
+            <foreach collection="exclude" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+    </insert>
+
+    <!-- ACTIVE 관리자 전원 : MEMBER_ID는 NULL (CK_NOTIFICATION_RECEIVER) -->
+    <insert id="insertForAdmins">
+        INSERT INTO NOTIFICATION
+            (NOTIFICATION_ID, MEMBER_ID, ADMIN_ID, NOTIF_TYPE, TITLE, BODY, LINK_PAGE, REF_ID)
+        SELECT SEQ_NOTIFICATION.NEXTVAL, NULL, a.ADMIN_ID,
+               #{row.notifType}, #{row.title}, #{row.body},
+               #{row.linkPage, jdbcType=VARCHAR}, #{row.refId, jdbcType=NUMERIC}
+          FROM ADMIN a
+         WHERE a.STATUS = 'ACTIVE'
+    </insert>
+
+</mapper>
