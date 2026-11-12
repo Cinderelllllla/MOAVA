@@ -1,22 +1,27 @@
 package com.moava.proofs.controller;
 
-
+import com.moava.common.response.ApiResponse;
 import com.moava.proofs.dto.PaymentProofCreateRequest;
-import com.moava.proofs.service.PaymentProofService;
-import lombok.RequiredArgsConstructor;
 import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
+import com.moava.proofs.service.PaymentProofService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
+/**
+ * F22·F23 납입 증빙 API. 응답은 API 명세서 v0.5 §2 공통 형식(ApiResponse)
+ * 성공: {"data": ..., "meta": {"requestId": "..."}} / 실패: {"error": {"code", "message"}, "requestId"}
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/groups/{groupId}/payment-proofs")   // 화면 경로 S12 /groups/{id}/proofs 기준
@@ -30,7 +35,7 @@ public class PaymentProofController {
      * - 파일: files (1~5개)
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<Map<String, Long>> register(
+    public ResponseEntity<ApiResponse<Map<String, Object>>> register(
             @PathVariable Long groupId,
             @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
             @ModelAttribute PaymentProofCreateRequest req,
@@ -38,14 +43,19 @@ public class PaymentProofController {
 
         req.setGroupId(groupId);   // 모임 ID는 URL 값을 기준으로 (요청 본문 값 무시)
         Long id = paymentProofService.registerProof(memberId, req, files);
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("paymentProofId", id));
+        Map<String, Object> data = Map.of(
+                "proofId", id,
+                "status", "PENDING",
+                "fileCount", files.size());
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(data, requestId()));
     }
 
+    /** F22-01 증빙 목록 (모임장: 모임 전체 / 회원: 본인 것만) */
     @GetMapping
-    public ResponseEntity<List<PaymentProofListDto>> getProofList(
+    public ApiResponse<List<PaymentProofListDto>> getProofList(
             @PathVariable Long groupId,
-            @RequestHeader("X-Member-Id") Long memberId) {   // JWT 연동 전 임시 헤더
-        return ResponseEntity.ok(paymentProofService.getProofList(groupId, memberId));
+            @RequestHeader("X-Member-Id") Long memberId) {   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
+        return ApiResponse.ok(paymentProofService.getProofList(groupId, memberId), requestId());
     }
 
     /**
@@ -53,14 +63,15 @@ public class PaymentProofController {
      * - 요청 본문(JSON): {"decision": "CONFIRMED" | "REVISION", "reviewMemo": "사유"}
      */
     @PatchMapping("/{proofId}/review")
-    public ResponseEntity<Map<String, Object>> reviewProof(
+    public ApiResponse<Map<String, Object>> reviewProof(
             @PathVariable Long groupId,
             @PathVariable Long proofId,
             @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
             @RequestBody PaymentProofReviewRequest req) {
 
         String status = paymentProofService.reviewProof(memberId, groupId, proofId, req);
-        return ResponseEntity.ok(Map.of("proofId", proofId, "status", status));
+        Map<String, Object> data = Map.of("proofId", proofId, "status", status);
+        return ApiResponse.ok(data, requestId());
     }
 
     /**
@@ -69,7 +80,7 @@ public class PaymentProofController {
      * - 파일: files (1~5개, 전체 교체)
      */
     @PutMapping(value = "/{proofId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<Map<String, Object>> resubmitProof(
+    public ApiResponse<Map<String, Object>> resubmitProof(
             @PathVariable Long groupId,
             @PathVariable Long proofId,
             @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
@@ -77,10 +88,31 @@ public class PaymentProofController {
             @RequestPart("files") List<MultipartFile> files) {
 
         int resubmitCount = paymentProofService.resubmitProof(memberId, groupId, proofId, req, files);
-        return ResponseEntity.ok(Map.of(
+        Map<String, Object> data = Map.of(
                 "proofId", proofId,
                 "status", "PENDING",
-                "resubmitCount", resubmitCount));
+                "resubmitCount", resubmitCount);
+        return ApiResponse.ok(data, requestId());
     }
 
+    // ---------- 오류 응답 (이 컨트롤러에서 난 예외만 처리 — 다른 기능에는 영향 없음) ----------
+
+    /** Service의 ResponseStatusException → 명세 §2 오류 형식 */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiResponse.Error> handle(ResponseStatusException e) {
+        String code = switch (e.getStatusCode().value()) {
+            case 400 -> "INVALID_REQUEST";
+            case 403 -> "FORBIDDEN";
+            case 404 -> "NOT_FOUND";
+            case 409 -> "INVALID_STATE";
+            default  -> "INTERNAL_ERROR";
+        };
+        String message = e.getReason() != null ? e.getReason() : "요청을 처리할 수 없습니다.";
+        return ResponseEntity.status(e.getStatusCode())
+                .body(ApiResponse.Error.of(code, message, requestId()));
+    }
+
+    private static String requestId() {
+        return "req-" + UUID.randomUUID().toString().substring(0, 8);
+    }
 }
