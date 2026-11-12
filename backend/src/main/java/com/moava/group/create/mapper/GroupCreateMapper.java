@@ -9,6 +9,10 @@ import java.math.BigDecimal;
 @Mapper
 public interface GroupCreateMapper {
 
+    int countActiveMember(
+        @Param("memberId") Long memberId
+    );
+
     int insertOwnerMember(
     @Param("groupId") Long groupId,
     @Param("memberId") Long memberId
@@ -54,12 +58,6 @@ public interface GroupCreateMapper {
         @Param("actorMemberId") Long actorMemberId,
         @Param("description") String description
 );
-
-
-    String findActiveMemberName(
-        @Param("memberId") Long memberId
-    ); //회원 이름을 조회하는 기능
-
 
 
 }
