@@ -139,10 +139,11 @@ public class PaymentProofService {
             if (f.isEmpty() || f.getSize() > MAX_FILE_SIZE) {
                 throw badRequest("파일은 1MB 이하만 등록할 수 있습니다.");
             }
-            if (!ALLOWED_MIME.containsKey(f.getContentType())) {
+            String type = f.getContentType();
+            if (type == null || !ALLOWED_MIME.containsKey(type)) {   // Map.of는 containsKey(null)에서 NPE → null 먼저 검사
                 throw badRequest("JPG, PNG, WebP, PDF 파일만 등록할 수 있습니다.");
             }
-            if (!hasValidSignature(f, f.getContentType())) {
+            if (!hasValidSignature(f, type)) {
                 throw badRequest("파일 내용이 선택한 형식과 일치하지 않습니다.");
             }
         }
