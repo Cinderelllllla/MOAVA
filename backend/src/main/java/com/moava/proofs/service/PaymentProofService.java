@@ -361,7 +361,11 @@ public class PaymentProofService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 처리된 증빙입니다.");
         }
 
-        // TODO F23: 승인 시 같은 모임·회원·귀속 월 OVERDUE_CASE → RESOLVED (F26 미납 감지와 함께 구현)
+        // 7. 승인 시 같은 회원·귀속 월 미납 건 해소 (F23-2, F26 연계) — 미납 건이 없으면 0행이라 결과 확인 안 함
+        if ("CONFIRMED".equals(decision)) {
+            paymentProofMapper.resolveOverdueCase(groupId, proof.getMemberId(), proof.getPayMonth());
+        }
+
         // TODO F23: 회원 알림(NOTIFICATION), 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION)
 
         return decision;

@@ -144,4 +144,15 @@
         AND STATUS = 'REVISION'
     </update>
 
+    <!-- F23: 승인 시 미납 해소. 이미 RESOLVED인 건은 건드리지 않음 (최초 해소 시각 유지) -->
+    <update id="resolveOverdueCase">
+        UPDATE OVERDUE_CASE
+        SET STATUS      = 'RESOLVED',
+        RESOLVED_AT = SYSDATE
+        WHERE GROUP_ID  = #{groupId}
+        AND MEMBER_ID = #{memberId}
+        AND PAY_MONTH = #{payMonth}
+        AND STATUS   != 'RESOLVED'
+    </update>
+
 </mapper>
