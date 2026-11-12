@@ -71,10 +71,7 @@ public class PaymentProofService {
         }
 
         // 2. 모임 존재 + 해산 완료 모임 차단
-        ProofGroupDto group = paymentProofMapper.findGroupForProof(req.getGroupId());
-        if (group == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
-        }
+        ProofGroupDto group = getGroupOrThrow(req.getGroupId());
         if ("DISSOLVED".equals(group.getStatus())) {
             throw badRequest("해산된 모임에는 증빙을 등록할 수 없습니다.");
         }
@@ -202,6 +199,25 @@ public class PaymentProofService {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
 
+
+    // 모임 조회 — 없으면 404 (등록·목록·심사 공통)
+    private ProofGroupDto getGroupOrThrow(Long groupId) {
+        ProofGroupDto group = paymentProofMapper.findGroupForProof(groupId);
+        if (group == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        return group;
+    }
+
+    // 증빙 조회 (경로의 groupId 소속인 것만) — 없으면 404 (심사·재제출 공통)
+    private PaymentProofDto getProofOrThrow(Long groupId, Long proofId) {
+        PaymentProofDto proof = paymentProofMapper.findProofForReview(groupId, proofId);
+        if (proof == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
+        }
+        return proof;
+    }
+
     private String sha256(MultipartFile f) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -250,10 +266,7 @@ public class PaymentProofService {
     @Transactional(readOnly = true)
     public List<PaymentProofListDto> getProofList(Long groupId, Long memberId) {
         // 1. 모임 존재 확인 (등록 때 만든 findGroupForProof 재사용)
-        ProofGroupDto group = paymentProofMapper.findGroupForProof(groupId);
-        if (group == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
-        }
+        ProofGroupDto group = getGroupOrThrow(groupId);
 
         // 2. 권한: 모임장이면 전체, ACTIVE 구성원이면 본인 것만
         boolean isOwner = memberId.equals(group.getOwnerId());
@@ -288,19 +301,13 @@ public class PaymentProofService {
         }
 
         // 2. 모임 존재 + 모임장 확인 (REQ-SEC-04 서버 재검증)
-        ProofGroupDto group = paymentProofMapper.findGroupForProof(groupId);
-        if (group == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
-        }
+        ProofGroupDto group = getGroupOrThrow(groupId);
         if (!group.getOwnerId().equals(memberId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 모임장만 승인할 수 있어요.");
         }
 
         // 3. 증빙 존재 (이 모임의 증빙인지까지 확인)
-        PaymentProofDto proof = paymentProofMapper.findProofForReview(groupId, proofId);
-        if (proof == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
-        }
+        PaymentProofDto proof = getProofOrThrow(groupId, proofId);
 
         // 4. 확인 대기(PENDING) 상태만 심사 가능
         if (!"PENDING".equals(proof.getStatus())) {
@@ -347,10 +354,7 @@ public class PaymentProofService {
         }
 
         // 2. 증빙 존재 (이 모임의 증빙인지까지 확인)
-        PaymentProofDto proof = paymentProofMapper.findProofForReview(groupId, proofId);
-        if (proof == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
-        }
+        PaymentProofDto proof = getProofOrThrow(groupId, proofId);
 
         // 3. 작성자 본인만
         if (!memberId.equals(proof.getMemberId())) {
