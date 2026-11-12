@@ -24,6 +24,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -343,15 +344,14 @@ public class PaymentProofService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "확인 대기 중인 증빙만 심사할 수 있습니다.");
         }
 
-        // 5. 보완 요청이면 사유 필수, 승인이면 사유 저장 안 함
         String memo = null;
         if ("REVISION".equals(decision)) {
             if (req.getReviewMemo() == null || req.getReviewMemo().isBlank()) {
                 throw badRequest("보완 사유를 입력해 주세요.");
             }
-            memo = req.getReviewMemo().trim();
-            if (memo.length() > 500) {   // DDL REVIEW_MEMO VARCHAR2(500)
-                throw badRequest("보완 사유는 500자 이하로 입력해 주세요.");
+            memo = req.getReviewMemo().trim();                          // ← 이 줄 다시 추가
+            if (memo.getBytes(StandardCharsets.UTF_8).length > 500) {   // VARCHAR2(500) = 500바이트, 한글 1자 = 3바이트
+                throw badRequest("보완 사유는 한글 기준 약 160자까지 입력할 수 있습니다.");
             }
         }
 
