@@ -376,16 +376,10 @@ public class PaymentProofService {
     @Transactional
     public int resubmitProof(Long memberId, Long groupId, Long proofId,
                              PaymentProofResubmitRequest req, List<MultipartFile> files) {
-
         // 1. 필수값
         if (memberId == null || req == null || req.getPayDate() == null) {
             throw badRequest("필수 입력값이 누락되었습니다.");
         }
-
-        // 1. 필수값
-        if (memberId == null || req == null || req.getPayDate() == null) {
-            throw badRequest("필수 입력값이 누락되었습니다.");
-        }                                                         // ← 이 } 다음에
 
         // 1-2. 모임 존재 + 해산 완료 모임 차단 + ACTIVE 구성원만 (등록과 같은 기준, REQ-SEC-04)
         ProofGroupDto group = getGroupOrThrow(groupId);
@@ -395,8 +389,6 @@ public class PaymentProofService {
         if (paymentProofMapper.countActiveMember(groupId, memberId) == 0) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "참여 회원만 증빙을 재제출할 수 있습니다.");
         }
-
-        // 2. 증빙 존재 (이 모임의 증빙인지까지 확인)
 
         // 2. 증빙 존재 (이 모임의 증빙인지까지 확인)
         PaymentProofDto proof = getProofOrThrow(groupId, proofId);
