@@ -27,27 +27,45 @@ uvicorn src.main:app --port 8000
 | GET | `/health` | 상태 확인 |
 | GET | `/risk/model` | 입력 지표 목록, 위험 구간, 안전계수 |
 | POST | `/risk/score` | 연체 확률 + 위험 배지 + 안전계수 |
-| POST | `/risk/score/batch` | 가상 인물 여러 명 한 번에 (최대 1,000명) |
 | POST | `/risk/contribution` | 추천 납입액 |
 | POST | `/risk/payout-order` | 곗돈 수령 순서 추천 |
 
-평가 대상은 두 방식 중 **하나**로 보냅니다. 같은 사람이면 결과가 같습니다.
+평가 대상은 세 방식 중 **하나**로 보냅니다. 백엔드는 `member_id` 만 쓰면 됩니다.
 
-- `persona_id`: 회원 가입 때 붙인 데이터셋 가상 인물 ID (`SYN000000001` 형식)
+- `member_id`: 서비스 회원 번호(숫자). 가상 인물로 자동 연결됩니다.
+- `persona_id`: 데이터셋 가상 인물 ID (`SYN000000001` 형식)
 - `features`: 신용 지표 `{컬럼명: 값}`. 빠진 지표는 결측으로 처리
 
 ```jsonc
+// POST /risk/score
+{ "member_id": 2 }
+// 응답
+{ "default_probability": 0.153545, "risk_level": "CAUTION", "risk_label": "주의",
+  "safety_factor": 0.35, "source": "persona", "features_used": null }
+
 // POST /risk/contribution   — 금액 단위는 "원" (프론트 화면은 만원 단위이므로 변환 필요)
-{ "persona_id": "SYN000000002", "monthly_income": 3200000, "monthly_expense": 2080000,
+{ "member_id": 2, "monthly_income": 3200000, "monthly_expense": 2080000,
   "monthly_saving": 350000, "emergency_fund": 250000 }
 // 응답
 { "available_amount": 520000, "recommended_amount": 150000, "capped": false,
-  "round_unit": 50000, "income_cap_ratio": 0.12,
-  "risk": { "default_probability": 0.218615, "risk_level": "CAUTION", "risk_label": "주의",
-            "safety_factor": 0.35, "source": "persona", "features_used": null } }
+  "round_unit": 50000, "income_cap_ratio": 0.12, "risk": { ... } }
+
+// POST /risk/payout-order   — 모임원 2~100명
+{ "member_ids": [1, 2, 3] }
+// 응답: 연체 확률이 높은 회원부터
+{ "order": [ { "order": 1, "member_id": 3, "risk": { ... } }, ... ], "rule": "..." }
 ```
 
-오류: 없는 `persona_id` 는 404, 형식이 잘못된 요청은 422.
+오류: 없는 `persona_id` 는 404, 형식이 잘못된 요청(필수값 누락, 음수 금액, 0 이하 회원 번호 등)은 422.
+
+### 회원과 가상 인물 연결
+
+DB 에 저장하지 않고 회원 번호로 정합니다.
+
+1. `models/demo_members.json` 에 있는 회원은 거기 적힌 가상 인물 (시연용 계정)
+2. 그 외 회원은 `SYN` + `(회원 번호 - 1) % 155746 + 1` (9자리, 0 채움). 예: 37번 → `SYN000000037`
+
+합성 데이터의 가상 인물을 회원에 배정한 시연용 구조이며, 회원의 실제 정보와는 무관합니다.
 
 ## 규칙
 
@@ -94,9 +112,9 @@ src/service/risk_service.py   모델 로딩, 예측·추천 로직
 src/common/config.py          위험 구간·안전계수 설정
 src/common/preprocess.py      데이터 로딩, 입력 지표 선택
 src/train.py                  학습 스크립트
-models/                       model.joblib, metrics.json, persona_scores.csv
+models/                       model.joblib, metrics.json, persona_scores.csv, demo_members.json
 data/                         학습용 CSV 를 두는 곳 (git 제외)
 ```
 
-`models/persona_scores.csv` 는 가상 인물 155,746명의 점수이며 Oracle 에 적재해도 됩니다.
-시연용 인물은 `split` 이 `test` 인 사람(모델이 학습 때 보지 않은 사람) 중에서 고르세요.
+`models/persona_scores.csv` 는 가상 인물 155,746명의 점수입니다.
+시연용 계정은 `models/demo_members.json` 에서 지정하며, `split` 이 `test` 인 사람(모델이 학습 때 보지 않은 사람) 중에서 고르세요.
