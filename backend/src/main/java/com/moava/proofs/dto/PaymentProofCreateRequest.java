@@ -1,11 +1,13 @@
 package com.moava.proofs.dto;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.time.LocalDate;
 
 // F22 증빙 등록 요청 값 (파일은 MultipartFile로 따로 받음)
-@Data
+@Getter
+@Setter
 public class PaymentProofCreateRequest {
     private Long groupId;
     private String payMonth;    // 귀속 월 'YYYYMM' (예: 202611)
