@@ -6,8 +6,7 @@ import java.math.BigDecimal;
 public record GroupCreateRequest(
     String title,
     String purpose,
-    String regionSido,
-    String regionSigungu,   //지역을 처음부터 시·도와 시·군·구로 나누어 전달하는 방식
+    String region,
     Long amount,
     Integer maxMembers,
     Integer months,
