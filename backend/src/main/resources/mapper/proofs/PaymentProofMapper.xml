@@ -95,7 +95,9 @@
             AND p.MEMBER_ID = #{memberId}
         </if>
         ORDER BY p.PAY_MONTH DESC, p.ROUND_NO DESC, p.PAYMENT_PROOF_ID DESC
-    </select>    <!-- F23: 심사할 증빙 1건 (다른 모임의 증빙 ID를 넣는 것을 막으려고 GROUP_ID도 같이 확인) -->
+    </select>
+
+    <!-- F23: 심사할 증빙 1건 (다른 모임의 증빙 ID를 넣는 것을 막으려고 GROUP_ID도 같이 확인) -->
 
     <select id="findProofForReview" resultType="com.moava.proofs.dto.PaymentProofDto">
         SELECT PAYMENT_PROOF_ID AS paymentProofId,
