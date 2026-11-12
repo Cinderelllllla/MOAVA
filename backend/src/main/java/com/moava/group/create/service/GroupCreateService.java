@@ -28,7 +28,8 @@ public class GroupCreateService {
 
     @Transactional
     //@Transactional이 핵심
-    // 모임, 모임장, 계좌, 감사 로그 저장을 하나의 트랜잭션으로 처리
+    //모임, 모임장, 계좌, 감사 로그 저장을 하나의 트랜잭션으로 처리 -> 오류 시 롤백
+   
     public GroupCreateResponse createGroup(
             GroupCreateRequest request,
             Long authenticatedMemberId

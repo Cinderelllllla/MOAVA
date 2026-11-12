@@ -35,7 +35,8 @@ public class GroupAccountCryptoImpl implements GroupAccountCrypto {
     ) {
         byte[] aesBytes = Base64.getDecoder().decode(aesKeyBase64);
         byte[] hmacBytes = Base64.getDecoder().decode(hmacKeyBase64);
-
+        //AES-256-GCM + HMAC-SHA256 
+        // 계좌번호를 안전하게 저장하고 식별하기 위한 암호화·해시 처리
         if (aesBytes.length != 32 || hmacBytes.length < 32) {
             throw new IllegalArgumentException(
                     "암호화 키와 HMAC 키는 각각 32바이트 이상이어야 합니다."
@@ -66,7 +67,7 @@ public class GroupAccountCryptoImpl implements GroupAccountCrypto {
             random.nextBytes(iv);
 
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            //AES-256-GCM: 예금주와 계좌번호 암호화
+            
 
             cipher.init(
                     Cipher.ENCRYPT_MODE,
