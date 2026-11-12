@@ -34,7 +34,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
 import com.moava.common.util.NameMasker;
+import com.moava.notification.common.domain.NotifType;
+import com.moava.notification.common.service.NotificationService;
 
 
 @Service
@@ -42,6 +45,7 @@ import com.moava.common.util.NameMasker;
 public class PaymentProofService {
 
     private final PaymentProofMapper paymentProofMapper;
+    private final NotificationService notificationService;
 
     @Value("${moava.upload.dir}")
     private String uploadDir;
@@ -56,6 +60,7 @@ public class PaymentProofService {
 
     /**
      * F22 납입 증빙 등록
+     *
      * @param memberId 로그인 회원 ID (JWT 연동 전까지는 Controller에서 임시로 받음)
      * @return 생성된 PAYMENT_PROOF_ID
      */
@@ -264,9 +269,13 @@ public class PaymentProofService {
 
     private void deleteQuietly(List<Path> paths) {
         for (Path p : paths) {
-            try { Files.deleteIfExists(p); } catch (IOException ignored) { }
+            try {
+                Files.deleteIfExists(p);
+            } catch (IOException ignored) {
+            }
         }
     }
+
     // 파일 앞부분(매직 넘버)으로 실제 형식 확인 — Content-Type 위조 차단 (REQ-SEC-02)
     private boolean hasValidSignature(MultipartFile f, String type) {
         byte[] head;
@@ -276,10 +285,10 @@ public class PaymentProofService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일 확인 중 오류가 발생했습니다.", e);
         }
         return switch (type) {
-            case "image/jpeg"      -> startsWith(head, 0, 0xFF, 0xD8, 0xFF);
-            case "image/png"       -> startsWith(head, 0, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+            case "image/jpeg" -> startsWith(head, 0, 0xFF, 0xD8, 0xFF);
+            case "image/png" -> startsWith(head, 0, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
             case "application/pdf" -> startsWith(head, 0, 0x25, 0x50, 0x44, 0x46);              // "%PDF"
-            case "image/webp"      -> startsWith(head, 0, 0x52, 0x49, 0x46, 0x46)                // "RIFF"
+            case "image/webp" -> startsWith(head, 0, 0x52, 0x49, 0x46, 0x46)                // "RIFF"
                     && startsWith(head, 8, 0x57, 0x45, 0x42, 0x50);              // "WEBP"
             default -> false;
         };
@@ -293,6 +302,7 @@ public class PaymentProofService {
         }
         return true;
     }
+
     @Transactional(readOnly = true)
     public List<PaymentProofListDto> getProofList(Long groupId, Long memberId) {
         // 1. 모임 존재 확인 (등록 때 만든 findGroupForProof 재사용)
@@ -318,6 +328,7 @@ public class PaymentProofService {
 
     /**
      * F23 증빙 승인·보완 요청 (모임장)
+     *
      * @param memberId 로그인 회원 ID (JWT 연동 전까지는 Controller에서 임시로 받음)
      * @return 변경된 상태 (CONFIRMED / REVISION)
      */
@@ -366,7 +377,16 @@ public class PaymentProofService {
             paymentProofMapper.resolveOverdueCase(groupId, proof.getMemberId(), proof.getPayMonth());
         }
 
-        // TODO F23: 회원 알림(NOTIFICATION), 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION)
+        // 8. 보완 요청이면 작성 회원에게 알림 (승인 알림 코드는 아직 없음 — 알림 담당 확인 중)
+        if ("REVISION".equals(decision)) {
+            notificationService.notifyMember(proof.getMemberId(), NotifType.PROOF_REVISION, proofId,
+                    Map.of("group", group.getTitle(),
+                            "round", proof.getRoundNo(),
+                            "reason", memo,
+                            "groupId", groupId));
+        }
+
+        // TODO F23: 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION)
 
         return decision;
     }
@@ -375,6 +395,7 @@ public class PaymentProofService {
      * F22-05 보완 재제출 (증빙 작성자)
      * - REVISION 상태만 가능. 귀속 월·회차·금액은 기존 값 유지, 납입일·파일만 교체
      * - 본인 증빙의 기존 파일은 다시 첨부 가능 (다른 증빙 파일 재사용은 계속 차단)
+     *
      * @return 재제출 후 누적 횟수
      */
     @Transactional
@@ -434,7 +455,6 @@ public class PaymentProofService {
         // TODO: 모임장 알림(F35), AUDIT_LOG(PROOF_RESUBMIT) — 공통 모듈 머지 후 연결
         return proof.getResubmitCount() + 1;
     }
-
 
 
 }

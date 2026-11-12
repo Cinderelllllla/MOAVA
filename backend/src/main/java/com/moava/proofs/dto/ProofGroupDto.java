@@ -9,6 +9,7 @@ import lombok.Setter;
 public class ProofGroupDto {
     private Long groupId;
     private Long ownerId;     // 모임장 (F23 승인 권한 확인에도 사용)
+    private String title;     // 모임명 (알림 문구용)
     private Long amount;      // 월 약정 납입액 (원)
     private Integer months;   // 운영 기간 → 회차 최대값
     private String status;    // RECRUITING / ACTIVE / DISSOLVE_PENDING / DISSOLVED

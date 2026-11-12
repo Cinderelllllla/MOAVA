@@ -7,7 +7,7 @@
 
     <!-- 모임 기본 정보 -->
     <select id="findGroupForProof" resultType="com.moava.proofs.dto.ProofGroupDto">
-        SELECT GROUP_ID, OWNER_ID, AMOUNT, MONTHS, STATUS
+        SELECT GROUP_ID, OWNER_ID, TITLE, AMOUNT, MONTHS, STATUS
         FROM GYE_GROUP
         WHERE GROUP_ID = #{groupId}
     </select>
