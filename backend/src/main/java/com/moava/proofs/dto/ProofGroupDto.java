@@ -1,9 +1,11 @@
 package com.moava.proofs.dto;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 // 증빙 등록 검증용으로 GYE_GROUP에서 필요한 값만 담는 DTO
-@Data
+@Getter
+@Setter
 public class ProofGroupDto {
     private Long groupId;
     private Long ownerId;     // 모임장 (F23 승인 권한 확인에도 사용)
