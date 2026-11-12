@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import com.moava.common.util.NameMasker;
 
 
 @Service
@@ -265,7 +266,7 @@ public class PaymentProofService {
         // 3. 타인 이름 마스킹 (F03-2)
         for (PaymentProofListDto p : list) {
             if (!memberId.equals(p.getMemberId())) {
-                p.setMemberName(maskName(p.getMemberName()));
+                p.setMemberName(NameMasker.mask(p.getMemberName()));
             }
         }
         return list;
@@ -394,13 +395,6 @@ public class PaymentProofService {
         return proof.getResubmitCount() + 1;
     }
 
-    // F03-2: 3자 이상 → 첫·끝 글자 빼고 ○, 2자 → 둘째 글자 ○, 1자 → 이름+○
-    private String maskName(String name) {
-        if (name == null || name.isEmpty()) return name;
-        int len = name.length();
-        if (len == 1) return name + "○";
-        if (len == 2) return name.charAt(0) + "○";
-        return name.charAt(0) + "○".repeat(len - 2) + name.charAt(len - 1);
-    }
+
 
 }
