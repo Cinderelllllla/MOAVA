@@ -1,0 +1,86 @@
+package com.moava.proofs.controller;
+
+
+import com.moava.proofs.dto.PaymentProofCreateRequest;
+import com.moava.proofs.service.PaymentProofService;
+import lombok.RequiredArgsConstructor;
+import com.moava.proofs.dto.PaymentProofListDto;
+import com.moava.proofs.dto.PaymentProofResubmitRequest;
+import com.moava.proofs.dto.PaymentProofReviewRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api/v1/groups/{groupId}/payment-proofs")   // 화면 경로 S12 /groups/{id}/proofs 기준
+public class PaymentProofController {
+
+    private final PaymentProofService paymentProofService;
+
+    /**
+     * F22 납입 증빙 등록 (multipart/form-data)
+     * - 폼 필드: payMonth, roundNo, amount, payDate
+     * - 파일: files (1~5개)
+     */
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Long>> register(
+            @PathVariable Long groupId,
+            @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
+            @ModelAttribute PaymentProofCreateRequest req,
+            @RequestPart("files") List<MultipartFile> files) {
+
+        req.setGroupId(groupId);   // 모임 ID는 URL 값을 기준으로 (요청 본문 값 무시)
+        Long id = paymentProofService.registerProof(memberId, req, files);
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("paymentProofId", id));
+    }
+
+    @GetMapping
+    public ResponseEntity<List<PaymentProofListDto>> getProofList(
+            @PathVariable Long groupId,
+            @RequestHeader("X-Member-Id") Long memberId) {   // JWT 연동 전 임시 헤더
+        return ResponseEntity.ok(paymentProofService.getProofList(groupId, memberId));
+    }
+
+    /**
+     * F23 증빙 승인·보완 요청 (모임장)
+     * - 요청 본문(JSON): {"decision": "CONFIRMED" | "REVISION", "reviewMemo": "사유"}
+     */
+    @PatchMapping("/{proofId}/review")
+    public ResponseEntity<Map<String, Object>> reviewProof(
+            @PathVariable Long groupId,
+            @PathVariable Long proofId,
+            @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
+            @RequestBody PaymentProofReviewRequest req) {
+
+        String status = paymentProofService.reviewProof(memberId, groupId, proofId, req);
+        return ResponseEntity.ok(Map.of("proofId", proofId, "status", status));
+    }
+
+    /**
+     * F22-05 보완 재제출 (multipart/form-data)
+     * - 폼 필드: payDate
+     * - 파일: files (1~5개, 전체 교체)
+     */
+    @PutMapping(value = "/{proofId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> resubmitProof(
+            @PathVariable Long groupId,
+            @PathVariable Long proofId,
+            @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
+            @ModelAttribute PaymentProofResubmitRequest req,
+            @RequestPart("files") List<MultipartFile> files) {
+
+        int resubmitCount = paymentProofService.resubmitProof(memberId, groupId, proofId, req, files);
+        return ResponseEntity.ok(Map.of(
+                "proofId", proofId,
+                "status", "PENDING",
+                "resubmitCount", resubmitCount));
+    }
+
+}

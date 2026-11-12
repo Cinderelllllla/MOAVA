@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- namespace = Mapper 인터페이스의 전체 경로 (정확히 일치해야 연결됨) -->
+<mapper namespace="com.moava.proofs.mapper.PaymentProofMapper">
+
+    <!-- 모임 기본 정보 -->
+    <select id="findGroupForProof" resultType="com.moava.proofs.dto.ProofGroupDto">
+        SELECT GROUP_ID, OWNER_ID, AMOUNT, MONTHS, STATUS
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+    </select>
+
+    <!-- ACTIVE 구성원 여부 -->
+    <select id="countActiveMember" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_MEMBER
+        WHERE GROUP_ID  = #{groupId}
+        AND MEMBER_ID = #{memberId}
+        AND STATUS    = 'ACTIVE'
+    </select>
+
+    <!-- 중복 제출: 상태와 무관하게 1건이라도 있으면 중복 (REVISION은 같은 행 재제출) -->
+    <select id="countDuplicateProof" resultType="int">
+        SELECT COUNT(*)
+        FROM PAYMENT_PROOF
+        WHERE GROUP_ID  = #{groupId}
+        AND MEMBER_ID = #{memberId}
+        AND PAY_MONTH = #{payMonth}
+        AND ROUND_NO  = #{roundNo}
+    </select>
+
+    <!-- 파일 해시 재사용 (재제출이면 본인 증빙의 기존 파일은 제외) -->
+    <select id="countFileHash" resultType="int">
+        SELECT COUNT(*)
+        FROM PAYMENT_PROOF_FILE
+        WHERE FILE_HASH = #{fileHash}
+        <if test="excludeProofId != null">
+            AND PAYMENT_PROOF_ID != #{excludeProofId}
+        </if>
+    </select>
+
+    <!-- 증빙 저장: INSERT 전에 시퀀스로 PK를 받아 dto.paymentProofId에 넣음 -->
+    <insert id="insertProof" parameterType="com.moava.proofs.dto.PaymentProofDto">
+        <selectKey keyProperty="paymentProofId" resultType="long" order="BEFORE">
+            SELECT SEQ_PAYMENT_PROOF.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO PAYMENT_PROOF (
+        PAYMENT_PROOF_ID, GROUP_ID, MEMBER_ID, PAY_MONTH, ROUND_NO,
+        AMOUNT, PAY_DATE, STATUS
+        ) VALUES (
+        #{paymentProofId}, #{groupId}, #{memberId}, #{payMonth}, #{roundNo},
+        #{amount}, #{payDate}, 'PENDING'
+        )
+    </insert>
+
+    <!-- 증빙 파일 메타 저장 -->
+    <insert id="insertProofFile" parameterType="com.moava.proofs.dto.PaymentProofFileDto">
+        <selectKey keyProperty="fileId" resultType="long" order="BEFORE">
+            SELECT SEQ_PAYMENT_PROOF_FILE.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO PAYMENT_PROOF_FILE (
+        FILE_ID, PAYMENT_PROOF_ID, SORT_NO, FILE_PATH, ORIGIN_NAME,
+        MIME_TYPE, FILE_SIZE, FILE_HASH, ENCRYPTED_YN, KEY_VER
+        ) VALUES (
+        #{fileId}, #{paymentProofId}, #{sortNo}, #{filePath}, #{originName},
+        #{mimeType}, #{fileSize}, #{fileHash}, #{encryptedYn}, #{keyVer}
+        )
+    </insert>
+
+    <select id="findProofList" resultType="com.moava.proofs.dto.PaymentProofListDto">
+        SELECT p.PAYMENT_PROOF_ID AS paymentProofId,
+        p.GROUP_ID         AS groupId,
+        g.TITLE            AS groupTitle,
+        p.MEMBER_ID        AS memberId,
+        m.NAME             AS memberName,
+        p.PAY_MONTH        AS payMonth,
+        p.ROUND_NO         AS roundNo,
+        p.AMOUNT           AS amount,
+        p.PAY_DATE         AS payDate,
+        p.STATUS           AS status,
+        p.REF_NO           AS refNo,
+        p.REVIEW_MEMO      AS reviewMemo,
+        p.RESUBMIT_COUNT   AS resubmitCount,
+        p.CREATED_AT       AS createdAt,
+        (SELECT COUNT(*)
+        FROM PAYMENT_PROOF_FILE f
+        WHERE f.PAYMENT_PROOF_ID = p.PAYMENT_PROOF_ID) AS fileCount
+        FROM PAYMENT_PROOF p
+        JOIN GYE_GROUP g ON g.GROUP_ID = p.GROUP_ID
+        JOIN MEMBER m    ON m.MEMBER_ID = p.MEMBER_ID
+        WHERE p.GROUP_ID = #{groupId}
+        <if test="memberId != null">
+            AND p.MEMBER_ID = #{memberId}
+        </if>
+        ORDER BY p.PAY_MONTH DESC, p.ROUND_NO DESC, p.PAYMENT_PROOF_ID DESC
+    </select>    <!-- F23: 심사할 증빙 1건 (다른 모임의 증빙 ID를 넣는 것을 막으려고 GROUP_ID도 같이 확인) -->
+
+    <select id="findProofForReview" resultType="com.moava.proofs.dto.PaymentProofDto">
+        SELECT PAYMENT_PROOF_ID AS paymentProofId,
+        GROUP_ID         AS groupId,
+        MEMBER_ID        AS memberId,
+        PAY_MONTH        AS payMonth,
+        ROUND_NO         AS roundNo,
+        RESUBMIT_COUNT   AS resubmitCount,
+        STATUS           AS status
+        FROM PAYMENT_PROOF
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+        AND GROUP_ID = #{groupId}
+    </select>
+
+    <!-- F23: 심사 결과 반영. STATUS = 'PENDING' 조건으로 두 번 처리되는 것을 막음 -->
+    <update id="updateProofReview">
+        UPDATE PAYMENT_PROOF
+        SET STATUS      = #{status},
+        REVIEWED_BY = #{reviewedBy},
+        REVIEWED_AT = SYSDATE,
+        REVIEW_MEMO = #{reviewMemo, jdbcType=VARCHAR}
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+        AND STATUS = 'PENDING'
+    </update>
+
+    <!-- F22-05: 기존 파일 경로 (디스크에서 지울 때 사용) -->
+    <select id="findProofFilePaths" resultType="string">
+        SELECT FILE_PATH
+        FROM PAYMENT_PROOF_FILE
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+    </select>
+
+    <!-- F22-05: 기존 파일 메타 전체 삭제 -->
+    <delete id="deleteProofFiles">
+        DELETE FROM PAYMENT_PROOF_FILE
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+    </delete>
+
+    <!-- F22-05: 재제출. REVIEW_MEMO는 보완 사유 기록으로 유지 -->
+    <update id="updateProofResubmit">
+        UPDATE PAYMENT_PROOF
+        SET STATUS         = 'PENDING',
+        PAY_DATE       = #{payDate},
+        RESUBMIT_COUNT = RESUBMIT_COUNT + 1
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+        AND STATUS = 'REVISION'
+    </update>
+
+</mapper>
