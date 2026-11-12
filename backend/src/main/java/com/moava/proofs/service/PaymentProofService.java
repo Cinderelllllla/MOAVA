@@ -186,7 +186,9 @@ public class PaymentProofService {
                 meta.setKeyVer(1);
                 paymentProofMapper.insertProofFile(meta);
             }
-        } catch (IOException e) {
+            // 여기까지 성공해도 이후 DB 작업·커밋이 실패해 롤백되면 새로 쓴 파일을 지움
+            afterRollback(() -> deleteQuietly(savedFiles));
+        } catch (IOException e) {                          // ← 기존 189번째 줄
             deleteQuietly(savedFiles);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일 저장 중 오류가 발생했습니다.", e);
         } catch (RuntimeException e) {
@@ -216,6 +218,33 @@ public class PaymentProofService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
         }
         return proof;
+    }
+
+
+    // 트랜잭션이 커밋된 뒤에만 실행. 트랜잭션 밖이면 실행하지 않음 (파일은 지우는 것보다 남기는 쪽이 안전)
+    private void afterCommit(Runnable task) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    task.run();
+                }
+            });
+        }
+    }
+
+    // 트랜잭션이 롤백되면 실행 (커밋 실패 포함). 커밋 결과를 알 수 없는 경우(UNKNOWN)는 실행하지 않음
+    private void afterRollback(Runnable task) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                        task.run();
+                    }
+                }
+            });
+        }
     }
 
     private String sha256(MultipartFile f) {
@@ -379,22 +408,16 @@ public class PaymentProofService {
         paymentProofMapper.deleteProofFiles(proofId);
         saveFiles(proofId, files, hashes);
 
-        // 8. 기존 디스크 파일 삭제 (DB 작업이 모두 끝난 뒤)
+        // 8. 기존 디스크 파일 삭제 — DB 커밋이 성공한 뒤에만 (업로드 폴더 밖 경로는 건너뜀)
         Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
         List<Path> oldFiles = new ArrayList<>();
         for (String p : oldPaths) {
-            oldFiles.add(base.resolve(p).normalize());
+            Path target = base.resolve(p).normalize();
+            if (target.startsWith(base)) {   // "../" 등으로 업로드 폴더를 벗어난 경로 차단
+                oldFiles.add(target);
+            }
         }
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    deleteQuietly(oldFiles);
-                }
-            });
-        } else {
-            deleteQuietly(oldFiles);
-        }
+        afterCommit(() -> deleteQuietly(oldFiles));
 
         // TODO: 모임장 알림(F35), AUDIT_LOG(PROOF_RESUBMIT) — 공통 모듈 머지 후 연결
         return proof.getResubmitCount() + 1;
