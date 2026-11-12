@@ -58,4 +58,9 @@ public interface PaymentProofMapper {
     // F22-05: REVISION → PENDING, 납입일 갱신, 재제출 횟수 +1 (REVISION일 때만 → 0이면 이미 처리됨)
     int updateProofResubmit(@Param("proofId") Long proofId,
                             @Param("payDate") java.time.LocalDate payDate);
+
+    // F23: 승인 시 같은 모임·회원·귀속 월 미납 건 해소 (해당 건이 없으면 0행, 정상)
+    int resolveOverdueCase(@Param("groupId") Long groupId,
+                           @Param("memberId") Long memberId,
+                           @Param("payMonth") String payMonth);
 }
