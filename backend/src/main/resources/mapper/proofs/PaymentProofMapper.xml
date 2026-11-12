@@ -155,4 +155,15 @@
         AND STATUS   != 'RESOLVED'
     </update>
 
+    <!-- 알림: 오늘 같은 모임 증빙으로 모임장에게 보낸 PROOF_PENDING 수 (REF_ID = 증빙 ID). 조회만 하고 저장은 NotificationService가 함 -->
+    <select id="countTodayProofPending" resultType="int">
+        SELECT COUNT(*)
+        FROM NOTIFICATION n
+        JOIN PAYMENT_PROOF p ON p.PAYMENT_PROOF_ID = n.REF_ID
+        WHERE n.MEMBER_ID  = #{ownerId}
+        AND n.NOTIF_TYPE = 'PROOF_PENDING'
+        AND p.GROUP_ID   = #{groupId}
+        AND n.CREATED_AT >= TRUNC(SYSDATE)
+    </select>
+
 </mapper>

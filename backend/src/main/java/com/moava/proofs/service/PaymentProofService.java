@@ -127,7 +127,10 @@ public class PaymentProofService {
         // 10. 파일 저장 + 메타 INSERT (재제출과 공통)
         saveFiles(proof.getPaymentProofId(), files, hashes);
 
-        // TODO: 모임장 알림(F35 NotificationService), AUDIT_LOG(PROOF_UPLOAD) — 공통 모듈 머지 후 연결
+        // 11. 모임장 알림 (같은 모임 하루 1건)
+        notifyLeaderProofPending(group, memberId, proof.getPaymentProofId());
+
+        // TODO: AUDIT_LOG(PROOF_UPLOAD) — 공통 모듈 머지 후 연결
         return proof.getPaymentProofId();
     }
 
@@ -251,6 +254,18 @@ public class PaymentProofService {
                 }
             });
         }
+    }
+
+    // 모임장에게 '확인할 증빙' 알림 — 같은 모임은 하루 1건, 모임장 본인 증빙이면 생략 (등록·재제출 공통)
+    private void notifyLeaderProofPending(ProofGroupDto group, Long submitterId, Long proofId) {
+        if (group.getOwnerId().equals(submitterId)) {
+            return;
+        }
+        if (paymentProofMapper.countTodayProofPending(group.getOwnerId(), group.getGroupId()) > 0) {
+            return;
+        }
+        notificationService.notifyMember(group.getOwnerId(), NotifType.PROOF_PENDING, proofId,
+                Map.of("group", group.getTitle(), "groupId", group.getGroupId()));
     }
 
     private String sha256(MultipartFile f) {
@@ -386,7 +401,7 @@ public class PaymentProofService {
                             "groupId", groupId));
         }
 
-        // TODO F23: 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION)
+        // TODO F23: 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION) — 승인 알림은 보내지 않음 (알림 README: 알림 축소 결정)
 
         return decision;
     }
@@ -452,7 +467,10 @@ public class PaymentProofService {
         }
         afterCommit(() -> deleteQuietly(oldFiles));
 
-        // TODO: 모임장 알림(F35), AUDIT_LOG(PROOF_RESUBMIT) — 공통 모듈 머지 후 연결
+        // 9. 모임장 알림 (같은 모임 하루 1건)
+        notifyLeaderProofPending(group, memberId, proofId);
+
+        // TODO: AUDIT_LOG(PROOF_RESUBMIT) — 공통 모듈 머지 후 연결
         return proof.getResubmitCount() + 1;
     }
 

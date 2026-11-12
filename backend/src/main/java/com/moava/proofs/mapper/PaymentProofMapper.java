@@ -59,8 +59,16 @@ public interface PaymentProofMapper {
     int updateProofResubmit(@Param("proofId") Long proofId,
                             @Param("payDate") java.time.LocalDate payDate);
 
-    // F23: 승인 시 같은 모임·회원·귀속 월 미납 건 해소 (해당 건이 없으면 0행, 정상)
+    // 알림: 오늘 이 모임 증빙으로 모임장에게 PROOF_PENDING을 보낸 건수 (같은 모임 하루 1건 규칙)
+    int countTodayProofPending(@Param("ownerId") Long ownerId,
+                               @Param("groupId") Long groupId);
+
+    // F23: 승인 시 같은 회원·귀속 월 미납 건 해소 (이미 RESOLVED인 건은 건드리지 않음)
     int resolveOverdueCase(@Param("groupId") Long groupId,
                            @Param("memberId") Long memberId,
                            @Param("payMonth") String payMonth);
+
+
+
+
 }
