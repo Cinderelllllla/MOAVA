@@ -59,10 +59,10 @@ public class GroupCreateService {
         mapper.insertGroup(
                 groupId,
                 authenticatedMemberId,
-                request.title().trim(),
+                request.title().strip(),
                 request.purpose(),
-                request.regionSido().trim(),
-                request.regionSigungu().trim(),
+                request.regionSido().strip(),
+                request.regionSigungu().strip(),
                 request.amount(),
                 request.maxMembers(),
                 request.months(),
@@ -70,9 +70,9 @@ public class GroupCreateService {
                 request.assumedRate(),
                 request.visibility(),
                 inviteCode,
-                request.rulesTitle().trim(),
-                request.rulesBody().trim(),
-                request.description().trim(),
+                request.rulesTitle().strip(),
+                request.rulesBody().strip(),
+                request.description().strip(),
                 request.overduePolicy()
         );
 
@@ -106,7 +106,7 @@ public class GroupCreateService {
         // 7. 모임 계좌 등록 (인증 대기)
         mapper.insertGroupAccount(
                 groupId,
-                request.bankName().trim(),
+                request.bankName().strip(),
                 holderNameEnc,
                 accountNoEnc,
                 accountNoLast4,
