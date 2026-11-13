@@ -12,9 +12,12 @@ public interface PayoutOrderMapper {
 
     Map<String, Object> selectGroupInfo(@Param("groupId") Long groupId);
 
+    int countActiveMember(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
+
     Map<String, Object> selectActiveRequestByMember(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
 
-    Map<String, Object> selectPayoutRequestById(@Param("payoutRequestId") Long payoutRequestId);
+    Map<String, Object> selectPayoutRequestById(@Param("groupId") Long groupId,
+                                                @Param("payoutRequestId") Long payoutRequestId);
 
     Integer selectAiSuggestedRound(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
 
@@ -31,7 +34,10 @@ public interface PayoutOrderMapper {
 
     void deleteConsentsByRequestId(@Param("payoutRequestId") Long payoutRequestId);
 
-    void updatePayoutRequestStatus(@Param("payoutRequestId") Long payoutRequestId, @Param("status") String status);
+    int updatePayoutRequestStatus(@Param("groupId") Long groupId,
+                                  @Param("payoutRequestId") Long payoutRequestId,
+                                  @Param("expectedStatus") String expectedStatus,
+                                  @Param("status") String status);
 
     List<Long> selectOtherActiveMemberIds(@Param("groupId") Long groupId, @Param("excludeMemberId") Long excludeMemberId);
 
@@ -39,7 +45,8 @@ public interface PayoutOrderMapper {
                               @Param("targetId") Long payoutRequestId,
                               @Param("memberId") Long memberId);
 
-    int updateMemberConsent(@Param("targetId") Long payoutRequestId,
+    int updateMemberConsent(@Param("groupId") Long groupId,
+                            @Param("targetId") Long payoutRequestId,
                             @Param("memberId") Long memberId,
                             @Param("agreedYn") String agreedYn);
 
@@ -69,5 +76,4 @@ public interface PayoutOrderMapper {
                         @Param("eventType") String eventType,
                         @Param("description") String description);
 
-    void updateMemberAssignedRound(Long groupId, Long applicantId, Integer roundNo);
 }
