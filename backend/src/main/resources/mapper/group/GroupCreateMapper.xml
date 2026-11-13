@@ -1,10 +1,18 @@
-
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper
   PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
   "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.moava.group.create.mapper.GroupCreateMapper">
+
+<!-- 모임 생성 가능한 회원의 이름 조회 -->
+<select id="findActiveMemberName" resultType="java.lang.String">
+    SELECT NAME
+    FROM MEMBER
+    WHERE MEMBER_ID = #{memberId}
+      AND STATUS = 'ACTIVE'
+      AND BANNED_YN = 'N'
+</select>
 
 <select id="nextGroupId" resultType="java.lang.Long">
     SELECT SEQ_GYE_GROUP.NEXTVAL FROM DUAL
@@ -65,7 +73,7 @@
             #{memberId},
             'ACTIVE'
         )
-        //모임 생성 시 Service에서 다음 두 메서드를 순서대로 호출
+        <!--모임 생성 시 Service에서 다음 두 메서드를 순서대로 호출-->
     </insert>
 
 
@@ -96,7 +104,7 @@
             #{registeredBy},
             'CURRENT'
         )
-        //암호화가 완료된 값만 전달받아 저장하는 구조
+        <!--암호화가 완료된 값만 전달받아 저장하는 구조-->
     </insert>
 
 
@@ -115,8 +123,8 @@
             'GROUP_CREATE',
             #{description}
         )
-        //감사 로그에는 모임 ID와 생성 회원 ID, 작업 종류 정도만 기록하고 
-            계좌번호나 암호화 키 등 민감정보는 기록 x
+        <!--감사 로그에는 모임 ID와 생성 회원 ID, 작업 종류 정도만 기록하고 
+            계좌번호나 암호화 키 등 민감정보는 기록 x-->
     </insert>
 
 
