@@ -148,14 +148,15 @@ public final class GroupCreateValidator {
         }
     }
 
-    // null 또는 공백 문자열 확인
-    private static boolean blank(String value) {
+        // null 또는 공백 문자열 확인
+        private static boolean blank(String value) {
         return value == null || value.isBlank();
-    }
+        }
 
-    // Oracle AL32UTF8의 BYTE 길이 제한 검사
-    private static boolean exceedsBytes(String value, int maxBytes) {
+        // Oracle AL32UTF8의 BYTE 길이 제한 검사
+        private static boolean exceedsBytes(String value, int maxBytes) {
         return value != null
-                && value.getBytes(StandardCharsets.UTF_8).length > maxBytes;
-    }
+                && value.strip()
+                        .getBytes(StandardCharsets.UTF_8).length > maxBytes;
+        }
 }
