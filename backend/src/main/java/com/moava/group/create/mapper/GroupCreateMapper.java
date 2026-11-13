@@ -13,6 +13,11 @@ public interface GroupCreateMapper {
         @Param("memberId") Long memberId
     );
 
+    // 활성 회원 이름 조회 (예금주명 암호화에 사용)
+    String findActiveMemberName(
+            @Param("memberId") Long memberId
+    );
+
     int insertOwnerMember(
     @Param("groupId") Long groupId,
     @Param("memberId") Long memberId
