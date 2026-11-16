@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.openbanking.mapper.OpenBankingMapper">
+
+    <!-- 1. 가상 은행 계좌 단건 조회 -->
+    <select id="selectMockAccountByBankAndNo" resultType="com.moava.openbanking.dto.OpenBankingDTO$MockAccountVO">
+        SELECT
+            MOCK_ACCOUNT_ID AS mockAccountId,
+            MEMBER_ID       AS memberId,
+            FINTECH_USE_NUM AS fintechUseNum,
+            BANK_CODE       AS bankCode,
+            BANK_NAME       AS bankName,
+            ACCOUNT_NO      AS accountNo,
+            HOLDER_NAME     AS holderName,
+            BALANCE_AMT     AS balanceAmt,
+            ACCOUNT_STATE   AS accountState
+        FROM MOCK_BANK_ACCOUNT
+        WHERE BANK_NAME = #{bankName}
+          AND ACCOUNT_NO = #{accountNo}
+          AND ACCOUNT_STATE = 'ACTIVE'
+    </select>
+
+    <!-- 2. CODEF 계좌 정보 적재 (MERGE INTO로 중복 시 업데이트) -->
+    <update id="upsertMockBankAccount">
+        MERGE INTO MOCK_BANK_ACCOUNT t
+        USING (
+            SELECT
+                #{bankName}   AS BANK_NAME,
+                #{accountNo}  AS ACCOUNT_NO
+            FROM DUAL
+        ) s
+        ON (t.BANK_NAME = s.BANK_NAME AND t.ACCOUNT_NO = s.ACCOUNT_NO)
+        WHEN MATCHED THEN
+            UPDATE SET
+                       t.MEMBER_ID   = NVL(#{memberId}, t.MEMBER_ID),
+                       t.HOLDER_NAME = #{holderName},
+                       t.BALANCE_AMT = #{balanceAmt},
+                       t.SOURCE_TYPE = #{sourceType},
+                       t.UPDATED_AT  = SYSDATE
+        WHEN NOT MATCHED THEN
+            INSERT (
+                MOCK_ACCOUNT_ID, MEMBER_ID, FINTECH_USE_NUM, BANK_CODE, BANK_NAME,
+                ACCOUNT_NO, HOLDER_NAME, BALANCE_AMT, SOURCE_TYPE, ACCOUNT_STATE, CREATED_AT, UPDATED_AT
+            ) VALUES (
+                         SEQ_MOCK_BANK_ACCOUNT.NEXTVAL, #{memberId}, #{fintechUseNum}, #{bankCode}, #{bankName},
+                         #{accountNo}, #{holderName}, #{balanceAmt}, #{sourceType}, 'ACTIVE', SYSDATE, SYSDATE
+                     )
+    </update>
+
+    <!-- 3. 토이 프로젝트용 잔액 직접 수정 -->
+    <update id="updateMockAccountBalanceDirect">
+        UPDATE MOCK_BANK_ACCOUNT
+        SET BALANCE_AMT = #{newBalanceAmt},
+            UPDATED_AT  = SYSDATE
+        WHERE BANK_NAME = #{bankName}
+          AND ACCOUNT_NO = #{accountNo}
+    </update>
+
+    <!-- 4. 계좌 잔액 증감 -->
+    <update id="addAccountBalance">
+        UPDATE MOCK_BANK_ACCOUNT
+        SET BALANCE_AMT = BALANCE_AMT + #{deltaAmount},
+            UPDATED_AT  = SYSDATE
+        WHERE FINTECH_USE_NUM = #{fintechUseNum}
+    </update>
+
+    <!-- 5. 가상 은행 입출금 거래내역 INSERT -->
+    <insert id="insertMockTransaction">
+        INSERT INTO MOCK_BANK_TRANSACTION (
+            TRAN_ID, BANK_TRAN_ID, FINTECH_USE_NUM, INOUT_TYPE,
+            TRAN_AMT, AFTER_BALANCE_AMT, COUNTERPARTY_NAME, COUNTERPARTY_ACCT,
+            PRINT_CONTENT, GROUP_ID, PAYMENT_PROOF_ID,
+            TRAN_DATE, TRAN_TIME, CREATED_AT
+        ) VALUES (
+                     SEQ_MOCK_BANK_TX.NEXTVAL, #{bankTranId}, #{fintechUseNum}, #{inoutType},
+                     #{tranAmt}, #{afterBalanceAmt}, #{counterpartyName}, #{counterpartyAcct},
+                     #{printContent}, #{groupId}, #{paymentProofId},
+                     TO_CHAR(SYSDATE, 'YYYYMMDD'), TO_CHAR(SYSDATE, 'HH24MISS'), SYSDATE
+                 )
+    </insert>
+
+    <!-- 6. 모임의 활성 계좌(GYE_ACCOUNT) 암호문 및 해시 조회 -->
+    <select id="selectCurrentGyeAccountByGroupId" resultType="com.moava.openbanking.dto.OpenBankingDTO$EncryptedGyeAccountVO">
+        SELECT
+            GYE_ACCOUNT_ID   AS gyeAccountId,
+            GROUP_ID         AS groupId,
+            BANK_NAME        AS bankName,
+            HOLDER_NAME_ENC  AS holderNameEnc,
+            ACCOUNT_NO_ENC   AS accountNoEnc,
+            ACCOUNT_NO_LAST4 AS accountNoLast4,
+            ACCOUNT_NO_HASH  AS accountNoHash,
+            KEY_VER          AS keyVer,
+            VERIFY_STATUS    AS verifyStatus,
+            ACCOUNT_STATUS   AS accountStatus
+        FROM GYE_ACCOUNT
+        WHERE GROUP_ID = #{groupId}
+          AND ACCOUNT_STATUS = 'CURRENT'
+    </select>
+
+    <!-- 7. 회원 실명 단건 조회 -->
+    <select id="selectMemberNameById" resultType="string">
+        SELECT NAME
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+    </select>
+
+    <!-- 8. 기존 납입증빙 존재 여부 확인 (UK_PAYMENT_PROOF_1 대응) -->
+    <select id="selectExistingPaymentProofId" resultType="long">
+        SELECT PAYMENT_PROOF_ID
+        FROM PAYMENT_PROOF
+        WHERE GROUP_ID  = #{groupId}
+          AND MEMBER_ID = #{memberId}
+          AND PAY_MONTH = #{payMonth}
+          AND ROUND_NO  = #{roundNo}
+    </select>
+
+    <!-- 9. 이체 시 PAYMENT_PROOF에 PENDING(확인중) 상태로 INSERT -->
+    <insert id="insertPendingPaymentProof">
+        INSERT INTO PAYMENT_PROOF (
+            PAYMENT_PROOF_ID, GROUP_ID, MEMBER_ID, PAY_MONTH,
+            ROUND_NO, AMOUNT, PAY_DATE, STATUS,
+            RESUBMIT_COUNT, REVIEW_MEMO, CREATED_AT
+        ) VALUES (
+                     NVL((SELECT MAX(PAYMENT_PROOF_ID) FROM PAYMENT_PROOF), 0) + 1,
+                     #{groupId}, #{memberId}, #{payMonth},
+                     #{roundNo}, #{amount}, SYSDATE, 'PENDING',
+                     0, #{reviewMemo}, SYSDATE
+                 )
+    </insert>
+
+    <!-- 10. 기존 PAYMENT_PROOF 건을 PENDING(확인중) 상태로 UPDATE -->
+    <update id="updatePaymentProofToPending">
+        UPDATE PAYMENT_PROOF
+        SET AMOUNT      = #{amount},
+            PAY_DATE    = SYSDATE,
+            STATUS      = 'PENDING',
+            REVIEW_MEMO = #{reviewMemo}
+        WHERE PAYMENT_PROOF_ID = #{paymentProofId}
+    </update>
+
+    <!-- 11. 모임 납입내역 + 가상은행 입금내역 조인 조회 -->
+    <select id="selectGroupPaymentHistoryList" resultType="com.moava.openbanking.dto.OpenBankingDTO$GroupPaymentHistoryItem">
+        SELECT
+        pp.PAYMENT_PROOF_ID AS paymentProofId,
+        tx.TRAN_ID          AS tranId,
+        tx.BANK_TRAN_ID     AS bankTranId,
+        pp.GROUP_ID         AS groupId,
+        pp.MEMBER_ID        AS memberId,
+        m.NAME              AS memberName,
+        pp.PAY_MONTH        AS payMonth,
+        pp.ROUND_NO         AS roundNo,
+        pp.AMOUNT           AS amount,
+        pp.STATUS           AS status,
+        CASE pp.STATUS
+        WHEN 'PENDING'   THEN '확인중'
+        WHEN 'CONFIRMED' THEN '납입완료'
+        WHEN 'REVISION'  THEN '보완요청'
+        ELSE pp.STATUS
+        END                 AS statusKor,
+        NVL(tx.PRINT_CONTENT, m.NAME || '_' || pp.PAY_MONTH || '_' || pp.ROUND_NO || '회차') AS printContent,
+        TO_CHAR(pp.PAY_DATE, 'YYYY-MM-DD HH24:MI:SS') AS payDate,
+        pp.REF_NO           AS refNo
+        FROM PAYMENT_PROOF pp
+        JOIN MEMBER m
+        ON pp.MEMBER_ID = m.MEMBER_ID
+        LEFT JOIN MOCK_BANK_TRANSACTION tx
+        ON tx.PAYMENT_PROOF_ID = pp.PAYMENT_PROOF_ID
+        AND tx.INOUT_TYPE = 'DEPOSIT'
+        WHERE pp.GROUP_ID = #{groupId}
+        <if test="payMonth != null and payMonth != ''">
+            AND pp.PAY_MONTH = #{payMonth}
+        </if>
+        ORDER BY pp.PAY_DATE DESC, pp.PAYMENT_PROOF_ID DESC
+    </select>
+
+</mapper>
