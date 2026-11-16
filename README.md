@@ -47,8 +47,8 @@
 * **ML/Data:** NumPy, Pandas, scikit-learn, LightGBM, XGBoost
 
 ###  Database & Search
-* **RDBMS:** Oracle DB (MyBatis / JPA)
-* **Search Engine:** Elasticsearch (지도 색인 및 모임 초고속 검색)
+* **RDBMS:** Oracle DB (MyBatis)
+* **Search Engine:** Elasticsearch (지도 색인 및 모임 검색)
 
 ###  External APIs
 * **공공/통계:** KOSIS 국가통계포털, 금융감독원 금융상품한눈에
@@ -82,18 +82,18 @@
 ```text
                        ┌──────────────────────────────────────┐
                        │           [Frontend] React           │
-     요청 (HTTPS)      │ • [입력] 재무정보(6종), 모임/증빙 등록 │
-  🧑 ───────────────►  │ • [지도] Kakao Maps 모임 핀 매칭     │
- User                  │ • [출력] 대시보드 차트 & STOMP 채팅  │
+     요청 (HTTPS)       │ • [입력] 재무정보(6종), 모임/증빙 등록    │
+  🧑 ───────────────►  │ • [지도] Kakao Maps 모임 핀 매칭        │
+ User                  │ • [출력] 대시보드 차트 & STOMP 채팅      │
                        └──────────────────┬───────────────────┘
                                           │ ▲
                              REST API     │ │  WebSocket (채팅/알림)
                                           ▼ │
 ┌──────────────────┐   ┌──────────────────────────────────────┐
-│    [외부 API]    │   │        [Backend] Spring Boot         │
-│ • KOSIS (통계)   │◄─►│ • [운영] 전원 동의 합의 / 증빙 / 해산 │
-│ • 금감원 (금리)  │   │ • [중계] 사용자 입력 + DB 이력 결합   │
-│ • SOLAPI (문자)  │   │ • [배치] 공공데이터 캐싱 & 보안/인증  │
+│    [외부 API]    │   │        [Backend] Spring Boot          │
+│ • KOSIS (통계)   │◄─►│ • [운영] 전원 동의 합의 / 증빙 / 해산     │
+│ • 금감원 (금리)   │   │ • [중계] 사용자 입력 + DB 이력 결합       │
+│ • SOLAPI (문자)  │   │ • [배치] 공공데이터 캐싱 & 보안/인증       │
 └──────────────────┘   └──────┬────────────────────────┬──────┘
                               │                        │
                  JDBC/MyBatis │                        │ REST (/risk/score)
