@@ -71,6 +71,14 @@ public interface PaymentProofMapper {
                            @Param("payMonth") String payMonth);
 
 
+    // 감사 로그 1건 저장 (AUDIT_LOG는 append-only — INSERT만)
+    int insertAuditLog(@Param("groupId") Long groupId,
+                       @Param("actorMemberId") Long actorMemberId,
+                       @Param("targetMemberId") Long targetMemberId,
+                       @Param("eventType") String eventType,
+                       @Param("description") String description);
+
+
 
 
 }

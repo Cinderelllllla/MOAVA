@@ -168,4 +168,14 @@
         AND n.CREATED_AT >= TRUNC(SYSDATE)
     </select>
 
+    <!-- 감사 로그: 증빙 등록·승인·보완 요청·재제출. DESCRIPTION에 보완 사유 등 자유 입력값은 넣지 않음 -->
+    <insert id="insertAuditLog">
+        INSERT INTO AUDIT_LOG (
+        AUDIT_LOG_ID, GROUP_ID, ACTOR_MEMBER_ID, TARGET_MEMBER_ID, EVENT_TYPE, DESCRIPTION
+        ) VALUES (
+        SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{actorMemberId}, #{targetMemberId, jdbcType=NUMERIC},
+        #{eventType}, #{description}
+        )
+    </insert>
+
 </mapper>

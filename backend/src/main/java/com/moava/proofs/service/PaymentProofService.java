@@ -135,7 +135,10 @@ public class PaymentProofService {
         // 11. 모임장 알림 (같은 모임 하루 1건)
         notifyLeaderProofPending(group, memberId, proof.getPaymentProofId());
 
-        // TODO: AUDIT_LOG(PROOF_UPLOAD) — 공통 모듈 머지 후 연결
+        // 12. 감사 로그
+        audit(req.getGroupId(), memberId, null, "PROOF_UPLOAD",
+                "증빙 등록 #" + proof.getPaymentProofId() + " (귀속 월 " + req.getPayMonth()
+                        + ", " + req.getRoundNo() + "회차, 파일 " + files.size() + "개)");
         return proof.getPaymentProofId();
     }
 
@@ -273,6 +276,11 @@ public class PaymentProofService {
                 Map.of("group", group.getTitle(), "groupId", group.getGroupId()));
     }
 
+    // 감사 로그 저장 (등록·심사·재제출 공통). 같은 트랜잭션이라 본 작업이 롤백되면 로그도 같이 롤백됨
+    private void audit(Long groupId, Long actorId, Long targetId, String eventType, String description) {
+        paymentProofMapper.insertAuditLog(groupId, actorId, targetId, eventType, description);
+    }
+
     private String sha256(MultipartFile f) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -408,7 +416,11 @@ public class PaymentProofService {
                             "groupId", groupId));
         }
 
-        // TODO F23: 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION) — 승인 알림은 보내지 않음 (알림 README: 알림 축소 결정)
+        // 9. 감사 로그 (승인 알림은 보내지 않음 — 알림 README: 알림 축소 결정)
+        boolean confirmed = "CONFIRMED".equals(decision);
+        audit(groupId, memberId, proof.getMemberId(), confirmed ? "PROOF_CONFIRM" : "PROOF_REVISION",
+                (confirmed ? "증빙 승인 #" : "증빙 보완 요청 #") + proofId
+                        + " (귀속 월 " + proof.getPayMonth() + ", " + proof.getRoundNo() + "회차)");
 
         return new ProofReviewResponse(proofId, decision, reviewedAt.atZone(SEOUL).toOffsetDateTime());
     }
@@ -477,7 +489,10 @@ public class PaymentProofService {
         // 9. 모임장 알림 (같은 모임 하루 1건)
         notifyLeaderProofPending(group, memberId, proofId);
 
-        // TODO: AUDIT_LOG(PROOF_RESUBMIT) — 공통 모듈 머지 후 연결
+        // 10. 감사 로그
+        audit(groupId, memberId, null, "PROOF_RESUBMIT",
+                "증빙 재제출 #" + proofId + " (" + (proof.getResubmitCount() + 1)
+                        + "번째 재제출, 파일 " + files.size() + "개)");
         return proof.getResubmitCount() + 1;
     }
 
