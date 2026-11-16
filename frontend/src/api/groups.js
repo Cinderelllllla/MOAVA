@@ -65,18 +65,21 @@ export async function createGroup(f) {
   ) {
     fail('모임 필수 정보를 입력해 주세요.');
   }
-  if (amount < 5 || amount % 5 !== 0) {
-    fail('월 납입액은 5만 원 단위입니다.');
-  }
-  if (payDay < 1 || payDay > 28) {
-    fail('납입일은 1~28일 사이여야 합니다.');
-  }
-  if (max < 2 || max > 30) {
-    fail('인원은 2~30명입니다.');
-  }
-  if (months < 2 || months > 36) {
-    fail('기간은 2~36개월입니다.');
-  }
+if (!Number.isInteger(amount) || amount < 5 || amount % 5 !== 0) {
+  fail('월 납입액은 5만 원 단위로 입력해 주세요.');
+}
+
+if (!Number.isInteger(payDay) || payDay < 1 || payDay > 28) {
+  fail('납입일은 1~28일 사이여야 합니다.');
+}
+
+if (!Number.isInteger(max) || max < 2 || max > 30) {
+  fail('인원은 2~30명입니다.');
+}
+
+if (!Number.isInteger(months) || months < 2 || months > 36) {
+  fail('기간은 2~36개월입니다.');
+}
   const accountNo = String(f.accountNo || '').replace(/\D/g, '');
   if (!f.bank?.trim() || accountNo.length < 8) {
     fail('모임 계좌를 확인해 주세요.');
