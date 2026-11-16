@@ -6,7 +6,8 @@ import java.math.BigDecimal;
 public record GroupCreateRequest(
     String title,
     String purpose,
-    String region,
+    String regionSido,
+    String regionSigungu,
     Long amount,
     Integer maxMembers,
     Integer months,
