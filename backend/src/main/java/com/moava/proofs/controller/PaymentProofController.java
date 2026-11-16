@@ -74,8 +74,7 @@ public class PaymentProofController {
             @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
             @RequestBody PaymentProofReviewRequest req) {
 
-        String status = paymentProofService.reviewProof(memberId, groupId, proofId, req);
-        return ApiResponse.ok(new ProofReviewResponse(proofId, status), requestId());
+        return ApiResponse.ok(paymentProofService.reviewProof(memberId, groupId, proofId, req), requestId());
     }
 
     /**

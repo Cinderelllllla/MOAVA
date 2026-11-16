@@ -7,6 +7,7 @@ import com.moava.proofs.dto.ProofGroupDto;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
@@ -47,7 +48,8 @@ public interface PaymentProofMapper {
     int updateProofReview(@Param("proofId") Long proofId,
                           @Param("status") String status,
                           @Param("reviewedBy") Long reviewedBy,
-                          @Param("reviewMemo") String reviewMemo);
+                          @Param("reviewMemo") String reviewMemo,
+                          @Param("reviewedAt") LocalDateTime reviewedAt);
 
     // F22-05: 재제출 시 지울 기존 파일 경로 목록
     List<String> findProofFilePaths(@Param("proofId") Long proofId);
