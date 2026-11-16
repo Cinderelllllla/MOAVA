@@ -8,6 +8,9 @@ import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.mapper.PaymentProofMapper;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
+import com.moava.proofs.dto.ProofReviewResponse;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -57,6 +60,8 @@ public class PaymentProofService {
             "image/png", ".png",
             "image/webp", ".webp",
             "application/pdf", ".pdf");
+
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     /**
      * F22 납입 증빙 등록
@@ -345,10 +350,10 @@ public class PaymentProofService {
      * F23 증빙 승인·보완 요청 (모임장)
      *
      * @param memberId 로그인 회원 ID (JWT 연동 전까지는 Controller에서 임시로 받음)
-     * @return 변경된 상태 (CONFIRMED / REVISION)
+     * @return 심사 결과 (증빙 ID, 변경된 상태, 심사 시각)
      */
     @Transactional
-    public String reviewProof(Long memberId, Long groupId, Long proofId, PaymentProofReviewRequest req) {
+    public ProofReviewResponse reviewProof(Long memberId, Long groupId, Long proofId, PaymentProofReviewRequest req) {
 
         // 1. 결정 값 확인
         String decision = req.getDecision();
@@ -382,7 +387,9 @@ public class PaymentProofService {
         }
 
         // 6. 상태 변경 (PENDING 조건 UPDATE → 0건이면 그 사이에 다른 요청이 먼저 처리한 것)
-        int updated = paymentProofMapper.updateProofReview(proofId, decision, memberId, memo);
+        //    심사 시각은 여기서 한 번 만들어 DB 저장값과 응답값을 같게 맞춤 (DATE 컬럼이라 초 단위까지)
+        LocalDateTime reviewedAt = LocalDateTime.now(SEOUL).withNano(0);
+        int updated = paymentProofMapper.updateProofReview(proofId, decision, memberId, memo, reviewedAt);
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 처리된 증빙입니다.");
         }
@@ -403,7 +410,7 @@ public class PaymentProofService {
 
         // TODO F23: 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION) — 승인 알림은 보내지 않음 (알림 README: 알림 축소 결정)
 
-        return decision;
+        return new ProofReviewResponse(proofId, decision, reviewedAt.atZone(SEOUL).toOffsetDateTime());
     }
 
     /**

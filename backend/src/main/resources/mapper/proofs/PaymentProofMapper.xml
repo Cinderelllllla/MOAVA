@@ -117,7 +117,7 @@
         UPDATE PAYMENT_PROOF
         SET STATUS      = #{status},
         REVIEWED_BY = #{reviewedBy},
-        REVIEWED_AT = SYSDATE,
+        REVIEWED_AT = #{reviewedAt},
         REVIEW_MEMO = #{reviewMemo, jdbcType=VARCHAR}
         WHERE PAYMENT_PROOF_ID = #{proofId}
         AND STATUS = 'PENDING'
