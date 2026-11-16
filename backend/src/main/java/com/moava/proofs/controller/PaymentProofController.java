@@ -17,6 +17,12 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.BindException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -105,6 +111,29 @@ public class PaymentProofController {
         String message = e.getReason() != null ? e.getReason() : "요청을 처리할 수 없습니다.";
         return ResponseEntity.status(e.getStatusCode())
                 .body(ApiResponse.Error.of(code, message, requestId()));
+    }
+    /** 요청 값을 파라미터로 바꾸다 실패한 경우 (Controller 실행 전) → 400, 명세 §2 오류 형식 */
+    @ExceptionHandler({
+            MissingRequestHeaderException.class,        // X-Member-Id 헤더 없음
+            MissingServletRequestPartException.class,   // files 파트 없음
+            BindException.class,                        // 폼 값 형식 오류 (payDate, amount, roundNo 등)
+            MethodArgumentTypeMismatchException.class,  // 경로·헤더 값이 숫자가 아님 (groupId=abc 등)
+            HttpMessageNotReadableException.class       // 심사 요청 JSON 형식 오류
+    })
+
+    public ResponseEntity<ApiResponse.Error> handleBadRequest(Exception e) {
+        String message;
+        if (e instanceof MissingRequestHeaderException) {
+            message = "로그인 정보가 없습니다.";
+        } else if (e instanceof MissingServletRequestPartException) {
+            message = "증빙 파일을 첨부해 주세요.";
+        } else if (e instanceof BindException) {
+            message = "입력값 형식이 올바르지 않습니다. (납입일 YYYY-MM-DD, 금액·회차는 숫자)";
+        } else {
+            message = "요청 형식이 올바르지 않습니다.";
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.Error.of("INVALID_REQUEST", message, requestId()));
     }
 
     private static String requestId() {
