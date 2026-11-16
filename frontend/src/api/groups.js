@@ -1,11 +1,26 @@
 /* F11~F19 F20 F28 F33 F36 — 모임 조회·생성·가입·운영 */
+
 import * as D from './mock/db';
+
+const PURPOSE_CODES = {
+  '목돈 마련': 'SAVINGS',
+  '재테크': 'INVEST',
+  '친목': 'SOCIAL',
+  '창업': 'STARTUP',
+  '여행': 'TRAVEL'
+};
+
+const OVERDUE_POLICY_CODES = {
+  '5일차 알림': 'ALERT_ONLY',
+  '5일차 알림 + 채팅 제한·수령 후순위 검토': 'ALERT_RESTRICT'
+};
+
 function toGroupCreateRequest(f) {
   const region = String(f.region || '').trim().split(/\s+/);
 
   return {
     title: f.title.trim(),
-    purpose: f.purpose,
+    purpose: PURPOSE_CODES[f.purpose] || f.purpose,
     regionSido: region[0] || '',
     regionSigungu: region.slice(1).join(' '),
     amount: Number(f.amount) * 10000,
@@ -17,11 +32,12 @@ function toGroupCreateRequest(f) {
     rulesTitle: f.rulesTitle.trim(),
     rulesBody: f.rules.trim(),
     description: f.description.trim(),
-    overduePolicy: f.overduePolicy,
+    overduePolicy: OVERDUE_POLICY_CODES[f.overduePolicy] || f.overduePolicy,
     bankName: f.bank.trim(),
-    accountNumber: String(f.accountNo).replace(/\D/g, '')
+    accountNumber: String(f.accountNo || '').replace(/\D/g, '')
   };
 }
+
 const { db, save, fail } = D;
 
 /* ---- 조회 ---- */
