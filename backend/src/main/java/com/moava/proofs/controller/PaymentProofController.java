@@ -3,6 +3,7 @@ package com.moava.proofs.controller;
 import com.moava.common.response.ApiResponse;
 import com.moava.proofs.dto.PaymentProofCreateRequest;
 import com.moava.proofs.dto.PaymentProofListDto;
+import com.moava.proofs.dto.PaymentProofDetailDto;
 import com.moava.proofs.dto.ProofRegisterResponse;
 import com.moava.proofs.dto.ProofResubmitResponse;
 import com.moava.proofs.dto.ProofReviewResponse;
@@ -61,6 +62,15 @@ public class PaymentProofController {
             @PathVariable Long groupId,
             @RequestHeader("X-Member-Id") Long memberId) {   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
         return ApiResponse.ok(paymentProofService.getProofList(groupId, memberId), requestId());
+    }
+
+    /** F22 증빙 상세 (모임장: 모임 전체 / 회원: 본인 것만) */
+    @GetMapping("/{proofId}")
+    public ApiResponse<PaymentProofDetailDto> getProofDetail(
+            @PathVariable Long groupId,
+            @PathVariable Long proofId,
+            @RequestHeader("X-Member-Id") Long memberId) {   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
+        return ApiResponse.ok(paymentProofService.getProofDetail(groupId, proofId, memberId), requestId());
     }
 
     /**

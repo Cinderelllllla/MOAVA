@@ -4,6 +4,8 @@ import com.moava.proofs.dto.PaymentProofDto;
 import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.dto.ProofGroupDto;
+import com.moava.proofs.dto.PaymentProofDetailDto;
+import com.moava.proofs.dto.ProofFileSummaryDto;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -78,6 +80,13 @@ public interface PaymentProofMapper {
                        @Param("eventType") String eventType,
                        @Param("description") String description);
 
+
+    // F22 상세: 증빙 1건 (경로의 groupId 소속인 것만, 없으면 null)
+    PaymentProofDetailDto findProofDetail(@Param("groupId") Long groupId,
+                                          @Param("proofId") Long proofId);
+
+    // F22 상세: 첨부 파일 요약 목록 (SORT_NO 순)
+    List<ProofFileSummaryDto> findProofFileSummaries(@Param("proofId") Long proofId);
 
 
 
