@@ -1,5 +1,27 @@
 /* F11~F19 F20 F28 F33 F36 — 모임 조회·생성·가입·운영 */
 import * as D from './mock/db';
+function toGroupCreateRequest(f) {
+  const region = String(f.region || '').trim().split(/\s+/);
+
+  return {
+    title: f.title.trim(),
+    purpose: f.purpose,
+    regionSido: region[0] || '',
+    regionSigungu: region.slice(1).join(' '),
+    amount: Number(f.amount) * 10000,
+    maxMembers: Number(f.max),
+    months: Number(f.months),
+    payDay: Number(f.payDay),
+    assumedRate: Number(f.rate),
+    visibility: f.visibility,
+    rulesTitle: f.rulesTitle.trim(),
+    rulesBody: f.rules.trim(),
+    description: f.description.trim(),
+    overduePolicy: f.overduePolicy,
+    bankName: f.bank.trim(),
+    accountNumber: String(f.accountNo).replace(/\D/g, '')
+  };
+}
 const { db, save, fail } = D;
 
 /* ---- 조회 ---- */
@@ -29,20 +51,74 @@ export const groupLogs = g => [...db.history.filter(h => h.groupId === g.id).map
 
 /* ---- 생성 (F15 F19) ---- */
 export async function createGroup(f) {
-  const amount = Number(f.amount), payDay = Number(f.payDay), max = Number(f.max), months = Number(f.months);
-  if (!f.title?.trim() || !f.rules?.trim() || !f.description?.trim() || !f.rulesTitle?.trim()) fail('모임 필수 정보를 입력해 주세요.');
-  if (amount < 5 || amount % 5) fail('월 납입액은 5만 원 단위입니다.');
-  if (payDay < 1 || payDay > 28) fail('납입일은 1~28일 사이여야 합니다.');
-  if (max < 2 || max > 30) fail('인원은 2~30명입니다.');
-  if (months < 2 || months > 36) fail('기간은 2~36개월입니다.');
-  const accountNo = String(f.accountNo || '').replace(/\D/g, ''); if (!f.bank?.trim() || accountNo.length < 8) fail('모임 계좌를 확인해 주세요.');
-  const u = D.currentUser();
-  const g = D.groupDefaults({ id: D.uid(), title: f.title.trim(), region: f.region.trim(), purpose: f.purpose, amount, payDay, max, months, rate: Number(f.rate || 3), ownerId: D.me(), members: [D.me()], rulesTitle: f.rulesTitle.trim(), rules: f.rules.trim(), description: f.description.trim(), visibility: f.visibility, overduePolicy: f.overduePolicy, inviteToken: D.inviteToken(), account: { bank: f.bank.trim(), holder: u.name, accountNo, verifyStatus: 'PENDING', keyVer: 1 } });
-  if (g.visibility === 'PRIVATE') D.ensureJoinCode(g);
-  db.groups.unshift(g); D.groupLog(g, '모임장 계좌 최초 등록 (인증 대기)'); D.audit('모임 생성', g.id, `${u.name} 모임장 권한 부여 · 납입일 ${payDay}일`);
-  D.noticeAdmin('계좌 인증 확인 필요', `${g.title}의 모임 계좌가 등록되었습니다. 소유 확인 처리가 필요합니다.`); save(); return g;
+  const amount = Number(f.amount);
+  const payDay = Number(f.payDay);
+  const max = Number(f.max);
+  const months = Number(f.months);
+
+  // 1. 기존 입력값 검증
+  if (
+    !f.title?.trim() ||
+    !f.rules?.trim() ||
+    !f.description?.trim() ||
+    !f.rulesTitle?.trim()
+  ) {
+    fail('모임 필수 정보를 입력해 주세요.');
+  }
+  if (amount < 5 || amount % 5 !== 0) {
+    fail('월 납입액은 5만 원 단위입니다.');
+  }
+  if (payDay < 1 || payDay > 28) {
+    fail('납입일은 1~28일 사이여야 합니다.');
+  }
+  if (max < 2 || max > 30) {
+    fail('인원은 2~30명입니다.');
+  }
+  if (months < 2 || months > 36) {
+    fail('기간은 2~36개월입니다.');
+  }
+  const accountNo = String(f.accountNo || '').replace(/\D/g, '');
+  if (!f.bank?.trim() || accountNo.length < 8) {
+    fail('모임 계좌를 확인해 주세요.');
+  }
+  // 2. Spring Boot DTO 형식으로 변환
+  const payload = toGroupCreateRequest(f);
+  if (!payload.regionSido || !payload.regionSigungu) {
+    fail('지역을 시·도와 시·군·구까지 입력해 주세요.');
+  }
+  // 3. Spring Boot API 호출
+  const response = await fetch('/api/groups', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    credentials: 'include',
+    body: JSON.stringify(payload)
+  });
+  // 4. 서버 응답 처리
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('로그인 인증이 필요합니다. 백엔드 인증 연결을 확인해 주세요.');
+    }
+    if (response.status === 403) {
+      throw new Error('모임 생성 권한이 없습니다.');
+    }
+    throw new Error(
+      result?.message ||
+      `모임 생성 요청에 실패했습니다. (${response.status})`
+    );
+  }
+// 5. 서버 응답을 프론트엔드 형식으로 변환
+if (result?.groupId == null) {
+  throw new Error('모임 생성 응답에 groupId가 없습니다. 서버 저장 결과를 확인해 주세요.');
 }
 
+return {
+  ...result,
+  id: result.groupId
+};
+}
 /* ---- 가입 (F16 F18 F20) ---- */
 export async function joinRequest(id) {
   const g = D.group(id); if (!g) fail('모임을 찾을 수 없어요.');
