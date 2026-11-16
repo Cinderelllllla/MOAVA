@@ -5,6 +5,7 @@ import com.moava.proofs.dto.PaymentProofDto;
 import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.ProofGroupDto;
 import com.moava.proofs.dto.PaymentProofListDto;
+import com.moava.proofs.dto.PaymentProofDetailDto;
 import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.mapper.PaymentProofMapper;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
@@ -352,6 +353,37 @@ public class PaymentProofService {
             }
         }
         return list;
+    }
+
+    /**
+     * F22 증빙 상세 조회 (모임장: 모임 전체 / ACTIVE 구성원: 본인 것만 — 목록과 같은 기준)
+     */
+    @Transactional(readOnly = true)
+    public PaymentProofDetailDto getProofDetail(Long groupId, Long proofId, Long memberId) {
+        // 1. 모임 존재 + 권한 (모임장 또는 ACTIVE 구성원)
+        ProofGroupDto group = getGroupOrThrow(groupId);
+        boolean isOwner = memberId.equals(group.getOwnerId());
+        if (!isOwner && paymentProofMapper.countActiveMember(groupId, memberId) == 0) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "모임 구성원만 증빙을 볼 수 있습니다.");
+        }
+
+        // 2. 증빙 존재 (이 모임의 증빙인지까지 확인)
+        PaymentProofDetailDto detail = paymentProofMapper.findProofDetail(groupId, proofId);
+        if (detail == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
+        }
+
+        // 3. 모임장이 아니면 본인 증빙만
+        if (!isOwner && !memberId.equals(detail.getMemberId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인이 제출한 증빙만 볼 수 있습니다.");
+        }
+
+        // 4. 타인 이름 마스킹 (F03-2) + 첨부 파일 요약
+        if (!memberId.equals(detail.getMemberId())) {
+            detail.setMemberName(NameMasker.mask(detail.getMemberName()));
+        }
+        detail.setFiles(paymentProofMapper.findProofFileSummaries(proofId));
+        return detail;
     }
 
     /**

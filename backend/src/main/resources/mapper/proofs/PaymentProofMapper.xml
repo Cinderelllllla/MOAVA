@@ -178,4 +178,40 @@
         )
     </insert>
 
+
+    <!-- F22 상세: 증빙 1건. 다른 모임의 증빙 ID를 막으려고 GROUP_ID도 같이 확인 -->
+    <select id="findProofDetail" resultType="com.moava.proofs.dto.PaymentProofDetailDto">
+        SELECT p.PAYMENT_PROOF_ID AS paymentProofId,
+        p.GROUP_ID         AS groupId,
+        g.TITLE            AS groupTitle,
+        p.MEMBER_ID        AS memberId,
+        m.NAME             AS memberName,
+        p.PAY_MONTH        AS payMonth,
+        p.ROUND_NO         AS roundNo,
+        p.AMOUNT           AS amount,
+        p.PAY_DATE         AS payDate,
+        p.STATUS           AS status,
+        p.REF_NO           AS refNo,
+        p.REVIEW_MEMO      AS reviewMemo,
+        p.RESUBMIT_COUNT   AS resubmitCount,
+        p.REVIEWED_AT      AS reviewedAt,
+        p.CREATED_AT       AS createdAt
+        FROM PAYMENT_PROOF p
+        JOIN GYE_GROUP g ON g.GROUP_ID = p.GROUP_ID
+        JOIN MEMBER m    ON m.MEMBER_ID = p.MEMBER_ID
+        WHERE p.PAYMENT_PROOF_ID = #{proofId}
+        AND p.GROUP_ID = #{groupId}
+    </select>
+
+    <!-- F22 상세: 첨부 파일 요약 (FILE_PATH·ORIGIN_NAME은 조회하지 않음) -->
+    <select id="findProofFileSummaries" resultType="com.moava.proofs.dto.ProofFileSummaryDto">
+        SELECT FILE_ID   AS fileId,
+        SORT_NO   AS sortNo,
+        MIME_TYPE AS mimeType,
+        FILE_SIZE AS fileSize
+        FROM PAYMENT_PROOF_FILE
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+        ORDER BY SORT_NO
+    </select>
+
 </mapper>
