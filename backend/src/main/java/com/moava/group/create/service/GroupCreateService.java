@@ -56,7 +56,7 @@ public class GroupCreateService {
         String inviteCode = GroupInviteCodeGenerator.generate();
 
         // 4. 모임 저장
-        mapper.insertGroup(
+        int groupInserted = mapper.insertGroup(
                 groupId,
                 authenticatedMemberId,
                 request.title().strip(),
@@ -76,11 +76,23 @@ public class GroupCreateService {
                 request.overduePolicy()
         );
 
-        // 5. 모임장 자동 등록
-        mapper.insertOwnerMember(
-                groupId,
-                authenticatedMemberId
+        if (groupInserted != 1) {
+        throw new IllegalStateException(
+                "모임 저장에 실패했습니다."
         );
+        }
+
+        // 5. 모임장 자동 등록
+        int inserted = mapper.insertOwnerMember(
+        groupId,
+        authenticatedMemberId
+        );
+
+        if (inserted != 1) {
+        throw new IllegalStateException(
+                "모임장 등록에 실패했습니다."
+        );
+        }
 
         // 6. 계좌번호 암호화 및 해시
         String accountNumber = request.accountNumber();
@@ -104,7 +116,7 @@ public class GroupCreateService {
         }        
 
         // 7. 모임 계좌 등록 (인증 대기)
-        mapper.insertGroupAccount(
+        int accountInserted = mapper.insertGroupAccount(
                 groupId,
                 request.bankName().strip(),
                 holderNameEnc,
@@ -115,12 +127,24 @@ public class GroupCreateService {
                 authenticatedMemberId
         );
 
+        if (accountInserted != 1) {
+        throw new IllegalStateException(
+                "모임 계좌 등록에 실패했습니다."
+        );
+        }
+
         // 8. 감사 로그 저장
-        mapper.insertGroupCreateAudit(
+        int auditInserted = mapper.insertGroupCreateAudit(
                 groupId,
                 authenticatedMemberId,
                 "모임 생성 및 모임장 자동 등록"
         );
+
+        if (auditInserted != 1) {
+        throw new IllegalStateException(
+                "모임 생성 감사 로그 저장에 실패했습니다."
+        );
+        }
 
         // 9. 결과 반환
         return new GroupCreateResponse(
