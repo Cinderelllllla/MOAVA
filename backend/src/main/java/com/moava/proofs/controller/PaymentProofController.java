@@ -3,6 +3,9 @@ package com.moava.proofs.controller;
 import com.moava.common.response.ApiResponse;
 import com.moava.proofs.dto.PaymentProofCreateRequest;
 import com.moava.proofs.dto.PaymentProofListDto;
+import com.moava.proofs.dto.ProofRegisterResponse;
+import com.moava.proofs.dto.ProofResubmitResponse;
+import com.moava.proofs.dto.ProofReviewResponse;
 import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
 import com.moava.proofs.service.PaymentProofService;
@@ -15,7 +18,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -35,7 +37,7 @@ public class PaymentProofController {
      * - 파일: files (1~5개)
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<Map<String, Object>>> register(
+    public ResponseEntity<ApiResponse<ProofRegisterResponse>> register(
             @PathVariable Long groupId,
             @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
             @ModelAttribute PaymentProofCreateRequest req,
@@ -43,10 +45,7 @@ public class PaymentProofController {
 
         req.setGroupId(groupId);   // 모임 ID는 URL 값을 기준으로 (요청 본문 값 무시)
         Long id = paymentProofService.registerProof(memberId, req, files);
-        Map<String, Object> data = Map.of(
-                "proofId", id,
-                "status", "PENDING",
-                "fileCount", files.size());
+        ProofRegisterResponse data = new ProofRegisterResponse(id, "PENDING", files.size());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(data, requestId()));
     }
 
@@ -63,15 +62,14 @@ public class PaymentProofController {
      * - 요청 본문(JSON): {"decision": "CONFIRMED" | "REVISION", "reviewMemo": "사유"}
      */
     @PatchMapping("/{proofId}/review")
-    public ApiResponse<Map<String, Object>> reviewProof(
+    public ApiResponse<ProofReviewResponse> reviewProof(
             @PathVariable Long groupId,
             @PathVariable Long proofId,
             @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
             @RequestBody PaymentProofReviewRequest req) {
 
         String status = paymentProofService.reviewProof(memberId, groupId, proofId, req);
-        Map<String, Object> data = Map.of("proofId", proofId, "status", status);
-        return ApiResponse.ok(data, requestId());
+        return ApiResponse.ok(new ProofReviewResponse(proofId, status), requestId());
     }
 
     /**
@@ -80,7 +78,7 @@ public class PaymentProofController {
      * - 파일: files (1~5개, 전체 교체)
      */
     @PutMapping(value = "/{proofId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ApiResponse<Map<String, Object>> resubmitProof(
+    public ApiResponse<ProofResubmitResponse> resubmitProof(
             @PathVariable Long groupId,
             @PathVariable Long proofId,
             @RequestHeader("X-Member-Id") Long memberId,   // TODO: JWT 연동 후 로그인 정보로 교체 (임시)
@@ -88,10 +86,7 @@ public class PaymentProofController {
             @RequestPart("files") List<MultipartFile> files) {
 
         int resubmitCount = paymentProofService.resubmitProof(memberId, groupId, proofId, req, files);
-        Map<String, Object> data = Map.of(
-                "proofId", proofId,
-                "status", "PENDING",
-                "resubmitCount", resubmitCount);
+        ProofResubmitResponse data = new ProofResubmitResponse(proofId, "PENDING", resubmitCount);
         return ApiResponse.ok(data, requestId());
     }
 
