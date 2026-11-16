@@ -1,13 +1,17 @@
 package com.moava.proofs.service;
 
+import com.moava.common.util.NameMasker;
 import com.moava.notification.common.service.NotificationService;
 import com.moava.proofs.dto.PaymentProofCreateRequest;
 import com.moava.proofs.dto.PaymentProofDetailDto;
 import com.moava.proofs.dto.PaymentProofDto;
+import com.moava.proofs.dto.PaymentProofListDto;
+import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
 import com.moava.proofs.dto.ProofGroupDto;
 import com.moava.proofs.dto.ProofReviewResponse;
 import com.moava.proofs.mapper.PaymentProofMapper;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,7 +32,9 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Stream;
 
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -245,6 +251,123 @@ class PaymentProofServiceTest {
         // then
         assertEquals("DB 오류", e.getMessage());
         assertEquals(0, countSavedFiles());                       // 이미 쓴 첫 번째 파일도 정리됨
+    }
+    // ===================== 재제출 =====================
+
+    @Test
+    @DisplayName("재제출: 남의 증빙이면 403, DB 수정 안 함")
+    void resubmit_notWriter_403() {
+        // given
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+        when(paymentProofMapper.countActiveMember(GROUP_ID, OTHER_ID)).thenReturn(1);
+        when(paymentProofMapper.findProofForReview(GROUP_ID, PROOF_ID)).thenReturn(revisionProof());  // 작성자는 MEMBER_ID
+
+        // when
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> paymentProofService.resubmitProof(OTHER_ID, GROUP_ID, PROOF_ID,
+                        resubmitRequest(), List.of(png("c.png", 3))));
+
+        // then
+        assertEquals(403, e.getStatusCode().value());
+        verify(paymentProofMapper, never()).updateProofResubmit(any(), any());
+    }
+
+    @Test
+    @DisplayName("재제출: 이미 승인된(CONFIRMED) 증빙이면 409")
+    void resubmit_confirmedProof_409() {
+        // given
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+        when(paymentProofMapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+        PaymentProofDto confirmed = revisionProof();
+        confirmed.setStatus("CONFIRMED");
+        when(paymentProofMapper.findProofForReview(GROUP_ID, PROOF_ID)).thenReturn(confirmed);
+
+        // when
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> paymentProofService.resubmitProof(MEMBER_ID, GROUP_ID, PROOF_ID,
+                        resubmitRequest(), List.of(png("c.png", 3))));
+
+        // then
+        assertEquals(409, e.getStatusCode().value());
+        verify(paymentProofMapper, never()).updateProofResubmit(any(), any());
+    }
+
+    @Test
+    @DisplayName("재제출 성공: 횟수 +1, 기존 파일 메타 삭제 후 새 파일 저장, 감사 로그 기록")
+    void resubmit_success() throws IOException {
+        // given
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+        when(paymentProofMapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+        when(paymentProofMapper.findProofForReview(GROUP_ID, PROOF_ID)).thenReturn(revisionProof());  // 이전 재제출 1회
+        when(paymentProofMapper.updateProofResubmit(any(), any())).thenReturn(1);
+
+        List<MultipartFile> files = List.of(png("c.png", 3));
+
+        // when
+        int count = paymentProofService.resubmitProof(MEMBER_ID, GROUP_ID, PROOF_ID, resubmitRequest(), files);
+
+        // then
+        assertEquals(2, count);                                        // 1회 → 2회
+        verify(paymentProofMapper).deleteProofFiles(PROOF_ID);         // 기존 파일 메타 삭제
+        verify(paymentProofMapper, times(1)).insertProofFile(any());   // 새 파일 메타 1건
+        assertEquals(1, countSavedFiles());                            // 디스크에 새 파일 1개
+        verify(paymentProofMapper).insertAuditLog(eq(GROUP_ID), eq(MEMBER_ID), eq(null),
+                eq("PROOF_RESUBMIT"), any());
+    }
+
+    // ===================== 목록 =====================
+
+    @Test
+    @DisplayName("목록: 모임장이 보면 본인 이름은 그대로, 다른 회원 이름은 마스킹")
+    void list_owner_masksOthers() {
+        // given
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+
+        PaymentProofListDto mine = new PaymentProofListDto();
+        mine.setMemberId(OWNER_ID);
+        mine.setMemberName("김모임");
+        PaymentProofListDto others = new PaymentProofListDto();
+        others.setMemberId(MEMBER_ID);
+        others.setMemberName("이회원");
+        when(paymentProofMapper.findProofList(GROUP_ID, null)).thenReturn(List.of(mine, others));  // 모임장은 전체 조회(null)
+
+        // when
+        List<PaymentProofListDto> list = paymentProofService.getProofList(GROUP_ID, OWNER_ID);
+
+        // then
+        assertEquals("김모임", list.get(0).getMemberName());                     // 본인은 그대로
+        assertNotEquals("이회원", list.get(1).getMemberName());                  // 타인은 바뀜
+        assertEquals(NameMasker.mask("이회원"), list.get(1).getMemberName());    // 공통 마스킹 규칙대로
+    }
+
+    @Test
+    @DisplayName("목록: 일반 회원은 본인 증빙만 조회하도록 본인 ID로 조회")
+    void list_member_onlyOwn() {
+        // given
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+        when(paymentProofMapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+        when(paymentProofMapper.findProofList(GROUP_ID, MEMBER_ID)).thenReturn(List.of());
+
+        // when
+        paymentProofService.getProofList(GROUP_ID, MEMBER_ID);
+
+        // then
+        verify(paymentProofMapper).findProofList(GROUP_ID, MEMBER_ID);   // null(전체)이 아니라 본인 ID
+    }
+
+    // 보완 요청(REVISION) 상태, 이전 재제출 1회인 일반 회원의 증빙
+    private PaymentProofDto revisionProof() {
+        PaymentProofDto proof = pendingProof();
+        proof.setStatus("REVISION");
+        proof.setResubmitCount(1);
+        return proof;
+    }
+
+    // 재제출 요청 (납입일만 다시 받음)
+    private PaymentProofResubmitRequest resubmitRequest() {
+        PaymentProofResubmitRequest req = new PaymentProofResubmitRequest();
+        req.setPayDate(LocalDate.of(2026, 11, 7));
+        return req;
     }
 
     // ===================== 도우미 =====================
