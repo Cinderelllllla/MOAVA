@@ -12,24 +12,36 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * PaymentProofService 단위 테스트 — DB 없이 가짜 Mapper(Mock)로 검사 로직만 확인
+ * 파일 저장 테스트는 JUnit 임시 폴더(@TempDir)를 업로드 폴더로 사용
  */
 @ExtendWith(MockitoExtension.class)
 class PaymentProofServiceTest {
@@ -42,6 +54,9 @@ class PaymentProofServiceTest {
 
     @InjectMocks
     PaymentProofService paymentProofService;        // 위 가짜들을 넣어서 만든 진짜 Service
+
+    @TempDir
+    Path tempDir;                                   // 테스트마다 새로 생기고 끝나면 지워지는 폴더
 
     static final Long GROUP_ID = 1L;
     static final Long OWNER_ID = 10L;    // 모임장
@@ -61,7 +76,12 @@ class PaymentProofServiceTest {
         group.setAmount(100000L);
         group.setMonths(10);
         group.setStatus("ACTIVE");
+
+        // @Value("${moava.upload.dir}") 대신 임시 폴더를 업로드 경로로 지정
+        ReflectionTestUtils.setField(paymentProofService, "uploadDir", tempDir.toString());
     }
+
+    // ===================== 검사 로직 =====================
 
     @Test
     @DisplayName("등록: 약정액과 다르면 400, DB 저장 안 함")
@@ -70,12 +90,8 @@ class PaymentProofServiceTest {
         when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
         when(paymentProofMapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
 
-        PaymentProofCreateRequest req = new PaymentProofCreateRequest();
-        req.setGroupId(GROUP_ID);
-        req.setPayMonth("202611");
-        req.setRoundNo(1);
+        PaymentProofCreateRequest req = validRequest();
         req.setAmount(50000L);                       // 약정액(10만 원)과 다름
-        req.setPayDate(LocalDate.of(2026, 11, 5));
 
         // when
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
@@ -165,6 +181,74 @@ class PaymentProofServiceTest {
                 eq("PROOF_CONFIRM"), any());
     }
 
+    // ===================== 파일 저장 =====================
+
+    @Test
+    @DisplayName("등록 성공: PNG 2개가 실제로 저장되고 메타 2건·감사 로그 기록")
+    void register_success_savesFiles() throws IOException {
+        // given
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+        when(paymentProofMapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+        givenInsertProofSetsId();
+
+        List<MultipartFile> files = List.of(png("a.png", 1), png("b.png", 2));
+
+        // when
+        Long id = paymentProofService.registerProof(MEMBER_ID, validRequest(), files);
+
+        // then
+        assertEquals(PROOF_ID, id);
+        assertEquals(2, countSavedFiles());                           // 디스크에 파일 2개
+        verify(paymentProofMapper, times(2)).insertProofFile(any());  // 파일 메타 2건
+        verify(paymentProofMapper).insertAuditLog(eq(GROUP_ID), eq(MEMBER_ID), eq(null),
+                eq("PROOF_UPLOAD"), any());
+    }
+
+    @Test
+    @DisplayName("등록: PNG라고 했는데 내용이 가짜면 400, 파일 저장 안 함")
+    void register_fakePng_400() throws IOException {
+        // given
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+        when(paymentProofMapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+
+        MultipartFile fake = new MockMultipartFile("files", "fake.png", "image/png",
+                "hello".getBytes());                  // 매직 넘버가 PNG가 아님
+        List<MultipartFile> files = List.of(fake);
+
+        // when
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> paymentProofService.registerProof(MEMBER_ID, validRequest(), files));
+
+        // then
+        assertEquals(400, e.getStatusCode().value());
+        assertEquals(0, countSavedFiles());
+        verify(paymentProofMapper, never()).insertProof(any());
+    }
+
+    @Test
+    @DisplayName("등록: 파일 메타 저장 중 DB 오류가 나면 이미 쓴 파일도 지움")
+    void register_dbErrorWhileSaving_cleansFiles() throws IOException {
+        // given
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+        when(paymentProofMapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+        givenInsertProofSetsId();
+        doReturn(1)                                               // 첫 번째 파일 메타는 성공
+                .doThrow(new RuntimeException("DB 오류"))          // 두 번째에서 실패
+                .when(paymentProofMapper).insertProofFile(any());
+
+        List<MultipartFile> files = List.of(png("a.png", 1), png("b.png", 2));
+
+        // when
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> paymentProofService.registerProof(MEMBER_ID, validRequest(), files));
+
+        // then
+        assertEquals("DB 오류", e.getMessage());
+        assertEquals(0, countSavedFiles());                       // 이미 쓴 첫 번째 파일도 정리됨
+    }
+
+    // ===================== 도우미 =====================
+
     // 확인 대기(PENDING) 상태인 일반 회원의 증빙
     private PaymentProofDto pendingProof() {
         PaymentProofDto proof = new PaymentProofDto();
@@ -175,5 +259,42 @@ class PaymentProofServiceTest {
         proof.setRoundNo(1);
         proof.setStatus("PENDING");
         return proof;
+    }
+
+    // 검사를 모두 통과하는 등록 요청 (약정액 10만 원)
+    private PaymentProofCreateRequest validRequest() {
+        PaymentProofCreateRequest req = new PaymentProofCreateRequest();
+        req.setGroupId(GROUP_ID);
+        req.setPayMonth("202611");
+        req.setRoundNo(1);
+        req.setAmount(100000L);
+        req.setPayDate(LocalDate.of(2026, 11, 5));
+        return req;
+    }
+
+    // PNG 매직 넘버로 시작하는 가짜 파일 (seed를 다르게 줘서 해시 중복을 피함)
+    private MockMultipartFile png(String name, int seed) {
+        byte[] bytes = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, (byte) seed, 1, 2, 3};
+        return new MockMultipartFile("files", name, "image/png", bytes);
+    }
+
+    // MyBatis selectKey처럼 INSERT 때 증빙 ID를 채워 줌
+    private void givenInsertProofSetsId() {
+        doAnswer(inv -> {
+            PaymentProofDto p = inv.getArgument(0);
+            p.setPaymentProofId(PROOF_ID);
+            return 1;
+        }).when(paymentProofMapper).insertProof(any());
+    }
+
+    // 임시 폴더의 proofs 안에 저장된 파일 수
+    private long countSavedFiles() throws IOException {
+        Path dir = tempDir.resolve("proofs");
+        if (!Files.exists(dir)) {
+            return 0;
+        }
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.count();
+        }
     }
 }
