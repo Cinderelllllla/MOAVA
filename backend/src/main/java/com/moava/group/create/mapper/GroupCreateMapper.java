@@ -1,4 +1,3 @@
-
 package com.moava.group.create.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
