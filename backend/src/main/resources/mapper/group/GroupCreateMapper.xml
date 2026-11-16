@@ -1,0 +1,124 @@
+
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.create.mapper.GroupCreateMapper">
+
+<select id="nextGroupId" resultType="java.lang.Long">
+    SELECT SEQ_GYE_GROUP.NEXTVAL FROM DUAL
+</select>
+
+    <insert id="insertGroup">
+        INSERT INTO GYE_GROUP (
+            GROUP_ID,
+            OWNER_ID,
+            TITLE,
+            PURPOSE,
+            REGION_SIDO,
+            REGION_SIGUNGU,
+            AMOUNT,
+            MAX_MEMBERS,
+            MONTHS,
+            PAY_DAY,
+            ASSUMED_RATE,
+            VISIBILITY,
+            INVITE_CODE,
+            RULES_TITLE,
+            RULES_BODY,
+            DESCRIPTION,
+            OVERDUE_POLICY
+        )
+        VALUES (
+            #{groupId},
+            #{ownerId},
+            #{title},
+            #{purpose},
+            #{regionSido},
+            #{regionSigungu},
+            #{amount},
+            #{maxMembers},
+            #{months},
+            #{payDay},
+            #{assumedRate},
+            #{visibility},
+            #{inviteCode},
+            #{rulesTitle},
+            #{rulesBody, jdbcType=CLOB},
+            #{description},
+            #{overduePolicy}
+        )
+    </insert>
+
+
+    <insert id="insertOwnerMember">
+        INSERT INTO GYE_MEMBER (
+            GYE_MEMBER_ID,
+            GROUP_ID,
+            MEMBER_ID,
+            STATUS
+        )
+        VALUES (
+            SEQ_GYE_MEMBER.NEXTVAL,
+            #{groupId},
+            #{memberId},
+            'ACTIVE'
+        )
+        //모임 생성 시 Service에서 다음 두 메서드를 순서대로 호출
+    </insert>
+
+
+    <insert id="insertGroupAccount">
+        INSERT INTO GYE_ACCOUNT (
+            GYE_ACCOUNT_ID,
+            GROUP_ID,
+            BANK_NAME,
+            HOLDER_NAME_ENC,
+            ACCOUNT_NO_ENC,
+            ACCOUNT_NO_LAST4,
+            ACCOUNT_NO_HASH,
+            KEY_VER,
+            VERIFY_STATUS,
+            REGISTERED_BY,
+            ACCOUNT_STATUS
+        )
+        VALUES (
+            SEQ_GYE_ACCOUNT.NEXTVAL,
+            #{groupId},
+            #{bankName},
+            #{holderNameEnc},
+            #{accountNoEnc},
+            #{accountNoLast4},
+            #{accountNoHash},
+            #{keyVer},
+            'PENDING',
+            #{registeredBy},
+            'CURRENT'
+        )
+        //암호화가 완료된 값만 전달받아 저장하는 구조
+    </insert>
+
+
+    <insert id="insertGroupCreateAudit">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION
+        )
+        VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId},
+            #{actorMemberId},
+            'GROUP_CREATE',
+            #{description}
+        )
+        //감사 로그에는 모임 ID와 생성 회원 ID, 작업 종류 정도만 기록하고 
+            계좌번호나 암호화 키 등 민감정보는 기록 x
+    </insert>
+
+
+
+</mapper>
