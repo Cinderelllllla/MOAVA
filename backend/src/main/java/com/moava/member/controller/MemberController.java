@@ -4,6 +4,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.moava.member.dto.AuthResponse;
 import com.moava.member.dto.LoginRequest;
+import com.moava.member.dto.MemberView;
 import com.moava.member.dto.SignupRequest;
 import com.moava.member.service.MemberService;
 
@@ -31,7 +32,8 @@ public class MemberController {
     }
 
     @GetMapping("/me")
-    public Object me(Authentication authentication) {
-        return memberService.getActiveMember(authentication.getName());
+    public MemberView me(Authentication authentication) {
+        Long memberId = Long.valueOf(authentication.getName());
+        return memberService.getActiveMember(memberId);
     }
 }

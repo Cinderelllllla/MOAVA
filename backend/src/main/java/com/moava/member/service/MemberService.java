@@ -105,8 +105,8 @@ public class MemberService {
         return input == null ? null : input.trim();
     }
 
-        public MemberView getActiveMember(String email) {
-        MemberResponse user = memberMapper.findByEmail(email);
+        public MemberView getActiveMember(Long memberId) {
+        MemberResponse user = memberMapper.findById(memberId);
         if (user == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "회원 정보를 찾을 수 없습니다.");
         ensureCanUse(user);
         return toView(user, null);

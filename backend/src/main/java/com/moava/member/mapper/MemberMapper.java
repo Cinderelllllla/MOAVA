@@ -8,6 +8,7 @@ import com.moava.member.dto.MemberResponse;
 @Mapper 
 public interface MemberMapper {
     MemberResponse findByEmail(@Param("email") String email);
+    MemberResponse findById(Long memberId);
     String findPasswordHashByEmail(@Param ("email") String email);
     int existsByEmail(@Param("email") String email);
     int insertUser(
