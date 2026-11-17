@@ -14,10 +14,14 @@
     <!-- 해당 모임의 진행 중(PENDING) 해산 신청 단건 조회 -->
     <select id="selectPendingDissolutionByGroup" resultType="map">
         SELECT DISSOLUTION_REQUEST_ID, GROUP_ID, REQUESTED_BY, REASON, STATUS, CREATED_AT
-        FROM DISSOLUTION_REQUEST
-        WHERE GROUP_ID = #{groupId}
-          AND STATUS = 'PENDING'
-          AND ROWNUM = 1
+        FROM (
+            SELECT DISSOLUTION_REQUEST_ID, GROUP_ID, REQUESTED_BY, REASON, STATUS, CREATED_AT
+            FROM DISSOLUTION_REQUEST
+            WHERE GROUP_ID = #{groupId}
+              AND STATUS = 'PENDING'
+            ORDER BY CREATED_AT DESC, DISSOLUTION_REQUEST_ID DESC
+        )
+        WHERE ROWNUM = 1
     </select>
 
     <!-- 모임별 최신 해산 신청 현황 단건 조회 (운영 센터 S10 ⑤ 배지용) -->
@@ -104,12 +108,13 @@
                  )
     </insert>
 
-    <!-- GYE_GROUP.STATUS 변경 (DISSOLVE_PENDING / DISSOLVED / ACTIVE) -->
+    <!-- 상태가 예상값과 일치할 때만 변경해 중복·경합 처리를 막는다. -->
     <update id="updateGroupStatus">
         UPDATE GYE_GROUP
         SET STATUS     = #{status},
             UPDATED_AT = SYSDATE
         WHERE GROUP_ID = #{groupId}
+          AND STATUS = #{expectedStatus}
     </update>
 
     <!-- 활성 ADMIN 계정 확인 -->
@@ -118,6 +123,26 @@
         FROM ADMIN
         WHERE ADMIN_ID = #{adminId}
           AND STATUS = 'ACTIVE'
+    </select>
+
+    <select id="selectActiveAdminIds" resultType="long">
+        SELECT ADMIN_ID
+        FROM ADMIN
+        WHERE STATUS = 'ACTIVE'
+    </select>
+
+    <select id="countActiveWithdrawals" resultType="int">
+        SELECT COUNT(*)
+        FROM WITHDRAWAL_REQUEST
+        WHERE GROUP_ID = #{groupId}
+          AND STATUS IN ('SETTLEMENT_PENDING', 'CONSENT_PENDING')
+    </select>
+
+    <select id="countActivePayoutRequests" resultType="int">
+        SELECT COUNT(*)
+        FROM PAYOUT_REQUEST
+        WHERE GROUP_ID = #{groupId}
+          AND STATUS IN ('REQUESTED', 'CONSENT_PENDING')
     </select>
 
     <!-- 2. [승인 검증] 미종결 증빙(STATUS != 'CONFIRMED') 건수 카운트 -->
@@ -144,13 +169,15 @@
           AND STATUS = 'ACTIVE'
     </select>
 
-    <!-- DISSOLUTION_REQUEST 승인/반려 업데이트 (DECIDED_BY = FK ADMIN) -->
+    <!-- 대기 중인 신청만 승인·반려한다. -->
     <update id="updateDissolutionDecision">
         UPDATE DISSOLUTION_REQUEST
         SET STATUS     = #{status},
             DECIDED_BY = #{adminId},
             DECIDED_AT = SYSDATE
-        WHERE DISSOLUTION_REQUEST_ID = #{dissolutionRequestId}
+        WHERE GROUP_ID = #{groupId}
+          AND DISSOLUTION_REQUEST_ID = #{dissolutionRequestId}
+          AND STATUS = 'PENDING'
     </update>
 
     <!-- 인앱 알림 등록 (NOTIFICATION) -->
@@ -180,6 +207,36 @@
                      'N',
                      SYSDATE
                  )
+    </insert>
+
+    <insert id="insertAdminNotification">
+        INSERT INTO NOTIFICATION (
+            NOTIFICATION_ID,
+            MEMBER_ID,
+            ADMIN_ID,
+            NOTIF_TYPE,
+            TITLE,
+            BODY,
+            LINK_PAGE,
+            REF_ID,
+            READ_YN,
+            DELETED_YN,
+            SMS_SENT_YN,
+            CREATED_AT
+        ) VALUES (
+            SEQ_NOTIFICATION.NEXTVAL,
+            NULL,
+            #{adminId},
+            #{notifType},
+            #{title},
+            #{body},
+            #{linkPage, jdbcType=VARCHAR},
+            #{refId, jdbcType=NUMERIC},
+            'N',
+            'N',
+            'N',
+            SYSDATE
+        )
     </insert>
 
     <!-- 모임장 행위 감사 로그 기록 (ACTOR_MEMBER_ID 사용) -->

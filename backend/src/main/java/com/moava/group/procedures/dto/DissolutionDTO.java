@@ -29,8 +29,7 @@ public class DissolutionDTO {
         private String rejectReason; // 반려 시 사유 (AdminPages.jsx의 prompt('반려 사유') 호환)
 
         public Long getEffectiveAdminId() {
-            // 시연 시 adminId가 안 넘어오면 기본 시드 관리자(1번)로 매핑
-            return adminId != null ? adminId : 1L;
+            return adminId;
         }
 
         public Long getAdminId() { return adminId; }
