@@ -1,5 +1,5 @@
 /* S12 납입 증빙 — /evidence · F22 F23 (승인 · 보완 요청(사유) · 재제출 · 귀속 월/회차 중복 방지) */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../common/store';
 import { groups, proofs, leader, me, memberName, proofPeriod } from '../api';
 import { PageHead, Card, Input, Field, Empty } from '../components/ui';
@@ -13,6 +13,9 @@ export default function Evidence() {
   const { run, toast } = useApp(); const [g, setGroup] = useOpGroup(); const mine = groups.myGroups();
   const [f, setF] = useState({ period: g ? periodOptions(g)[0] : '', round: 1, date: todayStr() });
   const [files, setFiles] = useState([]); const [redo, setRedo] = useState(null);
+  useEffect(() => {
+    if (g) void proofs.fetchProofsFromServer(g.id);
+  }, [g?.id]);
   if (!g) return <><PageHead kicker="PAYMENT EVIDENCE" title="납입 증빙 · 확인" sub="참여 중인 모임이 없습니다." /></>;
   const items = proofs.listProofs(g.id).slice().reverse();
   const pick = async e => {
