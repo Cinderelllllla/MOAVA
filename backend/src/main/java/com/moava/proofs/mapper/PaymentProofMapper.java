@@ -4,9 +4,12 @@ import com.moava.proofs.dto.PaymentProofDto;
 import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.dto.ProofGroupDto;
+import com.moava.proofs.dto.PaymentProofDetailDto;
+import com.moava.proofs.dto.ProofFileSummaryDto;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
@@ -47,7 +50,8 @@ public interface PaymentProofMapper {
     int updateProofReview(@Param("proofId") Long proofId,
                           @Param("status") String status,
                           @Param("reviewedBy") Long reviewedBy,
-                          @Param("reviewMemo") String reviewMemo);
+                          @Param("reviewMemo") String reviewMemo,
+                          @Param("reviewedAt") LocalDateTime reviewedAt);
 
     // F22-05: 재제출 시 지울 기존 파일 경로 목록
     List<String> findProofFilePaths(@Param("proofId") Long proofId);
@@ -58,4 +62,35 @@ public interface PaymentProofMapper {
     // F22-05: REVISION → PENDING, 납입일 갱신, 재제출 횟수 +1 (REVISION일 때만 → 0이면 이미 처리됨)
     int updateProofResubmit(@Param("proofId") Long proofId,
                             @Param("payDate") java.time.LocalDate payDate);
+
+    // 알림: 오늘 이 모임 증빙으로 모임장에게 PROOF_PENDING을 보낸 건수 (같은 모임 하루 1건 규칙)
+    int countTodayProofPending(@Param("ownerId") Long ownerId,
+                               @Param("groupId") Long groupId);
+
+    // F23: 승인 시 같은 회원·귀속 월 미납 건 해소 (이미 RESOLVED인 건은 건드리지 않음)
+    int resolveOverdueCase(@Param("groupId") Long groupId,
+                           @Param("memberId") Long memberId,
+                           @Param("payMonth") String payMonth);
+
+
+    // 감사 로그 1건 저장 (AUDIT_LOG는 append-only — INSERT만)
+    int insertAuditLog(@Param("groupId") Long groupId,
+                       @Param("actorMemberId") Long actorMemberId,
+                       @Param("targetMemberId") Long targetMemberId,
+                       @Param("eventType") String eventType,
+                       @Param("description") String description);
+
+
+    // F22 상세: 증빙 1건 (경로의 groupId 소속인 것만, 없으면 null)
+    PaymentProofDetailDto findProofDetail(@Param("groupId") Long groupId,
+                                          @Param("proofId") Long proofId);
+
+    // F22 상세: 첨부 파일 요약 목록 (SORT_NO 순)
+    List<ProofFileSummaryDto> findProofFileSummaries(@Param("proofId") Long proofId);
+
+    // F22 파일 미리보기: 이 증빙에 속한 파일 1건 (없으면 null)
+    PaymentProofFileDto findProofFile(@Param("proofId") Long proofId,
+                                      @Param("fileId") Long fileId);
+
+
 }
