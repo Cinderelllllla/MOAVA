@@ -163,4 +163,178 @@ public class OpenBankingDTO {
         private String verifyStatus;
         private String accountStatus;
     }
+
+    /**
+     * 8. 실제 계좌 동기화 시작 시점의 스냅샷 저장용 DTO
+     * - 실 계좌와 Moava DB 간 괴리감을 줄이기 위한 기준값 저장
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AccountSnapshotRequest {
+        private Long memberId;
+        private String bankName;
+        private String accountNo;
+        private String holderName;
+        private Long balanceAmt;
+        private Long availableBalanceAmt;
+        private String accountType;
+        private String syncSource;
+        private String syncReason;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AccountSnapshotRecord {
+        private Long snapshotId;
+        private Long memberId;
+        private String bankName;
+        private String accountNo;
+        private String holderName;
+        private Long balanceAmt;
+        private Long availableBalanceAmt;
+        private String accountType;
+        private String syncSource;
+        private String syncReason;
+        private String syncedAt;
+    }
+
+    /**
+     * 9. 실제 계좌 거래내역 증분 동기화용 DTO
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AccountTransactionSyncRequest {
+        private Long memberId;
+        private String bankName;
+        private String accountNo;
+        private String fromDate;
+        private String toDate;
+        private String pageNo;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AccountTransactionRecord {
+        private Long transactionId;
+        private Long memberId;
+        private String bankName;
+        private String accountNo;
+        private String transactionDate;
+        private String inOutType;
+        private Long amount;
+        private Long balanceAfter;
+        private String counterpartyName;
+        private String printContent;
+        private String sourceType;
+    }
+
+    /**
+     * 10. ML 교육용 요약 레코드
+     * - 정산 로직과 교육용 데이터셋이 섞이지 않도록 분리
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class MlTrainingRecord {
+        private Long memberId;
+        private String bankName;
+        private String accountNo;
+        private String transactionDate;
+        private String inOutType;
+        private Long amount;
+        private Long balanceAfter;
+        private String printContent;
+        private String featureGroup;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CodefRegistrationStatusRequest {
+        private Long memberId;
+        private String bankCode;
+        private String userId;
+        private String userPw;
+        private String clientName;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CodefRegistrationStatusResponse {
+        private boolean registered;
+        private String status;
+        private String message;
+        private String bankCode;
+        private String accountNo;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CodefAccountListRequest {
+        private Long memberId;
+        private String bankCode;
+        private String userId;
+        private String userPw;
+        private String clientName;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CodefAccountSummary {
+        private String bankCode;
+        private String bankName;
+        private String accountNo;
+        private String accountName;
+        private String accountType;
+        private String fintechUseNum;
+        private boolean isPrimary;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CodefTransactionListRequest {
+        private Long memberId;
+        private String bankCode;
+        private String accountNo;
+        private String fintechUseNum;
+        private String fromDate;
+        private String toDate;
+        private String pageNo;
+        private String userId;
+        private String userPw;
+        private String clientName;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CodefTransactionItem {
+        private String transactionDate;
+        private String transactionTime;
+        private String inOutType;
+        private Long amount;
+        private Long balanceAfter;
+        private String counterpartyName;
+        private String printContent;
+        private String transactionId;
+    }
 }
