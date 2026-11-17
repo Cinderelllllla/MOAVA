@@ -2,6 +2,7 @@
 /* F11~F19 F20 F28 F33 F36 — 모임 조회·생성·가입·운영 */
 
 import * as D from './mock/db';
+import { getAccessToken } from './auth';
 
 const { db, save, fail } = D;
 
@@ -50,6 +51,37 @@ export const listGroups = () => db.groups;
 export const getGroup = id => D.group(id);
 
 export const myGroups = () => db.groups.filter(D.activeJoined);
+// Oracle DB에서 로그인한 회원이 모임장인 계모임 조회
+export async function fetchMyGroups() {
+  const token = getAccessToken();
+
+  if (!token) {
+    throw new Error('로그인이 필요합니다.');
+  }
+
+  const response = await fetch('/api/groups/my', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('로그인 인증이 만료되었거나 접근 권한이 없습니다.');
+    }
+
+    throw new Error(`내 계모임 조회 실패 (${response.status})`);
+  }
+
+  const data = await response.json();
+
+  if (!Array.isArray(data)) {
+    throw new Error('계모임 목록 응답 형식이 올바르지 않습니다.');
+  }
+
+  return data;
+}
 
 export const endedGroups = () =>
   db.groups.filter(g => D.joined(g) && D.isEnded(g));
@@ -239,13 +271,19 @@ export async function createGroup(f) {
     fail('지역을 시·도와 시·군·구까지 입력해 주세요.');
   }
 
-  // 8. Spring Boot API 호출
+// 8. 모임 생성 함수 내부
+  const token = getAccessToken();
+
+  if (!token) {
+    throw new Error('로그인이 필요합니다.');
+  }
+
   const response = await fetch('/api/groups', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
     },
-    credentials: 'include',
     body: JSON.stringify(payload)
   });
 
