@@ -2,6 +2,7 @@ package com.moava.group.procedures.service;
 
 import com.moava.group.procedures.dto.DissolutionDTO;
 import com.moava.group.procedures.mapper.DissolutionMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,13 +15,10 @@ import java.util.Locale;
 import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 public class DissolutionService {
 
     private final DissolutionMapper dissolutionMapper;
-
-    public DissolutionService(DissolutionMapper dissolutionMapper) {
-        this.dissolutionMapper = dissolutionMapper;
-    }
 
     /**
      * 특정 모임의 해산 신청 현황 조회 (모임 운영 센터 현재 상태 배지 표시용)

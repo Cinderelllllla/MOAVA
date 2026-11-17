@@ -2,6 +2,7 @@ package com.moava.group.procedures.controller;
 
 import com.moava.group.procedures.dto.WithdrawalDTO;
 import com.moava.group.procedures.service.WithdrawalService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,13 +11,10 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/groups/{groupId}/withdrawals")
+@RequiredArgsConstructor
 public class WithdrawalController {
 
     private final WithdrawalService withdrawalService;
-
-    public WithdrawalController(WithdrawalService withdrawalService) {
-        this.withdrawalService = withdrawalService;
-    }
 
     // 0. 회원 탈퇴 검토 및 정산안 동의 현황 목록 조회
     @GetMapping

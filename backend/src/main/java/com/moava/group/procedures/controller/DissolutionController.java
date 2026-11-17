@@ -2,6 +2,7 @@ package com.moava.group.procedures.controller;
 
 import com.moava.group.procedures.dto.DissolutionDTO;
 import com.moava.group.procedures.service.DissolutionService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -9,13 +10,10 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
+@RequiredArgsConstructor
 public class DissolutionController {
 
     private final DissolutionService dissolutionService;
-
-    public DissolutionController(DissolutionService dissolutionService) {
-        this.dissolutionService = dissolutionService;
-    }
 
     // [S10 ⑤] 특정 모임의 해산 상태 배지 및 상세 조회
     @GetMapping("/api/v1/groups/{groupId}/dissolution")
