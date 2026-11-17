@@ -15,6 +15,7 @@ import com.moava.crypto.dto.CryptoKeyRecord;
 import com.moava.crypto.mapper.CryptoKeyMapper;
 import com.moava.service.AesGcmCryptoService;
 
+//암호화 : encrypt, 복호화 : decrypt만 사용
 @Service 
 public class CryptoKeyService {
     private static final String ALGORITHM = "AES/GCM/NoPadding";
