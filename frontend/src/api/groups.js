@@ -62,7 +62,13 @@ export async function createGroup(f) {
   const requestBody = {
     title: f.title.trim(),
     description: f.description.trim(),
-    purpose: f.purpose,
+    purpose: ({
+      '목돈 마련': 'SAVINGS',
+      '재테크': 'INVEST',
+      '친목': 'SOCIAL',
+      '창업': 'STARTUP',
+      '여행': 'TRAVEL',
+    })[f.purpose],
     region: f.region.trim(),
     regionSido,
     regionSigungu,
@@ -76,7 +82,7 @@ export async function createGroup(f) {
     assumedRate: Number(f.rate || 3),
     rate: Number(f.rate || 3),
     visibility: f.visibility || 'PUBLIC',
-    overduePolicy: f.overduePolicy || 'STD_5_10_30',
+    overduePolicy: f.overduePolicy.startsWith('5일차 알림 +') ? 'ALERT_RESTRICT' : 'ALERT_ONLY',
     rulesTitle: f.rulesTitle.trim(),
     rulesBody: f.rules.trim(),
     rules: f.rules.trim(),
@@ -84,7 +90,7 @@ export async function createGroup(f) {
     bank: f.bank.trim(),
     accountHolder: u.name,
     holder: u.name,
-    accountNo,
+    accountNumber: accountNo,
   };
 
   try {

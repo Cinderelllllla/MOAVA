@@ -105,7 +105,8 @@ export async function addProof(groupId, f, images, resubmitId = null) {
         body: formData,
       });
 
-      const newProofId = res?.paymentProofId ?? D.uid();
+      const newProofId = res?.proofId;
+      if (newProofId == null) fail('서버에서 증빙 ID를 받지 못했습니다.');
       db.proofs.push({
         id: newProofId,
         groupId,
