@@ -38,6 +38,7 @@ public class MemberService {
     public AuthResponse signup(SignupRequest request) {
         if(request == null) throw bad("회원가입 정보를 입력해주세요.");
 
+        Long id = request.id();
         String name = clean(request.name());
         String email = clean(request.email());
         String phone = clean(request.phone()).replace("-", "");
@@ -59,16 +60,19 @@ public class MemberService {
         if (sido.isBlank() || sido.length() > 30 || sigungu.isBlank() || sigungu.length() > 30) {
             throw bad("활동 지역을 올바르게 입력해주세요.");
         }
-        if(!request.termsAgreed() || !request.privacyAgreed()) {
-            throw bad("약관 및 개인정보 처리방침에 동의해야 회원가입이 가능합니다.");
+        if(request.termsAgreed() == null || !request.termsAgreed()) {
+            throw bad("이용약관에 동의해주세요.");
+        }
+        if(request.privacyAgreed() == null || !request.privacyAgreed()) {
+            throw bad("개인정보 처리방침에 동의해주세요.");
         }
         if(memberMapper.existsByEmail(email) > 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이미 존재하는 이메일입니다.");
         
         String passwordHash = passwordEncoder.encode(password);
-        String phoneEnc = phoneCryptoService.encrypt(phone);
         int keyVer = phoneCryptoService.currentKeyVersion();
+        String phoneEnc = phoneCryptoService.encrypt(phone, keyVer);
 
-        memberMapper.insertUser(name, email, passwordHash, phoneEnc, keyVer, sido, sigungu);
+        memberMapper.insertUser(id, name, email, passwordHash, phoneEnc, keyVer, sido, sigungu);
         MemberResponse member = memberMapper.findByEmail(email);
         if(member == null) throw new IllegalStateException("회원가입 후 회원 정보를 조회할 수 없습니다.");
         return response(member);
@@ -102,7 +106,7 @@ public class MemberService {
     }
 
         public MemberView getActiveMember(String email) {
-        MemberResponse user = memberMapper.findAuthStateByEmail(email);
+        MemberResponse user = memberMapper.findByEmail(email);
         if (user == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "회원 정보를 찾을 수 없습니다.");
         ensureCanUse(user);
         return toView(user, null);
