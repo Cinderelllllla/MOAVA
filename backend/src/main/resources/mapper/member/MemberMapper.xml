@@ -47,7 +47,7 @@
             (MEMBER_ID, NAME, EMAIL, PASSWORD_HASH, PHONE_ENC, REGION_SIDO,
              REGION_SIGUNGU, STATUS, BANNED_YN, KEY_VER)
         VALUES
-            (SEQ_MEMBER.NEXTVAL, #{name}, #{email}, #{passwordHash}, #{phoneEnc}, #{regionSido},
+            (#{memberId}, #{name}, #{email}, #{passwordHash}, #{phoneEnc}, #{regionSido},
              #{regionSigungu}, 'ACTIVE', 'N', #{keyVer})
     </insert>
 
