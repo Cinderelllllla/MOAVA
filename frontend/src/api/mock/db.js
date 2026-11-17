@@ -47,6 +47,17 @@ export const SEED = {
 };
 
 export let db = load();
+
+// 서버 로그인 세션은 JWT가 없으면 유지하지 않음
+if (
+  db.session?.type === 'MEMBER' &&
+  String(db.session.id).startsWith('server:') &&
+  !sessionStorage.getItem('moava_access_token')
+) {
+  db.session = null;
+  localStorage.setItem('moava-react-v1', JSON.stringify(db));
+}
+
 function load() {
   let d; try { d = JSON.parse(localStorage.getItem(KEY)); } catch (e) { d = null; }
   d = d || structuredClone(SEED);
