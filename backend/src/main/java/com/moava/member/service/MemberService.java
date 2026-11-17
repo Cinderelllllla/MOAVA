@@ -91,7 +91,7 @@ public class MemberService {
     private AuthResponse response(MemberResponse member) {
         String phone = member.phoneEnc() == null ? null : phoneCryptoService.decrypt(member.phoneEnc(), member.keyVer() == null ? 1 : member.keyVer());
         MemberView view = toView(member, phone);
-        return new AuthResponse(jwtTokenProvider.createToken(member.email()), "Bearer", view);
+        return new AuthResponse(jwtTokenProvider.createToken(member.id()), "Bearer", view);
     }
 
     private MemberView toView(MemberResponse member, String phone) {
