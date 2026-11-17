@@ -214,4 +214,20 @@
         ORDER BY SORT_NO
     </select>
 
+
+    <!-- F22 파일 미리보기: 파일 1건. 다른 증빙의 파일 ID를 막으려고 PAYMENT_PROOF_ID도 같이 확인 -->
+    <select id="findProofFile" resultType="com.moava.proofs.dto.PaymentProofFileDto">
+        SELECT FILE_ID          AS fileId,
+        PAYMENT_PROOF_ID AS paymentProofId,
+        SORT_NO          AS sortNo,
+        FILE_PATH        AS filePath,
+        MIME_TYPE        AS mimeType,
+        FILE_SIZE        AS fileSize,
+        ENCRYPTED_YN     AS encryptedYn,
+        KEY_VER          AS keyVer
+        FROM PAYMENT_PROOF_FILE
+        WHERE FILE_ID = #{fileId}
+        AND PAYMENT_PROOF_ID = #{proofId}
+    </select>
+
 </mapper>

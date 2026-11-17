@@ -11,6 +11,8 @@ import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
 import com.moava.proofs.service.PaymentProofService;
 import lombok.RequiredArgsConstructor;
+import com.moava.proofs.dto.ProofFileContent;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -78,6 +80,27 @@ public class PaymentProofController {
         return ApiResponse.ok(paymentProofService.getProofDetail(groupId, proofId, memberId), requestId());
     }
 
+    /**
+     * F22 증빙 파일 미리보기·다운로드 (작성자·모임장만 — 팀 결정 대기, A안)
+     * - ?download=true 이면 다운로드, 없으면 브라우저에서 바로 보기
+     */
+    @GetMapping("/{proofId}/files/{fileId}")
+    public ResponseEntity<byte[]> getProofFile(
+            @PathVariable Long groupId,
+            @PathVariable Long proofId,
+            @PathVariable Long fileId,
+            @RequestParam(defaultValue = "false") boolean download,
+            Authentication authentication) {
+
+        Long memberId = loginMemberId(authentication);
+        ProofFileContent file = paymentProofService.getProofFile(groupId, proofId, fileId, memberId);
+        String disposition = (download ? "attachment" : "inline") + "; filename=\"" + file.getFileName() + "\"";
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.getMimeType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")   // 민감 파일이라 캐시 금지 (명세 권장)
+                .body(file.getBytes());
+    }
     /**
      * F23 증빙 승인·보완 요청 (모임장)
      * - 요청 본문(JSON): {"decision": "CONFIRMED" | "REVISION", "reviewMemo": "사유"}
