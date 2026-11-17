@@ -1,7 +1,7 @@
 package com.moava.openbanking;
 
 import com.moava.openbanking.OpenBankingDTO.*;
-import com.moava.openbanking.service.OpenBankingService;
+import com.moava.openbanking.OpenBankingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -55,7 +55,37 @@ public class OpenBankingController {
     }
 
     /**
-     * 5. 모임 납입/거래내역 조회 API (납입내역 탭 진입 시 호출)
+     * 5. CODEF 등록 여부 확인 API
+     * POST /api/v1/openbanking/codef/registration-status
+     */
+    @PostMapping("/codef/registration-status")
+    public ResponseEntity<CodefRegistrationStatusResponse> getCodefRegistrationStatus(
+            @RequestBody CodefRegistrationStatusRequest request) {
+        return ResponseEntity.ok(openBankingService.checkCodefRegistrationStatus(request));
+    }
+
+    /**
+     * 6. CODEF 보유 계좌 목록 조회 API
+     * POST /api/v1/openbanking/codef/account-list
+     */
+    @PostMapping("/codef/account-list")
+    public ResponseEntity<List<CodefAccountSummary>> getCodefAccountList(
+            @RequestBody CodefAccountListRequest request) {
+        return ResponseEntity.ok(openBankingService.fetchCodefAccountList(request));
+    }
+
+    /**
+     * 7. CODEF 거래내역 조회 API
+     * POST /api/v1/openbanking/codef/transaction-list
+     */
+    @PostMapping("/codef/transaction-list")
+    public ResponseEntity<List<CodefTransactionItem>> getCodefTransactionList(
+            @RequestBody CodefTransactionListRequest request) {
+        return ResponseEntity.ok(openBankingService.fetchCodefTransactions(request));
+    }
+
+    /**
+     * 8. 모임 납입/거래내역 조회 API (납입내역 탭 진입 시 호출)
      * GET /api/v1/openbanking/groups/{groupId}/transactions?payMonth=202611
      */
     @GetMapping("/groups/{groupId}/transactions")
