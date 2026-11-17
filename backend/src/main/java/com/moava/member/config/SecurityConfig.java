@@ -16,6 +16,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.moava.member.service.JwtAuthenticationFilter;
 
+import jakarta.servlet.DispatcherType;
+
 @Configuration
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtFilter;
@@ -37,9 +39,22 @@ public class SecurityConfig {
             .formLogin(AbstractHttpConfigurer::disable)
             .httpBasic(AbstractHttpConfigurer::disable)
             .exceptionHandling(e -> e.authenticationEntryPoint((request, response, authException) ->
-                response.sendError(org.springframework.http.HttpStatus.UNAUTHORIZED.value())))
+                response.sendError(401)))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/signup", "/api/auth/login", "/error").permitAll()
+                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                .requestMatchers(
+                    "/",
+                    "/error",
+                    "/index.html",
+                    "/assets/**",
+                    "/favicon.ico",
+                    //test용 API
+                    "/api/test"
+                ).permitAll()
+                .requestMatchers(
+                    "/api/auth/signup",
+                    "/api/auth/login"
+                ).permitAll()
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
             .build();

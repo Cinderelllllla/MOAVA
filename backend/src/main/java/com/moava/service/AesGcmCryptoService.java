@@ -10,6 +10,9 @@ import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
+import org.springframework.stereotype.Service;
+
+@Service 
 public class AesGcmCryptoService {
     
     private static final int IV_LENGTH = 12;

@@ -27,8 +27,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws IOException, ServletException {
         // This method can be implemented to extract and validate JWT tokens from incoming requests.
         String header = request.getHeader("Authorization");
-        if(header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);
+        if(header == null || !header.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        String token = header.substring(7);
+        try{
             if(!jwtTokenProvider.isValid(token)) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 response.setContentType("application/json;charset=UTF-8");
@@ -38,6 +42,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String email = jwtTokenProvider.getEmail(token);
             var authentication = new UsernamePasswordAuthenticationToken(email, null, List.of(new SimpleGrantedAuthority("ROLE_MEMBER")));
             SecurityContextHolder.getContext().setAuthentication(authentication);
+        } catch (Exception e) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"message\":\"로그인 정보가 만료되었거나 유효하지않습니다. 다시 로그인해 주세요.\"}");
+            return;
         }
         filterChain.doFilter(request, response);
     }

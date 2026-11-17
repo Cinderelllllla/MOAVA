@@ -18,7 +18,7 @@ public class JwtTokenProvider {
     private final String secret;
     private final long expireMinutes;
 
-    public JwtTokenProvider(@Value ("${jwt.secret}") String secret, @Value("${moava.jwt.expire-minutes:120}") long expireMinutes) {
+    public JwtTokenProvider(@Value ("${moava.jwt.secret}") String secret, @Value("${moava.jwt.expire-minutes:120}") long expireMinutes) {
         if(secret == null || secret.getBytes(StandardCharsets.UTF_8).length <32) {
             throw new IllegalArgumentException("moava.jwt.secret은 최소 32바이트 이상이어야 합니다. 현재 길이: " + (secret == null ? 0 : secret.getBytes(StandardCharsets.UTF_8).length));
         }
