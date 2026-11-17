@@ -319,6 +319,101 @@ export async function createGroup(f) {
     id: result.groupId
   };
 }
+ */
+
+export async function createGroup(f) {
+  const amount = Number(f.amount), payDay = Number(f.payDay), max = Number(f.max), months = Number(f.months);
+  if (!f.title?.trim() || !f.rules?.trim() || !f.description?.trim() || !f.rulesTitle?.trim()) fail('모임 필수 정보를 입력해 주세요.');
+  if (amount < 5 || amount % 5) fail('월 납입액은 5만 원 단위입니다.');
+  if (payDay < 1 || payDay > 28) fail('납입일은 1~28일 사이여야 합니다.');
+  if (max < 2 || max > 30) fail('인원은 2~30명입니다.');
+  if (months < 2 || months > 36) fail('기간은 2~36개월입니다.');
+  const accountNo = String(f.accountNo || '').replace(/\D/g, '');
+  if (!f.bank?.trim() || accountNo.length < 8) fail('모임 계좌를 확인해 주세요.');
+
+  const u = D.currentUser();
+  const [regionSido = '서울특별시', regionSigungu = '마포구'] = String(f.region || '').trim().split(/\s+/);
+
+  // 백엔드 POST /api/groups 요청 페이로드 (GroupCreateRequest DTO 매핑)
+  const requestBody = {
+    title: f.title.trim(),
+    description: f.description.trim(),
+    purpose: ({
+      '목돈 마련': 'SAVINGS',
+      '재테크': 'INVEST',
+      '친목': 'SOCIAL',
+      '창업': 'STARTUP',
+      '여행': 'TRAVEL',
+    })[f.purpose],
+    region: f.region.trim(),
+    regionSido,
+    regionSigungu,
+    amount: amount * 10000,          // DB NUMBER(12) 원(KRW) 단위 기준
+    monthlyAmount: amount * 10000,   // 별칭 호환
+    payDay,
+    maxMembers: max,
+    max,
+    months,
+    durationMonths: months,
+    assumedRate: Number(f.rate || 3),
+    rate: Number(f.rate || 3),
+    visibility: f.visibility || 'PUBLIC',
+    overduePolicy: f.overduePolicy.startsWith('5일차 알림 +') ? 'ALERT_RESTRICT' : 'ALERT_ONLY',
+    rulesTitle: f.rulesTitle.trim(),
+    rulesBody: f.rules.trim(),
+    rules: f.rules.trim(),
+    bankName: f.bank.trim(),
+    bank: f.bank.trim(),
+    accountHolder: u.name,
+    holder: u.name,
+    accountNumber: accountNo,
+  };
+
+  try {
+    const res = await apiFetch('/api/groups', {
+      method: 'POST',
+      body: JSON.stringify(requestBody),
+    });
+
+    // 백엔드가 생성한 groupId와 초대코드를 로컬 상태(db.groups)에도 반영하여 화면 즉시 렌더링
+    const createdId = res?.groupId ?? res?.id ?? D.uid();
+    const inviteCode = res?.inviteCode ?? res?.inviteToken ?? D.inviteToken();
+
+    const g = D.groupDefaults({
+      id: createdId,
+      title: f.title.trim(),
+      region: f.region.trim(),
+      purpose: f.purpose,
+      amount,
+      payDay,
+      max,
+      months,
+      rate: Number(f.rate || 3),
+      ownerId: D.me(),
+      members: [D.me()],
+      rulesTitle: f.rulesTitle.trim(),
+      rules: f.rules.trim(),
+      description: f.description.trim(),
+      visibility: f.visibility,
+      overduePolicy: f.overduePolicy,
+      inviteToken: inviteCode,
+      account: { bank: f.bank.trim(), holder: u.name, accountNo, verifyStatus: 'PENDING', keyVer: 1 },
+    });
+
+    if (g.visibility === 'PRIVATE') {
+      D.ensureJoinCode(g);
+      if (res?.inviteCode) g.joinCode.code = String(res.inviteCode);
+    }
+
+    db.groups.unshift(g);
+    D.groupLog(g, '모임장 계좌 최초 등록 (인증 대기)');
+    D.audit('모임 생성', g.id, `${u.name} 모임장 권한 부여 · 납입일 ${payDay}일`);
+    save();
+    return g;
+  } catch (err) {
+    fail(err.message || '모임 개설 중 오류가 발생했습니다.');
+  }
+}
 
 /*
  * 아래 가입·운영 함수들은 기존 GitHub Mock DB 로직을 복구한 것.
