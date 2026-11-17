@@ -65,14 +65,16 @@
                  )
     </insert>
 
-    <!-- 1-2. [수정] REQUESTED 상태 건 회차 및 사유 갱신 -->
+    <!-- 1-2. [수정] 신청 상태 건만 회차 및 사유 갱신 -->
     <update id="updatePayoutRequest">
         UPDATE PAYOUT_REQUEST
         SET ROUND_NO = #{roundNo},
             REASON = #{reason},
             AI_SUGGESTED_ROUND = #{aiSuggestedRound},
             CREATED_AT = SYSDATE
-        WHERE PAYOUT_REQUEST_ID = #{payoutRequestId}
+        WHERE GROUP_ID = #{groupId}
+          AND PAYOUT_REQUEST_ID = #{payoutRequestId}
+          AND STATUS = #{expectedStatus}
     </update>
 
     <!-- 기존 동의 내역 삭제 -->
@@ -138,11 +140,19 @@
 
     <!-- 'Y' 동의한 회원 수 카운트 -->
     <select id="countAgreedConsents" resultType="int">
-        SELECT COUNT(*)
-        FROM CONSENT
-        WHERE CONSENT_TYPE = 'ORDER'
-          AND TARGET_ID = #{targetId}
-          AND AGREED_YN = 'Y'
+        SELECT COUNT(DISTINCT c.MEMBER_ID)
+        FROM CONSENT c
+        JOIN GYE_MEMBER gm
+          ON gm.GROUP_ID = c.GROUP_ID
+         AND gm.MEMBER_ID = c.MEMBER_ID
+         AND gm.STATUS = 'ACTIVE'
+        JOIN PAYOUT_REQUEST pr
+          ON pr.GROUP_ID = c.GROUP_ID
+         AND pr.PAYOUT_REQUEST_ID = c.TARGET_ID
+        WHERE c.CONSENT_TYPE = 'ORDER'
+          AND c.GROUP_ID = #{groupId}
+          AND c.TARGET_ID = #{targetId}
+          AND c.AGREED_YN = 'Y'
     </select>
 
     <!-- 5. 회차 중복 확정 검사 -->
@@ -188,8 +198,17 @@
                pr.REASON             AS reason,
                pr.AI_SUGGESTED_ROUND AS aiSuggestedRound,
                pr.STATUS             AS status,
-               (SELECT COUNT(*) FROM CONSENT c
-                WHERE c.CONSENT_TYPE = 'ORDER' AND c.TARGET_ID = pr.PAYOUT_REQUEST_ID AND c.AGREED_YN = 'Y') AS agreedCount,
+               (SELECT COUNT(DISTINCT c.MEMBER_ID)
+                FROM CONSENT c
+                JOIN GYE_MEMBER gm
+                  ON gm.GROUP_ID = c.GROUP_ID
+                 AND gm.MEMBER_ID = c.MEMBER_ID
+                 AND gm.STATUS = 'ACTIVE'
+                WHERE c.CONSENT_TYPE = 'ORDER'
+                  AND c.GROUP_ID = pr.GROUP_ID
+                  AND c.TARGET_ID = pr.PAYOUT_REQUEST_ID
+                  AND c.MEMBER_ID != pr.MEMBER_ID
+                  AND c.AGREED_YN = 'Y') AS agreedCount,
                (SELECT COUNT(*) FROM GYE_MEMBER gm
                 WHERE gm.GROUP_ID = pr.GROUP_ID AND gm.STATUS = 'ACTIVE' AND gm.MEMBER_ID != pr.MEMBER_ID) AS targetCount,
                pr.CREATED_AT         AS createdAt,

@@ -28,10 +28,18 @@ public interface DissolutionMapper {
                                   @Param("reason") String reason);
 
     // GYE_GROUP.STATUS 업데이트 (DISSOLVE_PENDING / DISSOLVED / ACTIVE)
-    void updateGroupStatus(@Param("groupId") Long groupId, @Param("status") String status);
+    int updateGroupStatus(@Param("groupId") Long groupId,
+                          @Param("expectedStatus") String expectedStatus,
+                          @Param("status") String status);
 
-    // 유효한 활성 ADMIN 계정인지 확인 ( 없으면 시드 1번 관리자 ID 조회 )
+    // 유효한 활성 ADMIN 계정인지 확인
     Integer countActiveAdmin(@Param("adminId") Long adminId);
+
+    List<Long> selectActiveAdminIds();
+
+    int countActiveWithdrawals(@Param("groupId") Long groupId);
+
+    int countActivePayoutRequests(@Param("groupId") Long groupId);
 
     // 2. [승인 검증] 해당 모임의 미종결 증빙(PAYMENT_PROOF.STATUS != 'CONFIRMED') 건수 조회
     int countUnconfirmedProofs(@Param("groupId") Long groupId);
@@ -43,9 +51,10 @@ public interface DissolutionMapper {
     List<Long> selectActiveMemberIds(@Param("groupId") Long groupId);
 
     // DISSOLUTION_REQUEST 승인/반려 업데이트 (DECIDED_BY = FK ADMIN)
-    void updateDissolutionDecision(@Param("dissolutionRequestId") Long dissolutionRequestId,
-                                   @Param("status") String status,
-                                   @Param("adminId") Long adminId);
+    int updateDissolutionDecision(@Param("groupId") Long groupId,
+                                  @Param("dissolutionRequestId") Long dissolutionRequestId,
+                                  @Param("status") String status,
+                                  @Param("adminId") Long adminId);
 
     // 인앱 알림 등록 (NOTIFICATION)
     void insertNotification(@Param("memberId") Long memberId,
@@ -54,6 +63,13 @@ public interface DissolutionMapper {
                             @Param("body") String body,
                             @Param("linkPage") String linkPage,
                             @Param("refId") Long refId);
+
+    void insertAdminNotification(@Param("adminId") Long adminId,
+                                 @Param("notifType") String notifType,
+                                 @Param("title") String title,
+                                 @Param("body") String body,
+                                 @Param("linkPage") String linkPage,
+                                 @Param("refId") Long refId);
 
     // 모임장 행위 감사 로그 등록 (ACTOR_MEMBER_ID 사용, ACTOR_ADMIN_ID = NULL)
     void insertMemberAuditLog(@Param("groupId") Long groupId,

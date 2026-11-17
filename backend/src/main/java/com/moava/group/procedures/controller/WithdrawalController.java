@@ -59,7 +59,8 @@ public class WithdrawalController {
             @PathVariable Long groupId,
             @PathVariable Long withdrawalId,
             @RequestBody WithdrawalDTO.ActionForm form) {
-        withdrawalService.reconfirmWithdrawal(groupId, withdrawalId, form.getActorId());
+        withdrawalService.reconfirmWithdrawal(groupId, withdrawalId,
+                form == null ? null : form.getEffectiveActorId());
         return ResponseEntity.ok(Map.of("message", "모임장에게 탈퇴 재확인 요청 알림을 발송했습니다."));
     }
 
@@ -69,7 +70,8 @@ public class WithdrawalController {
             @PathVariable Long groupId,
             @PathVariable Long withdrawalId,
             @RequestBody WithdrawalDTO.ActionForm form) {
-        withdrawalService.approveWithdrawal(groupId, withdrawalId, form.getActorId());
+        withdrawalService.approveWithdrawal(groupId, withdrawalId,
+                form == null ? null : form.getEffectiveActorId());
         return ResponseEntity.ok(Map.of("message", "중도 탈퇴가 최종 승인되었습니다."));
     }
 }

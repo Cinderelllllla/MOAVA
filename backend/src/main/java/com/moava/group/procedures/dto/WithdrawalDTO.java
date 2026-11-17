@@ -26,7 +26,11 @@ public class WithdrawalDTO {
         }
         public String getEffectiveSpecialYn() {
             if (special != null) return special ? "Y" : "N";
-            return "Y".equalsIgnoreCase(specialYn) ? "Y" : "N";
+            if (specialYn == null || specialYn.isBlank()) return "N";
+            if ("Y".equalsIgnoreCase(specialYn) || "N".equalsIgnoreCase(specialYn)) {
+                return specialYn.toUpperCase(java.util.Locale.ROOT);
+            }
+            return null;
         }
 
         public Long getMemberId() { return memberId; }
@@ -67,7 +71,7 @@ public class WithdrawalDTO {
         }
         public String getEffectiveMemo() {
             String m = (settlementMemo != null && !settlementMemo.isBlank()) ? settlementMemo : memo;
-            return (m != null && !m.isBlank()) ? m : "정산 산출 내역";
+            return m;
         }
 
         public Long getLeaderId() { return leaderId; }
@@ -96,7 +100,7 @@ public class WithdrawalDTO {
         public void setMemberId(Long memberId) { this.memberId = memberId; }
         public Long getUserId() { return userId; }
         public void setUserId(Long userId) { this.userId = userId; }
-        public String getAgreedYn() { return agreedYn != null ? agreedYn : "Y"; }
+        public String getAgreedYn() { return agreedYn; }
         public void setAgreedYn(String agreedYn) { this.agreedYn = agreedYn; }
     }
 

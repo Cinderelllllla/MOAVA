@@ -27,10 +27,12 @@ public interface PayoutOrderMapper {
                              @Param("reason") String reason,
                              @Param("aiSuggestedRound") Integer aiSuggestedRound);
 
-    void updatePayoutRequest(@Param("payoutRequestId") Long payoutRequestId,
-                             @Param("roundNo") Integer roundNo,
-                             @Param("reason") String reason,
-                             @Param("aiSuggestedRound") Integer aiSuggestedRound);
+    int updatePayoutRequest(@Param("groupId") Long groupId,
+                            @Param("payoutRequestId") Long payoutRequestId,
+                            @Param("expectedStatus") String expectedStatus,
+                            @Param("roundNo") Integer roundNo,
+                            @Param("reason") String reason,
+                            @Param("aiSuggestedRound") Integer aiSuggestedRound);
 
     void deleteConsentsByRequestId(@Param("payoutRequestId") Long payoutRequestId);
 
@@ -52,7 +54,8 @@ public interface PayoutOrderMapper {
 
     int countTotalActiveOtherMembers(@Param("groupId") Long groupId, @Param("applicantId") Long applicantId);
 
-    int countAgreedConsents(@Param("targetId") Long payoutRequestId);
+    int countAgreedConsents(@Param("groupId") Long groupId,
+                             @Param("targetId") Long payoutRequestId);
 
     int countConfirmedRoundDuplicate(@Param("groupId") Long groupId,
                                      @Param("roundNo") Integer roundNo,
