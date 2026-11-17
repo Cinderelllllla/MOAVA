@@ -84,44 +84,44 @@ export async function fetchMyGroups() {
 }
 
 export const endedGroups = () =>
-  db.groups.filter(g => D.joined(g) && D.isEnded(g));
+    db.groups.filter(g => D.joined(g) && D.isEnded(g));
 
 export const byToken = t =>
-  db.groups.find(g => g.inviteToken === t) || null;
+    db.groups.find(g => g.inviteToken === t) || null;
 
 export const recommended = rec =>
-  db.groups
-    .filter(g =>
-      D.groupVisible(g) &&
-      g.status === '모집 중' &&
-      g.amount <= Math.max(rec + 10, 20)
-    )
-    .slice(0, 3);
+    db.groups
+        .filter(g =>
+            D.groupVisible(g) &&
+            g.status === '모집 중' &&
+            g.amount <= Math.max(rec + 10, 20)
+        )
+        .slice(0, 3);
 
 export function healthScore(g) {
   const warnings = Object.values(g.warnings || {})
-    .reduce((a, b) => a + b, 0);
+      .reduce((a, b) => a + b, 0);
 
   const rejects = db.proofs.filter(
-    x => x.groupId === g.id && x.status === '보완 요청'
+      x => x.groupId === g.id && x.status === '보완 요청'
   ).length;
 
   const overdue = db.overdueCases.filter(
-    x => x.groupId === g.id && x.status !== 'RESOLVED'
+      x => x.groupId === g.id && x.status !== 'RESOLVED'
   ).length;
 
   return Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(
-        95 -
-        warnings * 9 -
-        rejects * 6 -
-        overdue * 5 -
-        (g.dissolution ? 12 : 0)
+      0,
+      Math.min(
+          100,
+          Math.round(
+              95 -
+              warnings * 9 -
+              rejects * 6 -
+              overdue * 5 -
+              (g.dissolution ? 12 : 0)
+          )
       )
-    )
   );
 }
 
@@ -141,38 +141,38 @@ export function opsTodos(g) {
 
   if (l) {
     t.joins = g.joinRequests.filter(
-      r => r.status === '대기'
+        r => r.status === '대기'
     ).length;
 
     t.proofs = db.proofs.filter(
-      p => p.groupId === g.id && p.status === '확인 대기'
+        p => p.groupId === g.id && p.status === '확인 대기'
     ).length;
 
     t.orders = db.orderRequests.filter(
-      r =>
-        r.groupId === g.id &&
-        ['신청', '동의 요청'].includes(r.status)
+        r =>
+            r.groupId === g.id &&
+            ['신청', '동의 요청'].includes(r.status)
     ).length;
   }
 
   db.orderRequests
-    .filter(
-      r =>
-        r.groupId === g.id &&
-        r.status === '동의 요청' &&
-        r.affected?.includes(m) &&
-        !r.consents.includes(m)
-    )
-    .forEach(() => t.consents++);
+      .filter(
+          r =>
+              r.groupId === g.id &&
+              r.status === '동의 요청' &&
+              r.affected?.includes(m) &&
+              !r.consents.includes(m)
+      )
+      .forEach(() => t.consents++);
 
   g.withdrawals
-    .filter(
-      w =>
-        w.status === '정산 동의 대기' &&
-        w.userId !== m &&
-        !w.consents.includes(m)
-    )
-    .forEach(() => t.consents++);
+      .filter(
+          w =>
+              w.status === '정산 동의 대기' &&
+              w.userId !== m &&
+              !w.consents.includes(m)
+      )
+      .forEach(() => t.consents++);
 
   if (g.transfer && !g.transfer.consents.includes(m)) {
     t.consents++;
@@ -186,22 +186,22 @@ export function opsTodos(g) {
 }
 
 export const groupLogs = g =>
-  [
-    ...db.history
-      .filter(h => h.groupId === g.id)
-      .map(h => ({
-        when: h.date,
-        type: h.type,
-        desc: h.description
-      })),
-    ...(g.log || []).map(x => ({
-      when: x.at,
-      type: '정책',
-      desc: x.msg
-    }))
-  ].sort((a, b) =>
-    String(b.when).localeCompare(String(a.when))
-  );
+    [
+      ...db.history
+          .filter(h => h.groupId === g.id)
+          .map(h => ({
+            when: h.date,
+            type: h.type,
+            desc: h.description
+          })),
+      ...(g.log || []).map(x => ({
+        when: x.at,
+        type: '정책',
+        desc: x.msg
+      }))
+    ].sort((a, b) =>
+        String(b.when).localeCompare(String(a.when))
+    );
 
 /* ---- 생성 (F15 F19) : Spring Boot API ---- */
 
@@ -213,46 +213,46 @@ export async function createGroup(f) {
 
   // 1. 필수 입력값 검증
   if (
-    !f.title?.trim() ||
-    !f.rules?.trim() ||
-    !f.description?.trim() ||
-    !f.rulesTitle?.trim()
+      !f.title?.trim() ||
+      !f.rules?.trim() ||
+      !f.description?.trim() ||
+      !f.rulesTitle?.trim()
   ) {
     fail('모임 필수 정보를 입력해 주세요.');
   }
 
   // 2. 월 납입액 검증 (5만 원 단위)
   if (
-    !Number.isInteger(amount) ||
-    amount < 5 ||
-    amount % 5 !== 0
+      !Number.isInteger(amount) ||
+      amount < 5 ||
+      amount % 5 !== 0
   ) {
     fail('월 납입액은 5만 원 단위로 입력해 주세요.');
   }
 
   // 3. 납입일 검증
   if (
-    !Number.isInteger(payDay) ||
-    payDay < 1 ||
-    payDay > 28
+      !Number.isInteger(payDay) ||
+      payDay < 1 ||
+      payDay > 28
   ) {
     fail('납입일은 1~28일 사이여야 합니다.');
   }
 
   // 4. 인원 검증
   if (
-    !Number.isInteger(max) ||
-    max < 2 ||
-    max > 30
+      !Number.isInteger(max) ||
+      max < 2 ||
+      max > 30
   ) {
     fail('인원은 2~30명입니다.');
   }
 
   // 5. 기간 검증
   if (
-    !Number.isInteger(months) ||
-    months < 2 ||
-    months > 36
+      !Number.isInteger(months) ||
+      months < 2 ||
+      months > 36
   ) {
     fail('기간은 2~36개월입니다.');
   }
@@ -293,7 +293,7 @@ export async function createGroup(f) {
   if (!response.ok) {
     if (response.status === 401) {
       throw new Error(
-        '로그인 인증이 필요합니다. 백엔드 인증 연결을 확인해 주세요.'
+          '로그인 인증이 필요합니다. 백엔드 인증 연결을 확인해 주세요.'
       );
     }
 
@@ -302,15 +302,15 @@ export async function createGroup(f) {
     }
 
     throw new Error(
-      result?.message ||
-      `모임 생성 요청에 실패했습니다. (${response.status})`
+        result?.message ||
+        `모임 생성 요청에 실패했습니다. (${response.status})`
     );
   }
 
   // 10. 서버 응답을 프론트엔드 형식으로 변환
   if (result?.groupId == null) {
     throw new Error(
-      '모임 생성 응답에 groupId가 없습니다. 서버 저장 결과를 확인해 주세요.'
+        '모임 생성 응답에 groupId가 없습니다. 서버 저장 결과를 확인해 주세요.'
     );
   }
 
@@ -319,101 +319,7 @@ export async function createGroup(f) {
     id: result.groupId
   };
 }
- */
 
-export async function createGroup(f) {
-  const amount = Number(f.amount), payDay = Number(f.payDay), max = Number(f.max), months = Number(f.months);
-  if (!f.title?.trim() || !f.rules?.trim() || !f.description?.trim() || !f.rulesTitle?.trim()) fail('모임 필수 정보를 입력해 주세요.');
-  if (amount < 5 || amount % 5) fail('월 납입액은 5만 원 단위입니다.');
-  if (payDay < 1 || payDay > 28) fail('납입일은 1~28일 사이여야 합니다.');
-  if (max < 2 || max > 30) fail('인원은 2~30명입니다.');
-  if (months < 2 || months > 36) fail('기간은 2~36개월입니다.');
-  const accountNo = String(f.accountNo || '').replace(/\D/g, '');
-  if (!f.bank?.trim() || accountNo.length < 8) fail('모임 계좌를 확인해 주세요.');
-
-  const u = D.currentUser();
-  const [regionSido = '서울특별시', regionSigungu = '마포구'] = String(f.region || '').trim().split(/\s+/);
-
-  // 백엔드 POST /api/groups 요청 페이로드 (GroupCreateRequest DTO 매핑)
-  const requestBody = {
-    title: f.title.trim(),
-    description: f.description.trim(),
-    purpose: ({
-      '목돈 마련': 'SAVINGS',
-      '재테크': 'INVEST',
-      '친목': 'SOCIAL',
-      '창업': 'STARTUP',
-      '여행': 'TRAVEL',
-    })[f.purpose],
-    region: f.region.trim(),
-    regionSido,
-    regionSigungu,
-    amount: amount * 10000,          // DB NUMBER(12) 원(KRW) 단위 기준
-    monthlyAmount: amount * 10000,   // 별칭 호환
-    payDay,
-    maxMembers: max,
-    max,
-    months,
-    durationMonths: months,
-    assumedRate: Number(f.rate || 3),
-    rate: Number(f.rate || 3),
-    visibility: f.visibility || 'PUBLIC',
-    overduePolicy: f.overduePolicy.startsWith('5일차 알림 +') ? 'ALERT_RESTRICT' : 'ALERT_ONLY',
-    rulesTitle: f.rulesTitle.trim(),
-    rulesBody: f.rules.trim(),
-    rules: f.rules.trim(),
-    bankName: f.bank.trim(),
-    bank: f.bank.trim(),
-    accountHolder: u.name,
-    holder: u.name,
-    accountNumber: accountNo,
-  };
-
-  try {
-    const res = await apiFetch('/api/groups', {
-      method: 'POST',
-      body: JSON.stringify(requestBody),
-    });
-
-    // 백엔드가 생성한 groupId와 초대코드를 로컬 상태(db.groups)에도 반영하여 화면 즉시 렌더링
-    const createdId = res?.groupId ?? res?.id ?? D.uid();
-    const inviteCode = res?.inviteCode ?? res?.inviteToken ?? D.inviteToken();
-
-    const g = D.groupDefaults({
-      id: createdId,
-      title: f.title.trim(),
-      region: f.region.trim(),
-      purpose: f.purpose,
-      amount,
-      payDay,
-      max,
-      months,
-      rate: Number(f.rate || 3),
-      ownerId: D.me(),
-      members: [D.me()],
-      rulesTitle: f.rulesTitle.trim(),
-      rules: f.rules.trim(),
-      description: f.description.trim(),
-      visibility: f.visibility,
-      overduePolicy: f.overduePolicy,
-      inviteToken: inviteCode,
-      account: { bank: f.bank.trim(), holder: u.name, accountNo, verifyStatus: 'PENDING', keyVer: 1 },
-    });
-
-    if (g.visibility === 'PRIVATE') {
-      D.ensureJoinCode(g);
-      if (res?.inviteCode) g.joinCode.code = String(res.inviteCode);
-    }
-
-    db.groups.unshift(g);
-    D.groupLog(g, '모임장 계좌 최초 등록 (인증 대기)');
-    D.audit('모임 생성', g.id, `${u.name} 모임장 권한 부여 · 납입일 ${payDay}일`);
-    save();
-    return g;
-  } catch (err) {
-    fail(err.message || '모임 개설 중 오류가 발생했습니다.');
-  }
-}
 
 /*
  * 아래 가입·운영 함수들은 기존 GitHub Mock DB 로직을 복구한 것.
@@ -432,10 +338,10 @@ export async function joinRequest(id) {
   }
 
   if (
-    g.status !== '모집 중' ||
-    g.started ||
-    g.dissolution ||
-    g.members.length >= g.max
+      g.status !== '모집 중' ||
+      g.started ||
+      g.dissolution ||
+      g.members.length >= g.max
   ) {
     fail('가입이 마감된 모임입니다.');
   }
@@ -445,16 +351,16 @@ export async function joinRequest(id) {
   }
 
   if (
-    g.joinRequests.some(
-      x => x.userId === D.me() && x.status === '대기'
-    )
+      g.joinRequests.some(
+          x => x.userId === D.me() && x.status === '대기'
+      )
   ) {
     fail('이미 신청했어요.');
   }
 
   if (
-    g.visibility === 'PRIVATE' &&
-    !D.ensureJoinCode(g).verified[String(D.me())]
+      g.visibility === 'PRIVATE' &&
+      !D.ensureJoinCode(g).verified[String(D.me())]
   ) {
     fail('비공개 모임은 초대 링크와 인증코드로만 가입 신청할 수 있어요.');
   }
@@ -467,9 +373,9 @@ export async function joinRequest(id) {
   });
 
   D.notice(
-    g.ownerId,
-    '가입 검토 필요',
-    `${g.title}에 가입 신청이 접수되었습니다.`
+      g.ownerId,
+      '가입 검토 필요',
+      `${g.title}에 가입 신청이 접수되었습니다.`
   );
 
   D.audit('가입 신청', g.id, `${D.currentUser().name} 신청`);
@@ -507,9 +413,9 @@ export async function verifyInviteCode(id, value) {
     save();
 
     fail(
-      a.until > Date.now()
-        ? '5회 실패하여 15분 동안 인증이 제한됩니다.'
-        : '인증코드가 올바르지 않습니다.'
+        a.until > Date.now()
+            ? '5회 실패하여 15분 동안 인증이 제한됩니다.'
+            : '인증코드가 올바르지 않습니다.'
     );
   }
 
@@ -531,9 +437,9 @@ export async function approveJoin(id, rid) {
   }
 
   if (
-    g.started ||
-    g.members.length >= g.max ||
-    g.status !== '모집 중'
+      g.started ||
+      g.members.length >= g.max ||
+      g.status !== '모집 중'
   ) {
     fail('가입이 마감되었습니다.');
   }
@@ -549,9 +455,9 @@ export async function approveJoin(id, rid) {
   }
 
   D.notice(
-    r.userId,
-    '계모임 가입 승인',
-    `${g.title} 가입이 승인되었습니다.`
+      r.userId,
+      '계모임 가입 승인',
+      `${g.title} 가입이 승인되었습니다.`
   );
 
   D.audit('가입 승인', id, D.memberName(r.userId));
@@ -569,9 +475,9 @@ export async function rejectJoin(id, rid) {
   r.status = '거절';
 
   D.notice(
-    r.userId,
-    '계모임 가입 거절',
-    `${g.title} 가입 신청이 거절되었습니다.`
+      r.userId,
+      '계모임 가입 거절',
+      `${g.title} 가입 신청이 거절되었습니다.`
   );
 
   D.audit('가입 거절', id, '모임장 처리');
@@ -594,9 +500,9 @@ export async function markReceived(id, memberId) {
   g.payoutReceived.push(memberId);
 
   D.notice(
-    memberId,
-    '곗돈 수령 완료 표시',
-    `${g.title}: 수령 완료로 기록되었습니다.`
+      memberId,
+      '곗돈 수령 완료 표시',
+      `${g.title}: 수령 완료로 기록되었습니다.`
   );
 
   D.audit('수령 완료 기록', id, D.memberName(memberId));
@@ -625,22 +531,22 @@ export async function togglePrivate(id) {
   }
 
   D.groupLog(
-    g,
-    toPrivate ? '비공개 모임으로 전환' : '공개 모임으로 전환'
+      g,
+      toPrivate ? '비공개 모임으로 전환' : '공개 모임으로 전환'
   );
 
   D.audit(
-    toPrivate ? '비공개 전환' : '공개 전환',
-    g.id,
-    `${D.currentUser().name} 처리`
+      toPrivate ? '비공개 전환' : '공개 전환',
+      g.id,
+      `${D.currentUser().name} 처리`
   );
 
   g.members.forEach(x =>
-    D.notice(
-      x,
-      '모임 공개 설정 변경',
-      `${g.title}: ${toPrivate ? '비공개' : '공개'} 모임으로 전환되었습니다.`
-    )
+      D.notice(
+          x,
+          '모임 공개 설정 변경',
+          `${g.title}: ${toPrivate ? '비공개' : '공개'} 모임으로 전환되었습니다.`
+      )
   );
 
   save();
@@ -693,16 +599,16 @@ export async function accountChange(id, bank, accountNo) {
   D.groupLog(g, '계좌 변경 신청 · 재인증 및 회원 동의 대기');
 
   g.members.forEach(x =>
-    D.notice(
-      x,
-      '송금 보류 안내',
-      `${g.title}에서 계좌 변경 신청이 접수됐습니다. 확인 전 송금하지 마세요.`
-    )
+      D.notice(
+          x,
+          '송금 보류 안내',
+          `${g.title}에서 계좌 변경 신청이 접수됐습니다. 확인 전 송금하지 마세요.`
+      )
   );
 
   D.noticeAdmin(
-    '계좌 변경 확인 필요',
-    `${g.title}의 모임 계좌 변경이 신청되었습니다.`
+      '계좌 변경 확인 필요',
+      `${g.title}의 모임 계좌 변경이 신청되었습니다.`
   );
 
   save();
@@ -753,11 +659,11 @@ export async function confirmAccount(id) {
   D.groupLog(g, '모든 회원 동의 후 계좌 변경 확정');
 
   g.members.forEach(x =>
-    D.notice(
-      x,
-      '모임 계좌 변경 확정',
-      `${g.title}의 계좌 변경이 확정되었습니다. 송금 전 직접 재확인하세요.`
-    )
+      D.notice(
+          x,
+          '모임 계좌 변경 확정',
+          `${g.title}의 계좌 변경이 확정되었습니다. 송금 전 직접 재확인하세요.`
+      )
   );
 
   save();
@@ -807,11 +713,11 @@ export async function requestTransfer(id) {
   D.groupLog(g, '모임장 권한 승계 동의 요청');
 
   g.members.forEach(x =>
-    D.notice(
-      x,
-      '모임장 승계 동의 요청',
-      `${g.title}의 모임장 변경에 대한 동의를 요청합니다.`
-    )
+      D.notice(
+          x,
+          '모임장 승계 동의 요청',
+          `${g.title}의 모임장 변경에 대한 동의를 요청합니다.`
+      )
   );
 
   save();
@@ -854,8 +760,8 @@ export async function confirmTransfer(id) {
   }
 
   if (
-    !t.accepted ||
-    g.members.some(x => !t.consents.includes(x))
+      !t.accepted ||
+      g.members.some(x => !t.consents.includes(x))
   ) {
     fail('승계 대상 수락과 모든 회원 동의가 필요합니다.');
   }
@@ -875,22 +781,22 @@ export async function confirmTransfer(id) {
   }
 
   D.groupLog(
-    g,
-    `${D.memberName(old)} → ${D.memberName(g.ownerId)} 권한 승계 · 기존 모임장은 Member 유지 · 계좌 재인증 필요`
+      g,
+      `${D.memberName(old)} → ${D.memberName(g.ownerId)} 권한 승계 · 기존 모임장은 Member 유지 · 계좌 재인증 필요`
   );
 
   g.members.forEach(x =>
-    D.notice(
-      x,
-      '모임장 변경',
-      `${g.title} 모임장이 변경되었습니다. 신규 계좌 재인증 전 송금하지 마세요.`
-    )
+      D.notice(
+          x,
+          '모임장 변경',
+          `${g.title} 모임장이 변경되었습니다. 신규 계좌 재인증 전 송금하지 마세요.`
+      )
   );
 
   D.audit(
-    '모임장 승계',
-    id,
-    `${D.memberName(old)} → ${D.memberName(g.ownerId)}`
+      '모임장 승계',
+      id,
+      `${D.memberName(old)} → ${D.memberName(g.ownerId)}`
   );
 
   save();
@@ -915,11 +821,11 @@ export async function editRule(id, title, body) {
   D.audit('운영 규칙 등록', id, g.rulesTitle);
 
   g.members.forEach(x =>
-    D.notice(
-      x,
-      '운영 규칙 업데이트',
-      `${g.title}: ${g.rulesTitle}`
-    )
+      D.notice(
+          x,
+          '운영 규칙 업데이트',
+          `${g.title}: ${g.rulesTitle}`
+      )
   );
 
   save();
@@ -947,15 +853,15 @@ export async function warnMember(id, x, reason) {
   g.warnings[x] = (g.warnings[x] || 0) + 1;
 
   D.notice(
-    x,
-    '모임 경고 알림',
-    `${g.title}: 경고 ${g.warnings[x]}회 · ${reason}`
+      x,
+      '모임 경고 알림',
+      `${g.title}: 경고 ${g.warnings[x]}회 · ${reason}`
   );
 
   D.audit(
-    '경고',
-    id,
-    `${D.memberName(x)} · ${reason}`
+      '경고',
+      id,
+      `${D.memberName(x)} · ${reason}`
   );
 
   save();
@@ -983,15 +889,15 @@ export async function forceMember(id, x, reason) {
   g.members = g.members.filter(a => a !== x);
 
   D.notice(
-    x,
-    '강제 탈퇴 처리',
-    `${g.title}: ${reason}. 이의 신청은 고객센터로 문의하세요.`
+      x,
+      '강제 탈퇴 처리',
+      `${g.title}: ${reason}. 이의 신청은 고객센터로 문의하세요.`
   );
 
   D.audit(
-    '강제 탈퇴',
-    id,
-    `${D.memberName(x)} · ${reason}`
+      '강제 탈퇴',
+      id,
+      `${D.memberName(x)} · ${reason}`
   );
 
   save();
@@ -1019,8 +925,8 @@ export async function requestDissolve(id, reason) {
   };
 
   D.noticeAdmin(
-    '해산 승인 검토 필요',
-    `${g.title} 해산 신청이 접수되었습니다.`
+      '해산 승인 검토 필요',
+      `${g.title} 해산 신청이 접수되었습니다.`
   );
 
   D.audit('해산 신청', id, reason);
