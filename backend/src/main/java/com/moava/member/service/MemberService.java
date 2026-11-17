@@ -21,7 +21,7 @@ import com.moava.member.mapper.MemberMapper;
 public class MemberService {
     
     private static final Pattern  EMAIL = Pattern.compile("^[A-Za-z0-9+_.-]+@(.+)$");
-    private static final Pattern PHONE = Pattern.compile("^01([0|1|6|7|8|9]?)-?([0-9]{3,4})-?([0-9]{4})$");
+    private static final Pattern PHONE = Pattern.compile("^01[016789][0-9]{7,8}$");
     private final MemberMapper memberMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
@@ -40,7 +40,7 @@ public class MemberService {
 
         Long id = request.id();
         String name = clean(request.name());
-        String email = clean(request.email());
+        String email = clean(request.email()).toLowerCase(Locale.ROOT);
         String phone = clean(request.phone()).replace("-", "");
         String sido = clean(request.regionSido());
         String sigungu = clean(request.regionSigungu());
@@ -89,7 +89,8 @@ public class MemberService {
 
     
     private AuthResponse response(MemberResponse member) {
-        String phone = member.phoneEnc() == null ? null : phoneCryptoService.decrypt(member.phoneEnc(), member.keyVer() == null ? 1 : member.keyVer());
+        String phone = member.phoneEnc() == null ? null : phoneCryptoService.decrypt(member.phoneEnc(), member.keyVer() == null ? null : member.keyVer());
+        
         MemberView view = toView(member, phone);
         return new AuthResponse(jwtTokenProvider.createToken(member.id()), "Bearer", view);
     }
@@ -102,7 +103,7 @@ public class MemberService {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
     private String clean(String input) {
-        return input == null ? null : input.trim();
+        return input == null ? "" : input.trim();
     }
 
         public MemberView getActiveMember(Long memberId) {
