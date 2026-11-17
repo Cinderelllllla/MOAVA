@@ -22,6 +22,25 @@
          WHERE LOWER(EMAIL) = LOWER(#{email})
     </select>  
 
+    <select id="findById"
+        parameterType="long"
+        resultType="com.moava.member.dto.MemberResponse">
+
+        SELECT
+            MEMBER_ID AS ID,
+            NAME,
+            EMAIL,
+            PHONE_ENC AS PHONE_ENC,
+            REGION_SIDO AS REGION_SIDO,
+            REGION_SIGUNGU AS REGION_SIGUNGU,
+            STATUS,
+            BANNED_YN,
+            KEY_VER
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+
+    </select>
+
     <!-- 회원 1명 -->
     <insert id="insertUser">
         INSERT INTO MEMBER
