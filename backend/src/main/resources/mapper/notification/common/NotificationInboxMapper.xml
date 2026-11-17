@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.notification.common.mapper.NotificationInboxMapper">
+
+    <resultMap id="itemMap" type="com.moava.notification.common.dto.NotificationItem">
+        <id     property="id"        column="NOTIFICATION_ID"/>
+        <result property="type"      column="NOTIF_TYPE"/>
+        <result property="title"     column="TITLE"/>
+        <result property="body"      column="BODY"/>
+        <result property="linkPage"  column="LINK_PAGE"/>
+        <result property="refId"     column="REF_ID"/>
+        <result property="read"      column="IS_READ" javaType="boolean"/>
+        <result property="createdAt" column="CREATED_AT" javaType="java.time.LocalDateTime"/>
+    </resultMap>
+
+    <!-- 받는 사람 조건: 회원이면 MEMBER_ID, 관리자면 ADMIN_ID. 숨긴 알림 제외 -->
+    <sql id="receiver">
+        <choose>
+            <when test="r.memberId != null">MEMBER_ID = #{r.memberId}</when>
+            <otherwise>ADMIN_ID = #{r.adminId}</otherwise>
+        </choose>
+        AND DELETED_YN = 'N'
+    </sql>
+
+    <select id="selectList" resultMap="itemMap">
+        SELECT NOTIFICATION_ID, NOTIF_TYPE, TITLE, BODY, LINK_PAGE, REF_ID,
+               CASE WHEN READ_YN = 'Y' THEN 1 ELSE 0 END AS IS_READ,
+               CREATED_AT
+          FROM NOTIFICATION
+         WHERE <include refid="receiver"/>
+        <if test="read != null">
+           AND READ_YN = #{read}
+        </if>
+         ORDER BY CREATED_AT DESC, NOTIFICATION_ID DESC
+        OFFSET #{offset} ROWS FETCH NEXT #{limit} ROWS ONLY
+    </select>
+
+    <select id="countUnread" resultType="int">
+        SELECT COUNT(*)
+          FROM NOTIFICATION
+         WHERE <include refid="receiver"/>
+           AND READ_YN = 'N'
+    </select>
+
+    <update id="markRead">
+        UPDATE NOTIFICATION
+           SET READ_YN = 'Y'
+         WHERE NOTIFICATION_ID = #{id}
+           AND <include refid="receiver"/>
+    </update>
+
+    <update id="markAllRead">
+        UPDATE NOTIFICATION
+           SET READ_YN = 'Y'
+         WHERE <include refid="receiver"/>
+           AND READ_YN = 'N'
+    </update>
+
+    <!-- 실제 DELETE 하지 않고 숨김 처리 (F35) -->
+    <update id="hide">
+        UPDATE NOTIFICATION
+           SET DELETED_YN = 'Y'
+         WHERE <include refid="receiver"/>
+           AND NOTIFICATION_ID IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </update>
+
+</mapper>
