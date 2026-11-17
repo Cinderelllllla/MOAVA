@@ -1,10 +1,12 @@
 package com.moava.proofs.dto;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-@Data   // getter/setter 자동 생성 → MyBatis가 setter로 값을 채움
+@Getter   // MyBatis가 setter로 값을 채움
+@Setter
 public class PaymentProofDto {
     private Long paymentProofId;
     private Long groupId;
