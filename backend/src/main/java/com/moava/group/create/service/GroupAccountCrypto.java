@@ -11,6 +11,9 @@ public interface GroupAccountCrypto {
 
     // 현재 암호화 키 버전
     int keyVersion();
+    
+    // 복호화 기능 추가
+    String decrypt(String encryptedText);
 }
 //팀 공통 암호화 구현이 아직 없으므로, 
 // 암호화 알고리즘이나 비밀키를 임의로 정하지 않고 인터페이스만 준비
