@@ -2,6 +2,7 @@ package com.moava.group.procedures.service;
 
 import com.moava.group.procedures.dto.PayoutOrderDTO;
 import com.moava.group.procedures.mapper.PayoutOrderMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,13 +13,11 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 public class PayoutOrderService {
 
     private final PayoutOrderMapper payoutOrderMapper;
 
-    public PayoutOrderService(PayoutOrderMapper payoutOrderMapper) {
-        this.payoutOrderMapper = payoutOrderMapper;
-    }
     /**
      * 신청·동의 현황 목록 조회 (AI 제안 회차 포함)
      */

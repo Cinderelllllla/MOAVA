@@ -2,6 +2,7 @@ package com.moava.group.procedures.service;
 
 import com.moava.group.procedures.dto.WithdrawalDTO;
 import com.moava.group.procedures.mapper.WithdrawalMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,15 +14,12 @@ import java.util.Map;
 import java.util.Set;
 
 @Service
+@RequiredArgsConstructor
 public class WithdrawalService {
 
     private static final Set<String> VALID_REASON_TYPES = Set.of("ECONOMIC", "PERSONAL", "OTHER");
 
     private final WithdrawalMapper withdrawalMapper;
-
-    public WithdrawalService(WithdrawalMapper withdrawalMapper) {
-        this.withdrawalMapper = withdrawalMapper;
-    }
 
     /**
      * 탈퇴 신청 및 정산안 동의 현황 목록 조회

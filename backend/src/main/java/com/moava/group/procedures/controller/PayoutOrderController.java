@@ -2,6 +2,7 @@ package com.moava.group.procedures.controller;
 
 import com.moava.group.procedures.dto.PayoutOrderDTO;
 import com.moava.group.procedures.service.PayoutOrderService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,14 +11,10 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/groups/{groupId}/payout-requests")
+@RequiredArgsConstructor
 public class PayoutOrderController {
 
     private final PayoutOrderService payoutOrderService;
-
-    // Lombok(@RequiredArgsConstructor) 대신 직접 생성자 주입 (에러 원천 차단)
-    public PayoutOrderController(PayoutOrderService payoutOrderService) {
-        this.payoutOrderService = payoutOrderService;
-    }
 
     // 1. 신청·동의 현황 목록 조회 (AI 추천 회차 포함)
     @GetMapping
