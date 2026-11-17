@@ -30,21 +30,21 @@ public class JwtTokenProvider {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String createToken(String email) {
+    public String createToken(Long memberId) {
         // JWT 토큰 생성 로직 구현
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expireMinutes * 60_000L);
-        return Jwts.builder().subject(email).issuedAt(now).expiration(expiry).signWith(key()).compact();
+        return Jwts.builder().subject(String.valueOf(memberId)).issuedAt(now).expiration(expiry).signWith(key()).compact();
     }
 
-    public String getEmail(String token) {
+    public String getId(String token) {
         Claims claims = Jwts.parser().verifyWith(key()).build().parseSignedClaims(token).getPayload();
         return claims.getSubject();
     }
 
     public boolean isValid(String token) {
         try {
-            getEmail(token); // 토큰에서 이메일을 추출하여 유효성을 확인
+            getId(token); // 토큰에서 이메일을 추출하여 유효성을 확인
             return true;
         } catch (Exception e) {
             return false;

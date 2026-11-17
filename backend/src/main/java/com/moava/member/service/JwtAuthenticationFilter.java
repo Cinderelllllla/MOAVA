@@ -39,8 +39,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 response.getWriter().write("{\"memmage\":\"로그인 정보가 만료되었거나 유효하지않습니다. 다시 로그인해 주세요.\"}");
                 return;
             }
-            String email = jwtTokenProvider.getEmail(token);
-            var authentication = new UsernamePasswordAuthenticationToken(email, null, List.of(new SimpleGrantedAuthority("ROLE_MEMBER")));
+            String id = jwtTokenProvider.getId(token);
+            var authentication = new UsernamePasswordAuthenticationToken(id, null, List.of(new SimpleGrantedAuthority("ROLE_MEMBER")));
             SecurityContextHolder.getContext().setAuthentication(authentication);
         } catch (Exception e) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
