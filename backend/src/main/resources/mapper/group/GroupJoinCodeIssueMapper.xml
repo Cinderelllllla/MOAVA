@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.create.mapper.GroupJoinCodeIssueMapper">
+
+    <!-- 모임장 및 비공개 모임 확인 -->
+    <select id="findGroupForIssue" resultType="map">
+        SELECT
+            GROUP_ID,
+            OWNER_ID,
+            VISIBILITY,
+            JOIN_CODE_VERSION,
+            JOIN_CODE_KEY_VER,
+            JOIN_CODE_ISSUED_AT
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        FOR UPDATE
+    </select>
+
+    <!-- 인증코드 최초 발급 및 재발급 -->
+    <update id="updateJoinCode">
+        UPDATE GYE_GROUP
+        SET
+            JOIN_CODE_ENC = #{encryptedCode},
+            JOIN_CODE_KEY_VER = #{keyVersion},
+            JOIN_CODE_VERSION = JOIN_CODE_VERSION + 1,
+            JOIN_CODE_ISSUED_AT = SYSDATE
+        WHERE GROUP_ID = #{groupId}
+          AND OWNER_ID = #{ownerId}
+          AND VISIBILITY = 'PRIVATE'
+    </update>
+
+</mapper>
