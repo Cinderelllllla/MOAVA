@@ -163,8 +163,6 @@ export async function loginWithServer(email, password) {
 // 6. 기존 Mock 로그인
 // ========================================
 
-const TOKEN_KEY = 'moava_access_token';
-
 // 다른 API 파일(groups.js, proofs.js 등)에서도 꺼내 쓸 수 있도록 export
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (token) => {
