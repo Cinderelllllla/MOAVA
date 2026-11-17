@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.member.mapper.MemberMapper">
+
+    <select id="findByEmail" resultType="com.moava.member.dto.MemberResponse">
+        SELECT MEMBER_ID AS ID, NAME, EMAIL, PHONE_ENC AS PHONE_ENC, REGION_SIDO AS REGION_SIDO, REGION_SIGUNGU AS REGION_SIGUNGU, STATUS, BANNED_YN AS BANNED_YN, KEY_VER AS KEY_VER
+          FROM MEMBER
+         WHERE LOWER(EMAIL) = LOWER(#{email})
+    </select>
+
+    <select id="findPasswordHashByEmail" resultType="string">
+        SELECT PASSWORD_HASH
+          FROM MEMBER
+         WHERE LOWER(EMAIL) = LOWER(#{email})
+         AND STATUS = 'ACTIVE'
+         AND BANNED_YN = 'N'
+    </select>
+
+    <select id="existsByEmail" resultType="int">
+        SELECT COUNT(*)
+          FROM MEMBER
+         WHERE LOWER(EMAIL) = LOWER(#{email})
+    </select>  
+
+    <!-- 회원 1명 -->
+    <insert id="insertUser">
+        INSERT INTO MEMBER
+            (MEMBER_ID, NAME, EMAIL, PASSWORD_HASH, PHONE_ENC, REGION_SIDO,
+             REGION_SIGUNGU, STATUS, BANNED_YN, KEY_VER)
+        VALUES
+            (SEQ_MEMBER.NEXTVAL, #{name}, #{email}, #{passwordHash}, #{phoneEnc}, #{regionSido},
+             #{regionSigungu}, 'ACTIVE', 'N', #{keyVer})
+    </insert>
+
+</mapper>

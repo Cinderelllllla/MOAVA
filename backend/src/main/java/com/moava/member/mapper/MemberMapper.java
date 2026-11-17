@@ -11,6 +11,7 @@ public interface MemberMapper {
     String findPasswordHashByEmail(@Param ("email") String email);
     int existsByEmail(@Param("email") String email);
     int insertUser(
+        @Param("memberId") Long memberId, 
         @Param("name") String name, 
         @Param("email") String email, 
         @Param("passwordHash") String passwordHash, 
@@ -19,5 +20,4 @@ public interface MemberMapper {
         @Param("regionSido") String regionSido, 
         @Param("regionSigungu") String regionSigungu);
 
-    MemberResponse findAuthStateByEmail(@Param("email") String email);
 }
