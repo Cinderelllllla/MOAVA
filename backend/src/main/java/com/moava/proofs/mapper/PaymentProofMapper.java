@@ -88,6 +88,9 @@ public interface PaymentProofMapper {
     // F22 상세: 첨부 파일 요약 목록 (SORT_NO 순)
     List<ProofFileSummaryDto> findProofFileSummaries(@Param("proofId") Long proofId);
 
+    // F22 파일 미리보기: 이 증빙에 속한 파일 1건 (없으면 null)
+    PaymentProofFileDto findProofFile(@Param("proofId") Long proofId,
+                                      @Param("fileId") Long fileId);
 
 
 }

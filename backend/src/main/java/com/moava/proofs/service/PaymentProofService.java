@@ -6,6 +6,7 @@ import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.ProofGroupDto;
 import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.dto.PaymentProofDetailDto;
+import com.moava.proofs.dto.ProofFileContent;
 import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.mapper.PaymentProofMapper;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
@@ -39,6 +40,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import com.moava.crypto.service.CryptoKeyService;
+import java.util.Base64;
 import com.moava.common.util.NameMasker;
 import com.moava.notification.common.domain.NotifType;
 import com.moava.notification.common.service.NotificationService;
@@ -50,6 +53,8 @@ public class PaymentProofService {
 
     private final PaymentProofMapper paymentProofMapper;
     private final NotificationService notificationService;
+    private final CryptoKeyService cryptoKeyService;   // 증빙 파일 암호화 (공통 암호화 모듈, 문자열 API 사용)
+
 
     @Value("${moava.upload.dir}")
     private String uploadDir;
@@ -178,18 +183,24 @@ public class PaymentProofService {
         return hashes;
     }
 
-    // 파일을 UUID 이름으로 저장 + PAYMENT_PROOF_FILE INSERT (등록·재제출 공통)
+    // 파일을 암호화해 UUID 이름으로 저장 + PAYMENT_PROOF_FILE INSERT (등록·재제출 공통)
+    // 암호화: 파일 바이트 → Base64 문자열 → 공통 암호화(AES-256-GCM) → 저장 (명세 F22-10)
+    // 해시·크기는 암호화 전 원본 기준 (DDL: FILE_HASH·FILE_SIZE는 원본 기준)
     // 중간에 실패하면 이미 쓴 파일은 지우고 예외를 다시 던짐 → DB는 @Transactional로 롤백
     private void saveFiles(Long proofId, List<MultipartFile> files, List<String> hashes) {
         Path dir = Paths.get(uploadDir, "proofs").toAbsolutePath().normalize();
         List<Path> savedFiles = new ArrayList<>();
         try {
             Files.createDirectories(dir);
+            int keyVer = cryptoKeyService.getCurrentKeyVersion();   // 현재 ACTIVE 키 버전 (KEY_VER FK)
             for (int i = 0; i < files.size(); i++) {
                 MultipartFile f = files.get(i);
-                String storedName = UUID.randomUUID() + ALLOWED_MIME.get(f.getContentType());
+                String storedName = UUID.randomUUID() + ".enc";   // 암호문이라 원래 확장자 대신 .enc
                 Path target = dir.resolve(storedName);
-                f.transferTo(target);
+
+                String encrypted = cryptoKeyService.encrypt(
+                        Base64.getEncoder().encodeToString(f.getBytes()), keyVer);
+                Files.writeString(target, encrypted, StandardCharsets.US_ASCII);
                 savedFiles.add(target);
 
                 PaymentProofFileDto meta = new PaymentProofFileDto();
@@ -200,8 +211,8 @@ public class PaymentProofService {
                 meta.setMimeType(f.getContentType());
                 meta.setFileSize(f.getSize());
                 meta.setFileHash(hashes.get(i));
-                meta.setEncryptedYn("N");   // TODO: AES-256-GCM 암호화 모듈 붙이면 'Y'
-                meta.setKeyVer(1);
+                meta.setEncryptedYn("Y");
+                meta.setKeyVer(keyVer);
                 paymentProofMapper.insertProofFile(meta);
             }
             // 여기까지 성공해도 이후 DB 작업·커밋이 실패해 롤백되면 새로 쓴 파일을 지움
@@ -367,6 +378,7 @@ public class PaymentProofService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "모임 구성원만 증빙을 볼 수 있습니다.");
         }
 
+
         // 2. 증빙 존재 (이 모임의 증빙인지까지 확인)
         PaymentProofDetailDto detail = paymentProofMapper.findProofDetail(groupId, proofId);
         if (detail == null) {
@@ -384,6 +396,52 @@ public class PaymentProofService {
         }
         detail.setFiles(paymentProofMapper.findProofFileSummaries(proofId));
         return detail;
+    }
+
+    /**
+     * F22 증빙 파일 미리보기·다운로드
+     * 권한: 증빙 작성자·모임장 (API 명세 v0.5 §9 보수적 안 A안, 팀 결정 대기 — B안이면 2번 조건만 변경)
+     */
+    @Transactional(readOnly = true)
+    public ProofFileContent getProofFile(Long groupId, Long proofId, Long fileId, Long memberId) {
+        // 1. 모임·증빙 존재 (이 모임의 증빙인지까지 확인)
+        ProofGroupDto group = getGroupOrThrow(groupId);
+        PaymentProofDto proof = getProofOrThrow(groupId, proofId);
+
+        // 2. 권한: 모임장 또는 증빙 작성자
+        if (!memberId.equals(group.getOwnerId()) && !memberId.equals(proof.getMemberId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "증빙 작성자와 모임장만 파일을 볼 수 있습니다.");
+        }
+
+        // 3. 파일 메타 (이 증빙에 속한 파일인지까지 확인)
+        PaymentProofFileDto file = paymentProofMapper.findProofFile(proofId, fileId);
+        if (file == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 파일입니다.");
+        }
+
+        // 4. 디스크에서 읽기 (업로드 폴더 밖 경로 차단)
+        Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path target = base.resolve(file.getFilePath()).normalize();
+        if (!target.startsWith(base) || !Files.exists(target)) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일을 읽을 수 없습니다.");
+        }
+
+        // 5. 암호화된 파일이면 복호화 (저장 때의 역순: 암호문 → Base64 → 원본 바이트)
+        try {
+            byte[] bytes;
+            if ("Y".equals(file.getEncryptedYn())) {
+                String encrypted = Files.readString(target, StandardCharsets.US_ASCII);
+                bytes = Base64.getDecoder().decode(cryptoKeyService.decrypt(encrypted, file.getKeyVer()));
+            } else {
+                bytes = Files.readAllBytes(target);   // 암호화 적용 전에 올라온 파일
+            }
+            String fileName = "proof-" + fileId + ALLOWED_MIME.getOrDefault(file.getMimeType(), "");
+            return new ProofFileContent(bytes, file.getMimeType(), fileName);
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일을 읽을 수 없습니다.", e);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일 복호화에 실패했습니다.", e);
+        }
     }
 
     /**
