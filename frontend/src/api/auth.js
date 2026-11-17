@@ -163,6 +163,43 @@ export async function loginWithServer(email, password) {
 // 6. 기존 Mock 로그인
 // ========================================
 
+const TOKEN_KEY = 'moava_access_token';
+
+// 다른 API 파일(groups.js, proofs.js 등)에서도 꺼내 쓸 수 있도록 export
+export const getToken = () => localStorage.getItem(TOKEN_KEY);
+export const setToken = (token) => {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+};
+
+// 백엔드(/api/auth/me 등)에서 받아온 회원 정보를 프론트 로컬 db.members에 동기화
+function syncMemberToLocalDb(memberView, fallback = {}) {
+  const rawId = memberView?.memberId ?? memberView?.id ?? fallback.id ?? uid();
+  const id = Number.isNaN(Number(rawId)) ? rawId : Number(rawId);
+
+  let m = db.members.find(x => String(x.id) === String(id) || (memberView?.email && x.email === memberView.email));
+  const updated = {
+    id,
+    name: memberView?.name ?? fallback.name ?? '회원',
+    email: memberView?.email ?? fallback.email ?? '',
+    password: fallback.password ?? m?.password ?? '',
+    phone: memberView?.phone ?? fallback.phone ?? '',
+    regionSido: memberView?.regionSido ?? fallback.regionSido ?? '서울특별시',
+    regionSigungu: memberView?.regionSigungu ?? fallback.regionSigungu ?? '마포구',
+    status: memberView?.status ?? 'ACTIVE',
+    privacyAgreedAt: m?.privacyAgreedAt ?? today(),
+    termsAgreedAt: m?.termsAgreedAt ?? today(),
+  };
+
+  if (m) {
+    Object.assign(m, updated);
+  } else {
+    m = updated;
+    db.members.push(m);
+  }
+  return m;
+}
+
 export async function login(email, password) {
   const m = db.members.find(
     x =>
