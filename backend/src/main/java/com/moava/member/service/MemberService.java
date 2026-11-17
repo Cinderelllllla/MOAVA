@@ -38,7 +38,6 @@ public class MemberService {
     public AuthResponse signup(SignupRequest request) {
         if(request == null) throw bad("회원가입 정보를 입력해주세요.");
 
-        Long id = request.id();
         String name = clean(request.name());
         String email = clean(request.email()).toLowerCase(Locale.ROOT);
         String phone = clean(request.phone()).replace("-", "");
@@ -72,7 +71,7 @@ public class MemberService {
         int keyVer = phoneCryptoService.currentKeyVersion();
         String phoneEnc = phoneCryptoService.encrypt(phone, keyVer);
 
-        memberMapper.insertUser(id, name, email, passwordHash, phoneEnc, keyVer, sido, sigungu);
+        memberMapper.insertUser(name, email, passwordHash, phoneEnc, keyVer, sido, sigungu);
         MemberResponse member = memberMapper.findByEmail(email);
         if(member == null) throw new IllegalStateException("회원가입 후 회원 정보를 조회할 수 없습니다.");
         return response(member);
@@ -89,14 +88,19 @@ public class MemberService {
 
     
     private AuthResponse response(MemberResponse member) {
-        String phone = member.phoneEnc() == null ? null : phoneCryptoService.decrypt(member.phoneEnc(), member.keyVer() == null ? null : member.keyVer());
-        
+        String phone = null;
+        if(member.phoneEnc() != null){
+            if(member.keyVer() == null){
+                throw new IllegalStateException("전화번호 암호화 키 버전이 없습니다.");
+            }   
+            phone = phoneCryptoService.decrypt(member.phoneEnc(), member.keyVer());
+        }
         MemberView view = toView(member, phone);
         return new AuthResponse(jwtTokenProvider.createToken(member.id()), "Bearer", view);
     }
 
     private MemberView toView(MemberResponse member, String phone) {
-        return new MemberView(member.id(), member.name(), member.email(), phone, member.regionSido(), member.regionSigungu(), member.status());
+        return new MemberView(member.name(), member.email(), phone, member.regionSido(), member.regionSigungu(), member.status());
     }
 
     private ResponseStatusException bad(String message) {
