@@ -22,6 +22,8 @@ export default function useMlFinanceAssessment() {
       return undefined;
     }
 
+    if (finance.getMlAssessment()) { setState({ status: 'success', error: '' }); return undefined; }
+
     let active = true;
     setState({ status: 'loading', error: '' });
     finance.assessWithMl(memberId)

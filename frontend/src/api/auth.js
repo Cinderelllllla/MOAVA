@@ -20,7 +20,10 @@ import {
   activeJoined,
   leader,
   isEnded,
-  reset
+  reset,
+  isEnded,
+  reset,
+  ensureFinanceOwner
 } from './mock/db';
 
 const TOKEN_KEY = 'moava_access_token';
@@ -76,6 +79,7 @@ export function getAccessTokenMemberId(token = getAccessToken()) {
 
 export function clearAccessToken() {
   sessionStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_KEY);
 }
 
 // ========================================
@@ -115,9 +119,9 @@ function connectServerSession(result) {
   }
 
   db.session = {
-    type: 'MEMBER',
-    id: localId
+    type: 'MEMBER', id: localId
   };
+  ensureFinanceOwner();
 
   // 기존 Zustand 구독 화면에 변경 알림
   save();
@@ -234,6 +238,7 @@ export async function login(email, password) {
   db.session = m
     ? { type: 'MEMBER', id: m.id }
     : { type: 'ADMIN', id: a.id };
+  ensureFinanceOwner();
 
   audit(
     '로그인',
@@ -291,6 +296,7 @@ export async function signup(f) {
     type: 'MEMBER',
     id: m.id
   };
+  ensureFinanceOwner();
 
   audit(
     '회원가입',
