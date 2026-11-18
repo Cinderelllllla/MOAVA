@@ -1,7 +1,181 @@
-/* F01 F02 F03 F04 — 인증·회원. 백엔드 MemberController(/api/auth/*) 연동 버전 */
-import { db, save, uid, today, nowText, fail, audit, isAdmin, currentUser, activeJoined, leader, isEnded, reset } from './mock/db';
+
+/*
+ * MOAVA F01~F04 인증 및 회원 관리
+ * - Spring Boot 로그인 / 회원가입
+ * - JWT 저장 및 삭제
+ * - React Mock DB 세션 연결
+ * - 기존 Mock 기능 유지
+ */
+
+import {
+  db,
+  save,
+  uid,
+  today,
+  nowText,
+  fail,
+  audit,
+  isAdmin,
+  currentUser,
+  activeJoined,
+  leader,
+  isEnded,
+  reset,
+  ensureFinanceOwner
+} from './mock/db';
 
 const TOKEN_KEY = 'moava_access_token';
+
+// ========================================
+// 1. Spring Boot 인증 API 공통 함수
+// ========================================
+
+async function requestAuth(path, body) {
+  const response = await fetch(`/api/auth/${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  const result = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      result?.message ||
+      `인증 요청에 실패했습니다. (${response.status})`
+    );
+  }
+
+  if (!result?.accessToken || !result?.user) {
+    throw new Error('인증 응답에 필요한 정보가 없습니다.');
+  }
+
+  return result;
+}
+
+// ========================================
+// 2. JWT 관리
+// ========================================
+
+export function getAccessToken() {
+  return sessionStorage.getItem(TOKEN_KEY);
+}
+
+export function getAccessTokenMemberId(token = getAccessToken()) {
+  try {
+    const payload = token?.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');
+    if (!payload) return null;
+    const claims = JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, '=')));
+    const id = Number(claims.sub);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearAccessToken() {
+  sessionStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+// ========================================
+// 3. 실제 서버 회원을 React 세션에 연결
+// ========================================
+
+function connectServerSession(result) {
+  const user = result.user;
+
+  if (!user?.email) {
+    throw new Error('서버 회원 이메일 정보가 없습니다.');
+  }
+
+  // 프론트엔드에서만 사용하는 임시 식별자
+  // 실제 Oracle MEMBER_ID가 아님
+  const localId = `server:${user.email}`;
+
+  const existing = db.members.find(
+    m => m.id === localId
+  );
+
+  const localUser = {
+    id: localId,
+    name: user.name,
+    email: user.email,
+    phone: user.phone ?? '',
+    regionSido: user.regionSido ?? '',
+    regionSigungu: user.regionSigungu ?? '',
+    status: user.status ?? 'ACTIVE',
+    source: 'SERVER'
+  };
+
+  if (existing) {
+    Object.assign(existing, localUser);
+  } else {
+    db.members.push(localUser);
+  }
+
+  db.session = {
+    type: 'MEMBER', id: localId
+  };
+  ensureFinanceOwner();
+
+  // 기존 Zustand 구독 화면에 변경 알림
+  save();
+
+  return db.session;
+}
+
+// ========================================
+// 4. Spring Boot 회원가입
+// ========================================
+
+export async function signupWithServer(f) {
+  if (!f.termsAgreed || !f.privacyAgreed) {
+    throw new Error('필수 약관에 동의해 주세요.');
+  }
+
+  const result = await requestAuth('signup', {
+    name: f.name.trim(),
+    email: f.email.trim(),
+    password: f.password,
+    phone: f.phone.trim(),
+    regionSido: f.regionSido.trim(),
+    regionSigungu: f.regionSigungu.trim(),
+    termsAgreed: f.termsAgreed,
+    privacyAgreed: f.privacyAgreed
+  });
+
+  sessionStorage.setItem(
+    TOKEN_KEY,
+    result.accessToken
+  );
+
+  return connectServerSession(result);
+}
+
+// ========================================
+// 5. Spring Boot 로그인
+// ========================================
+
+export async function loginWithServer(email, password) {
+  const result = await requestAuth('login', {
+    email: email.trim(),
+    password
+  });
+
+  sessionStorage.setItem(
+    TOKEN_KEY,
+    result.accessToken
+  );
+
+  return connectServerSession(result);
+}
+
+// ========================================
+// 6. 기존 Mock 로그인
+// ========================================
 
 // 다른 API 파일(groups.js, proofs.js 등)에서도 꺼내 쓸 수 있도록 export
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
@@ -39,135 +213,202 @@ function syncMemberToLocalDb(memberView, fallback = {}) {
 }
 
 export async function login(email, password) {
-  // 1. 관리자(ADMIN) 계정은 기존처럼 mock db에서 먼저 확인
-  const a = db.admins.find(x => x.email === email && x.password === password);
-  if (a) {
-    db.session = { type: 'ADMIN', id: a.id };
-    audit('로그인', null, `${currentUser().name} (ADMIN)`);
-    save();
-    return db.session;
+  const m = db.members.find(
+    x =>
+      x.email === email &&
+      x.password === password &&
+      x.status !== 'WITHDRAWN'
+  );
+
+  const a = !m && db.admins.find(
+    x =>
+      x.email === email &&
+      x.password === password
+  );
+
+  if (!m && !a) {
+    fail('이메일 또는 비밀번호를 확인해 주세요.');
   }
 
-  // 2. 일반 회원은 백엔드 MemberController (POST /api/auth/login) 호출
-  let res;
-  try {
-    res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), password }),
-    });
-  } catch (e) {
-    // 백엔드 서버가 꺼져 있을 때 기존 데모 계정 폴백이 필요하면 처리
-    fail('백엔드 서버와 연결할 수 없습니다. 서버 실행 상태를 확인해 주세요.');
-  }
+  // Mock 로그인에서는 이전 서버 JWT 제거
+  clearAccessToken();
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    fail(data?.error?.message || data?.message || '이메일 또는 비밀번호를 확인해 주세요.');
-  }
+  db.session = m
+    ? { type: 'MEMBER', id: m.id }
+    : { type: 'ADMIN', id: a.id };
+  ensureFinanceOwner();
 
-  // 3. JWT 토큰 저장 (AuthResponse 필드명에 맞춰 추출)
-  const token = data?.accessToken || data?.token || data?.jwt || data?.data?.accessToken;
-  if (token) setToken(token);
+  audit(
+    '로그인',
+    null,
+    `${currentUser().name} (${db.session.type})`
+  );
 
-  // 4. GET /api/auth/me 호출하여 로그인한 회원의 상세 프로필 가져오기
-  let meData = data?.member || data?.user || data;
-  if (token) {
-    const meRes = await fetch('/api/auth/me', {
-      headers: { 'Authorization': `Bearer ${token}` },
-    }).catch(() => null);
-    if (meRes && meRes.ok) {
-      meData = await meRes.json();
-    }
-  }
-
-  // 5. 기존 리액트 화면들이 currentUser()를 쓸 수 있도록 db.session & db.members 갱신
-  const m = syncMemberToLocalDb(meData, { email, password });
-  db.session = { type: 'MEMBER', id: m.id };
-  audit('로그인', null, `${currentUser().name} (${db.session.type})`);
   save();
+
   return db.session;
 }
 
+// ========================================
+// 7. 로그아웃
+// ========================================
+
 export async function logout() {
-  setToken(null);
+  clearAccessToken();
+
   db.session = null;
+
   save();
 }
 
+// ========================================
+// 8. 기존 Mock 회원가입
+// ========================================
+
 export async function signup(f) {
-  // 백엔드 MemberController (POST /api/auth/signup) 호출
-  const reqBody = {
+  if (
+    db.members.some(x => x.email === f.email) ||
+    db.admins.some(x => x.email === f.email)
+  ) {
+    fail('이미 등록된 이메일이에요.');
+  }
+
+  const m = {
+    id: uid(),
     name: f.name.trim(),
     email: f.email.trim(),
     password: f.password,
     phone: f.phone.trim(),
     regionSido: f.regionSido.trim(),
     regionSigungu: f.regionSigungu.trim(),
-    termsAgreed: true,
-    privacyAgreed: true,
+    status: 'ACTIVE',
+    privacyAgreedAt: today(),
+    termsAgreedAt: today()
   };
 
-  let res;
-  try {
-    res = await fetch('/api/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reqBody),
-    });
-  } catch (e) {
-    fail('백엔드 서버와 연결할 수 없습니다. 서버 실행 상태를 확인해 주세요.');
-  }
+  db.members.push(m);
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    fail(data?.error?.message || data?.message || '이미 등록된 이메일이거나 입력값이 올바르지 않아요.');
-  }
+  clearAccessToken();
 
-  // 회원가입 직후 발급된 JWT 토큰 저장
-  const token = data?.accessToken || data?.token || data?.jwt || data?.data?.accessToken;
-  if (token) setToken(token);
+  db.session = {
+    type: 'MEMBER',
+    id: m.id
+  };
+  ensureFinanceOwner();
 
-  // GET /api/auth/me 로 생성된 회원의 DB PK(memberId) 조회
-  let meData = data?.member || data?.user || data;
-  if (token) {
-    const meRes = await fetch('/api/auth/me', {
-      headers: { 'Authorization': `Bearer ${token}` },
-    }).catch(() => null);
-    if (meRes && meRes.ok) {
-      meData = await meRes.json();
-    }
-  }
+  audit(
+    '회원가입',
+    null,
+    `${m.name} · 약관·개인정보 동의 ${today()}`
+  );
 
-  const m = syncMemberToLocalDb(meData, reqBody);
-  db.session = { type: 'MEMBER', id: m.id };
-  audit('회원가입', null, `${m.name} · 약관·개인정보 동의 ${today()}`);
   save();
+
   return db.session;
 }
 
+// ========================================
+// 9. 기존 Mock 회원정보 수정
+// ========================================
+
 export async function updateAccount(f) {
   const u = currentUser();
-  if (db.members.some(x => x.id !== u.id && x.email === f.email)) fail('이미 사용 중인 이메일입니다.');
-  for (const k of ['name', 'email', 'phone', 'regionSido', 'regionSigungu']) u[k] = String(f[k]).trim();
+
+  if (!u) {
+    fail('로그인이 필요합니다.');
+  }
+
+  if (u.source === 'SERVER') {
+    fail('서버 회원정보 수정 API 연결이 필요합니다.');
+  }
+
+  if (
+    db.members.some(
+      x => x.id !== u.id && x.email === f.email
+    )
+  ) {
+    fail('이미 사용 중인 이메일입니다.');
+  }
+
+  for (const k of [
+    'name',
+    'email',
+    'phone',
+    'regionSido',
+    'regionSigungu'
+  ]) {
+    u[k] = String(f[k]).trim();
+  }
+
   audit('내 정보 수정', null, u.name);
+
   save();
 }
 
-/** 탈퇴 = 익명화(STATUS WITHDRAWN · EMAIL NULL). 모임장·참여 중 모임 있으면 불가 */
+// ========================================
+// 10. 기존 Mock 회원 탈퇴
+// ========================================
+
 export async function withdrawAccount() {
-  if (db.groups.some(g => leader(g) && !isEnded(g))) fail('모임장인 모임이 있습니다. 승계 또는 해산 후 탈퇴할 수 있어요.');
-  if (db.groups.some(activeJoined)) fail('참여 중인 모임이 있습니다. 중도 탈퇴 절차를 먼저 완료해 주세요.');
-  Object.assign(currentUser(), { status: 'WITHDRAWN', withdrawnAt: nowText(), email: null, phone: '', name: '탈퇴회원' });
-  setToken(null);
+  const u = currentUser();
+
+  if (!u) {
+    fail('로그인이 필요합니다.');
+  }
+
+  if (u.source === 'SERVER') {
+    fail('서버 회원탈퇴 API 연결이 필요합니다.');
+  }
+
+  if (
+    db.groups.some(
+      g => leader(g) && !isEnded(g)
+    )
+  ) {
+    fail(
+      '모임장인 모임이 있습니다. 승계 또는 해산 후 탈퇴할 수 있어요.'
+    );
+  }
+
+  if (db.groups.some(activeJoined)) {
+    fail(
+      '참여 중인 모임이 있습니다. 중도 탈퇴 절차를 먼저 완료해 주세요.'
+    );
+  }
+
+  Object.assign(u, {
+    status: 'WITHDRAWN',
+    withdrawnAt: nowText(),
+    email: null,
+    phone: '',
+    name: '탈퇴회원'
+  });
+
   audit('회원 탈퇴', null, '익명화 처리');
+
+  clearAccessToken();
+
   db.session = null;
+
   save();
 }
+
+// ========================================
+// 11. Mock 초기화
+// ========================================
 
 export async function resetDemo() {
-  setToken(null);
+  clearAccessToken();
   reset();
 }
+
+// ========================================
+// 12. 세션 및 회원정보 조회
+// ========================================
+
 export const session = () => db.session;
-export { isAdmin, currentUser };
+
+export {
+  isAdmin,
+  currentUser
+};
