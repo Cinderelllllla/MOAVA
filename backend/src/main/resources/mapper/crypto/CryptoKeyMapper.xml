@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.crypto.mapper.CryptoKeyMapper">
+
+    <resultMap id="cryptoKeyResultMap"
+               type="com.moava.crypto.dto.CryptoKeyRecord">
+        <id property="keyVer" column="KEY_VER"/>
+        <result property="algorithm" column="ALGORITHM"/>
+        <result property="encryptedDek" column="ENCRYPTED_DEK"/>
+        <result property="keyHash" column="KEY_HASH"/>
+        <result property="status" column="STATUS"/>
+        <result property="activatedAt" column="ACTIVATED_AT"/>
+        <result property="retiredAt" column="RETIRED_AT"/>
+    </resultMap>
+
+    <!-- 현재 활성화된 키 -->
+    <select id="findActiveKey" resultMap="cryptoKeyResultMap">
+        SELECT
+            KEY_VER,
+            ALGORITHM,
+            ENCRYPTED_DEK,
+            KEY_HASH,
+            STATUS,
+            ACTIVATED_AT,
+            RETIRED_AT
+        FROM CRYPTO_KEY
+        WHERE STATUS = 'ACTIVE'
+        ORDER BY KEY_VER DESC
+        FETCH FIRST 1 ROWS ONLY
+    </select>
+
+    <!-- 특정 버전 키 -->
+    <select id="findByVersion" resultMap="cryptoKeyResultMap">
+        SELECT
+            KEY_VER,
+            ALGORITHM,
+            ENCRYPTED_DEK,
+            KEY_HASH,
+            STATUS,
+            ACTIVATED_AT,
+            RETIRED_AT
+        FROM CRYPTO_KEY
+        WHERE KEY_VER = #{keyVer}
+    </select>
+
+    <!-- 가장 큰 키 버전 -->
+    <select id="findMaxKeyVersion" resultType="java.lang.Integer">
+        SELECT MAX(KEY_VER)
+        FROM CRYPTO_KEY
+    </select>
+
+    <!-- 전체 키 버전 -->
+    <select id="findAll" resultMap="cryptoKeyResultMap">
+        SELECT
+            KEY_VER,
+            ALGORITHM,
+            ENCRYPTED_DEK,
+            KEY_HASH,
+            STATUS,
+            ACTIVATED_AT,
+            RETIRED_AT
+        FROM CRYPTO_KEY
+        ORDER BY KEY_VER
+    </select>
+
+    <!-- 키 등록 -->
+    <insert id="insertCryptoKey"
+            parameterType="com.moava.crypto.dto.CryptoKeyRecord">
+        INSERT INTO CRYPTO_KEY (
+            KEY_VER,
+            ALGORITHM,
+            ENCRYPTED_DEK,
+            KEY_HASH,
+            STATUS,
+            ACTIVATED_AT
+        ) VALUES (
+            #{keyVer},
+            #{algorithm},
+            #{encryptedDek},
+            #{keyHash},
+            #{status},
+            SYSDATE
+        )
+    </insert>
+
+</mapper>

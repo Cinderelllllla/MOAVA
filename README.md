@@ -51,7 +51,7 @@
 * **Search Engine:** Elasticsearch (지도 색인 및 모임 초고속 검색)
 
 ###  External APIs
-* **공공/통계:** KOSIS 국가통계포털, 금융감독원 금융상품한눈에
+* **공공/통계:** KOSIS 국가통계포털, CODEF 금융 API
 * **서비스 연동:** Kakao Local (지오코딩), SOLAPI (SMS/알림 발송)
 
 ###  협업 툴
