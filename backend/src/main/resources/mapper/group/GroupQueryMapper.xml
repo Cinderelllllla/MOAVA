@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.query.mapper.GroupQueryMapper">
+
+    <select id="findMyOwnedGroups"
+            resultType="com.moava.group.query.dto.GroupListResponse">
+
+        SELECT
+            GROUP_ID AS "groupId",
+            TITLE AS "title",
+            OWNER_ID AS "ownerId",
+            STATUS AS "status",
+            PURPOSE AS "purpose",
+            REGION_SIDO AS "regionSido",
+            REGION_SIGUNGU AS "regionSigungu",
+            AMOUNT AS "amount",
+            MAX_MEMBERS AS "maxMembers",
+            MONTHS AS "months",
+            PAY_DAY AS "payDay",
+            ASSUMED_RATE AS "assumedRate",
+            VISIBILITY AS "visibility",
+            DESCRIPTION AS "description"
+        FROM GYE_GROUP
+        WHERE OWNER_ID = #{memberId}
+        ORDER BY GROUP_ID DESC
+
+    </select>
+
+</mapper>
