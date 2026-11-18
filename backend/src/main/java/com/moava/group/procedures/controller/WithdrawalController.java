@@ -2,8 +2,12 @@ package com.moava.group.procedures.controller;
 
 import com.moava.group.procedures.dto.WithdrawalDTO;
 import com.moava.group.procedures.service.WithdrawalService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -20,16 +24,18 @@ public class WithdrawalController {
 
     // 0. 회원 탈퇴 검토 및 정산안 동의 현황 목록 조회
     @GetMapping
-    public ResponseEntity<List<WithdrawalDTO.StatusResponse>> getWithdrawalList(@PathVariable Long groupId) {
-        return ResponseEntity.ok(withdrawalService.getWithdrawalList(groupId));
+    public ResponseEntity<List<WithdrawalDTO.StatusResponse>> getWithdrawalList(
+            @PathVariable Long groupId, Authentication authentication) {
+        return ResponseEntity.ok(withdrawalService.getWithdrawalList(groupId, loginMemberId(authentication)));
     }
 
     // 1. [신청] 일반 회원의 중도 탈퇴 신청 (SETTLEMENT_PENDING)
     @PostMapping
     public ResponseEntity requestWithdrawal(
             @PathVariable Long groupId,
+            Authentication authentication,
             @RequestBody WithdrawalDTO.ApplyForm form) {
-        String message = withdrawalService.requestWithdrawal(groupId, form);
+        String message = withdrawalService.requestWithdrawal(groupId, loginMemberId(authentication), form);
         return ResponseEntity.ok(Map.of("message", message));
     }
 
@@ -38,8 +44,9 @@ public class WithdrawalController {
     public ResponseEntity registerSettlement(
             @PathVariable Long groupId,
             @PathVariable Long withdrawalId,
+            Authentication authentication,
             @RequestBody WithdrawalDTO.SettlementForm form) {
-        withdrawalService.registerSettlementPlan(groupId, withdrawalId, form);
+        withdrawalService.registerSettlementPlan(groupId, withdrawalId, loginMemberId(authentication), form);
         return ResponseEntity.ok(Map.of("message", "정산안이 등록되었으며 나머지 회원 전원에게 동의 요청 알림을 발송했습니다."));
     }
 
@@ -48,8 +55,10 @@ public class WithdrawalController {
     public ResponseEntity submitConsent(
             @PathVariable Long groupId,
             @PathVariable Long withdrawalId,
+            Authentication authentication,
             @RequestBody WithdrawalDTO.ConsentForm form) {
-        String message = withdrawalService.submitSettlementConsent(groupId, withdrawalId, form);
+        String message = withdrawalService.submitSettlementConsent(
+                groupId, withdrawalId, loginMemberId(authentication), form);
         return ResponseEntity.ok(Map.of("message", message));
     }
 
@@ -58,8 +67,8 @@ public class WithdrawalController {
     public ResponseEntity reconfirmWithdrawal(
             @PathVariable Long groupId,
             @PathVariable Long withdrawalId,
-            @RequestBody WithdrawalDTO.ActionForm form) {
-        withdrawalService.reconfirmWithdrawal(groupId, withdrawalId, form.getActorId());
+            Authentication authentication) {
+        withdrawalService.reconfirmWithdrawal(groupId, withdrawalId, loginMemberId(authentication));
         return ResponseEntity.ok(Map.of("message", "모임장에게 탈퇴 재확인 요청 알림을 발송했습니다."));
     }
 
@@ -68,8 +77,19 @@ public class WithdrawalController {
     public ResponseEntity approveWithdrawal(
             @PathVariable Long groupId,
             @PathVariable Long withdrawalId,
-            @RequestBody WithdrawalDTO.ActionForm form) {
-        withdrawalService.approveWithdrawal(groupId, withdrawalId, form.getActorId());
+            Authentication authentication) {
+        withdrawalService.approveWithdrawal(groupId, withdrawalId, loginMemberId(authentication));
         return ResponseEntity.ok(Map.of("message", "중도 탈퇴가 최종 승인되었습니다."));
+    }
+
+    private static Long loginMemberId(Authentication authentication) {
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
+        }
+        try {
+            return Long.valueOf(authentication.getName());
+        } catch (NumberFormatException e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인 정보가 올바르지 않습니다.");
+        }
     }
 }
