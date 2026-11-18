@@ -1,0 +1,19 @@
+
+{
+  "title": "MOAVA 모임 생성 테스트",
+  "purpose": "SAVINGS",
+  "regionSido": "서울특별시",
+  "regionSigungu": "강남구",
+  "amount": 200000,
+  "maxMembers": 6,
+  "months": 6,
+  "payDay": 5,
+  "assumedRate": 3.0,
+  "visibility": "PUBLIC",
+  "rulesTitle": "테스트 모임 규칙",
+  "rulesBody": "매월 5일에 납입합니다.",
+  "description": "모임 생성 API 테스트용 계모임입니다.",
+  "overduePolicy": "ALERT_ONLY",
+  "bankName": "국민은행",
+  "accountNumber": "123456789012"
+}

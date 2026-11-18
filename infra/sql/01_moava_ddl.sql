@@ -1,24 +1,12 @@
 -- =====================================================================
--- MOAVA (모아바) Oracle DDL  v1.6  2026-11-10 (기준: 테이블 정의서 v1.6 = v1.5 + 11/10 PHONE_ENC NULL 허용(탈퇴 익명화 충돌 해결))
+-- MOAVA (모아바) Oracle DDL  v1.7
+-- 11/16 변경: DB 접근 표기 오류 수정
 -- 11/05 변경: NOTIFICATION 수신자 MEMBER_ID/ADMIN_ID 분리 (관리자 수신 알림 저장 가능)
 -- 11/04 변경: ROLE·부계모임장 폐지 / OVERDUE_DAYS 삭제 / 미납 5일차 / 관리자 행위자 ADMIN FK(A안) / MAX_MEMBERS 2~30 / 기본값 정리 / KEY_VER 7건 FK→CRYPTO_KEY
 -- 11/03 팀 추가분(TERMS_POLICY·MEMBER_CONSENT·CRYPTO_KEY·ADMIN)은 그대로 두고 정의서와 다른 타입·기본값만 맞춤
 -- 금액 단위: 원(KRW), NUMBER(12). 상태값: 영문 코드(VARCHAR2). 일시: DATE
--- 대상 DB: Oracle 21c XE (XEPDB1). 실행 순서: 사용자 생성(1회) -> DROP(선택) -> CREATE TABLE -> ALTER FK -> INDEX -> SEQUENCE
+-- 대상 DB: Oracle 21c XE (CDB 루트, SID xe, 유저 C##MOAVA). 실행 순서: 사용자 생성(1회) -> DROP(선택) -> CREATE TABLE -> ALTER FK -> INDEX -> SEQUENCE
 -- =====================================================================
-
--- ---------- 00. 사용자 생성 (Oracle 21c XE, SYSTEM 계정으로 1회만 실행) ----------
--- 접속: sqlplus system/<비밀번호>@localhost:1521/XEPDB1   (SID XE가 아니라 PDB XEPDB1)
--- 아래 블록 실행 후 moava 계정으로 재접속해서 1번부터 실행
-/*
-ALTER SESSION SET CONTAINER = XEPDB1;
-CREATE USER moava IDENTIFIED BY "moava1234"
-    DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA UNLIMITED ON USERS;
-GRANT CONNECT, RESOURCE TO moava;
-GRANT CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDURE, CREATE JOB TO moava;
--- (선택) 비밀번호 만료 방지: ALTER PROFILE DEFAULT LIMIT PASSWORD_LIFE_TIME UNLIMITED;
-*/
--- Spring Boot: spring.datasource.url=jdbc:oracle:thin:@localhost:1521/XEPDB1  username=moava
 
 -- ---------- 0. DROP (재생성 시만 사용) ----------
 -- DROP TABLE AUDIT_LOG CASCADE CONSTRAINTS PURGE;
