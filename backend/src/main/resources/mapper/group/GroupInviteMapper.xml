@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.create.mapper.GroupInviteMapper">
+
+    <select id="findByInviteCode"
+            resultType="com.moava.group.create.dto.GroupInviteResponse">
+
+        SELECT
+            GROUP_ID AS "groupId",
+            TITLE AS "title",
+            PURPOSE AS "purpose",
+            REGION_SIDO AS "regionSido",
+            REGION_SIGUNGU AS "regionSigungu",
+            VISIBILITY AS "visibility"
+        FROM GYE_GROUP
+        WHERE INVITE_CODE = #{inviteCode}
+
+    </select>
+
+</mapper>

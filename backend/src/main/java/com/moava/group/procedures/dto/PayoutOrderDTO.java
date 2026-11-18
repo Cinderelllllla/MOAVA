@@ -6,9 +6,7 @@ import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 
-
 public class PayoutOrderDTO {
-
 
     @Getter
     @Setter
@@ -25,7 +23,6 @@ public class PayoutOrderDTO {
         public Integer getEffectiveRoundNo() {
             return roundNo != null ? roundNo : round;
         }
-
     }
 
     @Getter
@@ -33,11 +30,13 @@ public class PayoutOrderDTO {
     public static class ConsentForm {
         private Long memberId;
         private Long userId;
-        private String agreedYn;
+        private String agreedYn; // 기본 'Y'
 
         public Long getEffectiveMemberId() {
             return memberId != null ? memberId : userId;
         }
+
+        public String getAgreedYn() { return agreedYn != null ? agreedYn : "Y"; }
     }
 
     @Getter
@@ -82,6 +81,5 @@ public class PayoutOrderDTO {
             if ("REJECTED".equals(status)) return "반려";
             return status;
         }
-
     }
 }
