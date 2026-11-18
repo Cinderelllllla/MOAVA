@@ -1,5 +1,6 @@
 package com.moava.admin.controller;
 
+import com.moava.admin.dto.AdminAuthResponse;
 import com.moava.admin.service.AdminAuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,7 +18,7 @@ public class AdminAuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AdminAuthService.AdminLoginResponse> login(@RequestBody AdminLoginRequest request) {
+    public ResponseEntity<AdminAuthResponse> login(@RequestBody AdminLoginRequest request) {
         return ResponseEntity.ok(adminAuthService.login(
                 request == null ? null : request.email(),
                 request == null ? null : request.password()));
