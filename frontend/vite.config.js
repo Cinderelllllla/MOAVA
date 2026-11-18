@@ -5,10 +5,14 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
     plugins: [react(), tailwindcss()],
     server: {
-        host: true,
         port: 3000,
         proxy: {
             '/api': { target: 'http://localhost:8080', changeOrigin: true },
+            '/ml-api': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+                rewrite: path => path.replace(/^\/ml-api/, ''),
+            },
             '/ws': { target: 'http://localhost:8080', ws: true },
         },
     },
