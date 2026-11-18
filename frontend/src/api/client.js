@@ -3,7 +3,8 @@ import { db } from './mock/db';
 
 const TOKEN_KEY = 'moava_access_token';
 
-export const getToken = () => localStorage.getItem(TOKEN_KEY);
+export const getToken = () =>
+    sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY);
 export const setToken = (token) => {
     if (token) localStorage.setItem(TOKEN_KEY, token);
     else localStorage.removeItem(TOKEN_KEY);
@@ -55,6 +56,35 @@ export async function apiFetch(url, options = {}) {
         return payload.data;
     }
     return payload;
+}
+
+export async function apiFetchBlob(url) {
+    const headers = {};
+    const token = getToken();
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    if (db.session?.id != null) {
+        if (db.session.type === 'ADMIN') {
+            headers['X-Admin-Id'] = String(db.session.id);
+        } else {
+            headers['X-Member-Id'] = String(db.session.id);
+        }
+    }
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        const errMsg =
+            payload?.error?.message ||
+            payload?.message ||
+            payload?.error ||
+            `요청 처리 중 오류가 발생했습니다. (HTTP ${response.status})`;
+        throw new Error(errMsg);
+    }
+
+    return response.blob();
 }
 
 /**

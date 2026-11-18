@@ -1,6 +1,6 @@
 /* F22 F23 F24 F26 — 납입 증빙(승인·보완 요청·재제출), 참조번호, 미납 감지, 채팅 */
 import * as D from './mock/db';
-import { apiFetch, toUploadFile } from './client';
+import { apiFetch, apiFetchBlob, toUploadFile } from './client';
 const { db, save, fail } = D;
 
 export const listProofs = groupId => db.proofs.filter(x => x.groupId === groupId);
@@ -13,45 +13,86 @@ const STATUS_FROM_BE = {
   REVISION: '보완 요청',
 };
 
-// 백엔드(YYYYMM, 원 단위) -> 프론트엔드(YYYY-MM, 만원 단위) 변환 및 로컬 캐시 동기화
+// 백엔드(YYYYMM, 원 단위) 응답을 프론트엔드 표시 형식으로 변환
 export async function fetchProofsFromServer(groupId) {
-  try {
-    const list = await apiFetch(`/api/v1/groups/${groupId}/payment-proofs`, {
-      method: 'GET',
-    });
-    if (Array.isArray(list)) {
-      // 기존 해당 모임 증빙을 서버 데이터로 교체
-      db.proofs = [
-        ...db.proofs.filter((p) => String(p.groupId) !== String(groupId)),
-        ...list.map((item) => {
-          const rawMonth = String(item.payMonth || '');
-          const period = rawMonth.length === 6 ? `${rawMonth.slice(0, 4)}-${rawMonth.slice(4, 6)}` : rawMonth;
-          const rawAmount = Number(item.amount || 0);
-          return {
-            id: item.paymentProofId ?? item.proofId ?? item.id,
-            groupId,
-            memberId: item.memberId,
-            amount: rawAmount >= 10000 ? rawAmount / 10000 : rawAmount,
-            date: item.payDate ? String(item.payDate).slice(0, 10) : D.today(),
-            period,
-            round: item.roundNo ?? item.round,
-            images: item.files?.map((f) => f.fileUrl || f.filePath) || [],
-            status: STATUS_FROM_BE[item.status] || item.status || '확인 대기',
-            reviewMemo: item.reviewMemo || '',
-            resubmitCount: item.resubmitCount || 0,
-            ref: item.refNo || null,
-            refHistory: [],
-            createdAt: item.createdAt ? String(item.createdAt).slice(0, 16).replace('T', ' ') : D.nowText(),
-          };
-        }),
-      ];
-      save();
-    }
-    return db.proofs.filter((x) => String(x.groupId) === String(groupId));
-  } catch (err) {
-    console.warn('증빙 목록 서버 조회 실패 (로컬 데이터 유지):', err.message);
-    return db.proofs.filter((x) => String(x.groupId) === String(groupId));
+  const list = await apiFetch(`/api/v1/groups/${groupId}/payment-proofs`, {
+    method: 'GET',
+  });
+  if (!Array.isArray(list)) {
+    throw new Error('증빙 목록 응답 형식이 올바르지 않습니다.');
   }
+
+  const serverProofs = list.map((item) => {
+    const rawMonth = String(item.payMonth || '');
+    const period = rawMonth.length === 6 ? `${rawMonth.slice(0, 4)}-${rawMonth.slice(4, 6)}` : rawMonth;
+    const rawAmount = Number(item.amount || 0);
+    return {
+      id: item.paymentProofId ?? item.proofId ?? item.id,
+      groupId,
+      memberId: item.memberId,
+      memberName: item.memberName || '회원',
+      amount: rawAmount >= 10000 ? rawAmount / 10000 : rawAmount,
+      date: item.payDate ? String(item.payDate).slice(0, 10) : D.today(),
+      period,
+      round: item.roundNo ?? item.round,
+      fileCount: Number(item.fileCount || 0),
+      images: [],
+      status: STATUS_FROM_BE[item.status] || item.status || '확인 대기',
+      reviewMemo: item.reviewMemo || '',
+      resubmitCount: item.resubmitCount || 0,
+      ref: item.refNo || null,
+      refHistory: [],
+      createdAt: item.createdAt ? String(item.createdAt).slice(0, 16).replace('T', ' ') : D.nowText(),
+    };
+  });
+
+  return serverProofs;
+}
+
+export async function fetchProofDetailFromServer(groupId, proofId) {
+  return apiFetch(`/api/v1/groups/${groupId}/payment-proofs/${proofId}`, {
+    method: 'GET',
+  });
+}
+
+export async function fetchProofFileFromServer(groupId, proofId, fileId) {
+  return apiFetchBlob(`/api/v1/groups/${groupId}/payment-proofs/${proofId}/files/${fileId}`);
+}
+
+export async function reviewProofOnServer(groupId, proofId, decision, reviewMemo = '') {
+  return apiFetch(`/api/v1/groups/${groupId}/payment-proofs/${proofId}/review`, {
+    method: 'PATCH',
+    body: JSON.stringify({ decision, reviewMemo }),
+  });
+}
+
+export async function registerProofOnServer(groupId, group, fields, images) {
+  const formData = new FormData();
+  images.slice(0, 5).forEach((image, index) => {
+    formData.append('files', toUploadFile(image, index));
+  });
+  formData.append('payMonth', String(fields.period).replace('-', ''));
+  formData.append('roundNo', String(fields.round));
+  formData.append('amount', String(group.amount));
+  formData.append('payDate', fields.date);
+
+  return apiFetch(`/api/v1/groups/${groupId}/payment-proofs`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function resubmitProofOnServer(groupId, proofId, payDate, images) {
+  const formData = new FormData();
+  images.slice(0, 5).forEach((image, index) => {
+    formData.append('files', toUploadFile(image, index));
+  });
+  formData.append('payDate', payDate);
+
+  return apiFetch(`/api/v1/groups/${groupId}/payment-proofs/${proofId}`, {
+    method: 'PUT',
+    body: formData,
+  });
 }
 
 export async function addProof(groupId, f, images, resubmitId = null) {
