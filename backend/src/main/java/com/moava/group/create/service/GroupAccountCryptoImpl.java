@@ -98,6 +98,70 @@ public class GroupAccountCryptoImpl implements GroupAccountCrypto {
     }
 
     @Override
+    public String decrypt(String encryptedText) {
+
+        if (encryptedText == null || encryptedText.isBlank()) {
+            throw new IllegalArgumentException(
+                    "복호화할 값이 비어 있습니다."
+            );
+        }
+
+        try {
+            byte[] combined =
+                    Base64.getDecoder().decode(encryptedText);
+
+            // IV(12바이트) + GCM 인증 태그(16바이트) 이상 필요
+            if (combined.length < IV_LENGTH + 16) {
+                throw new IllegalArgumentException(
+                        "암호문 형식이 올바르지 않습니다."
+                );
+            }
+
+            byte[] iv = new byte[IV_LENGTH];
+            byte[] cipherText =
+                    new byte[combined.length - IV_LENGTH];
+
+            System.arraycopy(
+                    combined, 0,
+                    iv, 0,
+                    IV_LENGTH
+            );
+
+            System.arraycopy(
+                    combined, IV_LENGTH,
+                    cipherText, 0,
+                    cipherText.length
+            );
+
+            Cipher cipher =
+                    Cipher.getInstance("AES/GCM/NoPadding");
+
+            cipher.init(
+                    Cipher.DECRYPT_MODE,
+                    aesKey,
+                    new GCMParameterSpec(TAG_LENGTH, iv)
+            );
+
+            byte[] decrypted =
+                    cipher.doFinal(cipherText);
+
+            return new String(
+                    decrypted,
+                    StandardCharsets.UTF_8
+            );
+
+        } catch (GeneralSecurityException
+                 | IllegalArgumentException e) {
+
+            // 내부 예외나 암호문 내용을 외부 응답에 노출하지 않음
+            throw new IllegalStateException(
+                    "암호문 복호화에 실패했습니다."
+            );
+        }
+    }
+
+
+    @Override
     public String hashAccountNumber(String accountNumber) {
         if (accountNumber == null
                 || !accountNumber.matches("[0-9]{8,30}")) {
