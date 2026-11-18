@@ -9,7 +9,7 @@ import { useApp } from '../common/store';
 import { groups, finance, leader } from '../api';
 import { getAccessToken } from '../api/auth';
 import { PageHead, Card } from '../components/ui';
-import { won } from '../common/format';
+import { won, wonFromKrw } from '../common/format';
 
 export default function MyGroups() {
   const { setUi } = useApp();
@@ -80,7 +80,7 @@ export default function MyGroups() {
 
   // 서버 데이터 amount는 원 단위
   const allAmounts = token
-    ? serverGroups.map(g => Number(g.amount || 0))
+    ? serverGroups.map(g => Number(g.amount || 0) / 10000)
     : mine.map(g => Number(g.amount || 0));
 
   const burden = income
@@ -209,7 +209,7 @@ export default function MyGroups() {
                       g.regionSigungu
                     ].filter(Boolean).join(' ')}
 
-                    {' · '}월 {won(Number(g.amount || 0))}
+                    {' · '}월 {wonFromKrw(g.amount)}
 
                     {' · '}매월 {g.payDay}일
 

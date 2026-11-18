@@ -2,18 +2,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
+import useMlFinanceAssessment from '../common/useMlFinanceAssessment';
 import { finance } from '../api';
 import { PageHead, Card, Input, Select } from '../components/ui';
-import { BarChart, RiskPanel } from '../components/shared';
+import { BarChart, FinanceAssessmentStatus, RiskPanel } from '../components/shared';
 import { won, MONTHS } from '../common/format';
 
 export function Finance() {
+  const mlAssessment = useMlFinanceAssessment();
   const nav = useNavigate(); const f = finance.getFinance(), a = finance.affordability();
   return <><PageHead kicker="AI FINANCIAL ANALYSIS" title="금융 분석 · AI 추천" sub="현재 금융정보를 확인하고 월별 입력 데이터를 관리해 보세요."><button className="btn primary" onClick={() => nav('/finance/monthly')}>월별 데이터 저장 →</button></PageHead>
+    <FinanceAssessmentStatus {...mlAssessment} />
     <div className="grid cols3">{[['월수입', won(f.income)], ['월지출', won(f.fixed + f.variable)], ['추천 납입액', won(a.rec)]].map(([t, v]) => <Card key={t}><small>{t}</small><div className="metric">{v}</div></Card>)}</div>
     <div className="section"><Card><RiskPanel /></Card></div>
     <div className="grid cols2 section"><Card><h2>월별 수입 · 지출 추이</h2><BarChart data={finance.getMonthly()} /></Card>
-      <Card><h2>금융 요약</h2><div className="list"><div className="list-item">기존 저축 {won(f.saving)}</div><div className="list-item">비상 예비금 {won(f.reserve)}</div><div className="list-item">월 가용 금액 {won(a.free)}</div><div className="list-item">희망 월 납입액 {won(f.goal)} {f.goal > a.rec ? <span className="pill warn">추천액 초과</span> : <span className="pill">추천 범위</span>}</div></div><p className="info mini">추천 결과는 규칙 기반 데모입니다. 연체 확률은 FastAPI 모델(RISK_SCORE) 연동 후 자동 산출되며, 타임아웃 시 직전 값 또는 주의(0.35)로 폴백합니다.</p></Card></div></>;
+      <Card><h2>금융 요약</h2><div className="list"><div className="list-item">기존 저축 {won(f.saving)}</div><div className="list-item">비상 예비금 {won(f.reserve)}</div><div className="list-item">월 가용 금액 {won(a.free)}</div><div className="list-item">희망 월 납입액 {won(f.goal)} {f.goal > a.rec ? <span className="pill warn">추천액 초과</span> : <span className="pill">추천 범위</span>}</div></div><p className="info mini">{finance.getMlAssessment() ? '위험도와 추천액은 FastAPI ML 분석 결과입니다.' : '현재 표시되는 추천액은 브라우저 데모 계산입니다. 금융정보 이용 동의 및 ML 서버 연결 후 분석 결과를 확인할 수 있습니다.'}</p></Card></div></>;
 }
 
 export function FinanceMonthly() {
