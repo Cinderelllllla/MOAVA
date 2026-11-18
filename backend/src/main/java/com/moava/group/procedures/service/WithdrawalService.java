@@ -190,7 +190,11 @@ public class WithdrawalService {
             throw new IllegalStateException("탈퇴 신청자 본인은 동의 대상이 아닙니다.");
         }
 
-        String yn = "Y".equalsIgnoreCase(form.getAgreedYn()) ? "Y" : "N";
+        String agreedYn = form.getAgreedYn();
+        if (!"Y".equalsIgnoreCase(agreedYn) && !"N".equalsIgnoreCase(agreedYn)) {
+            throw new IllegalArgumentException("동의 여부는 Y 또는 N으로 입력해야 합니다.");
+        }
+        String yn = "Y".equalsIgnoreCase(agreedYn) ? "Y" : "N";
         withdrawalMapper.upsertSettlementConsent(groupId, withdrawalRequestId, memberId, yn);
 
         // 감사 로그 기록 (SETTLEMENT_CONSENT)

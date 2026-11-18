@@ -1,11 +1,16 @@
 package com.moava.group.procedures.dto;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
 public class WithdrawalDTO {
 
+    @Getter
+    @Setter
     public static class ApplyForm {
         private Long memberId;
         private Long userId;
@@ -18,33 +23,23 @@ public class WithdrawalDTO {
         public Long getEffectiveMemberId() {
             return memberId != null ? memberId : userId;
         }
+
         public String getEffectiveReasonType() {
             return (reasonType != null && !reasonType.isBlank()) ? reasonType : "PERSONAL";
         }
+
         public String getEffectiveDetail() {
             return (detail != null && !detail.isBlank()) ? detail : reason;
         }
+
         public String getEffectiveSpecialYn() {
             if (special != null) return special ? "Y" : "N";
             return "Y".equalsIgnoreCase(specialYn) ? "Y" : "N";
         }
-
-        public Long getMemberId() { return memberId; }
-        public void setMemberId(Long memberId) { this.memberId = memberId; }
-        public Long getUserId() { return userId; }
-        public void setUserId(Long userId) { this.userId = userId; }
-        public String getReasonType() { return reasonType; }
-        public void setReasonType(String reasonType) { this.reasonType = reasonType; }
-        public String getDetail() { return detail; }
-        public void setDetail(String detail) { this.detail = detail; }
-        public String getReason() { return reason; }
-        public void setReason(String reason) { this.reason = reason; }
-        public String getSpecialYn() { return specialYn; }
-        public void setSpecialYn(String specialYn) { this.specialYn = specialYn; }
-        public Boolean getSpecial() { return special; }
-        public void setSpecial(Boolean special) { this.special = special; }
     }
 
+    @Getter
+    @Setter
     public static class SettlementForm {
         private Long leaderId;
         private Long userId;
@@ -56,6 +51,7 @@ public class WithdrawalDTO {
         public Long getEffectiveLeaderId() {
             return leaderId != null ? leaderId : userId;
         }
+
         public Long getEffectiveAmount() {
             Long raw = settlementAmount != null ? settlementAmount : amount;
             if (raw == null) return null;
@@ -65,25 +61,14 @@ public class WithdrawalDTO {
             }
             return raw;
         }
-        public String getEffectiveMemo() {
-            String m = (settlementMemo != null && !settlementMemo.isBlank()) ? settlementMemo : memo;
-            return m;
-        }
 
-        public Long getLeaderId() { return leaderId; }
-        public void setLeaderId(Long leaderId) { this.leaderId = leaderId; }
-        public Long getUserId() { return userId; }
-        public void setUserId(Long userId) { this.userId = userId; }
-        public Long getSettlementAmount() { return settlementAmount; }
-        public void setSettlementAmount(Long settlementAmount) { this.settlementAmount = settlementAmount; }
-        public Long getAmount() { return amount; }
-        public void setAmount(Long amount) { this.amount = amount; }
-        public String getSettlementMemo() { return settlementMemo; }
-        public void setSettlementMemo(String settlementMemo) { this.settlementMemo = settlementMemo; }
-        public String getMemo() { return memo; }
-        public void setMemo(String memo) { this.memo = memo; }
+        public String getEffectiveMemo() {
+            return (settlementMemo != null && !settlementMemo.isBlank()) ? settlementMemo : memo;
+        }
     }
 
+    @Getter
+    @Setter
     public static class ConsentForm {
         private Long memberId;
         private Long userId;
@@ -92,14 +77,14 @@ public class WithdrawalDTO {
         public Long getEffectiveMemberId() {
             return memberId != null ? memberId : userId;
         }
-        public Long getMemberId() { return memberId; }
-        public void setMemberId(Long memberId) { this.memberId = memberId; }
-        public Long getUserId() { return userId; }
-        public void setUserId(Long userId) { this.userId = userId; }
-        public String getAgreedYn() { return agreedYn != null ? agreedYn : "Y"; }
-        public void setAgreedYn(String agreedYn) { this.agreedYn = agreedYn; }
+
+        public String getAgreedYn() {
+            return agreedYn;
+        }
     }
 
+    @Getter
+    @Setter
     public static class ActionForm {
         private Long actorId;
         private Long userId;
@@ -112,16 +97,10 @@ public class WithdrawalDTO {
             if (memberId != null) return memberId;
             return leaderId;
         }
-        public Long getActorId() { return actorId; }
-        public void setActorId(Long actorId) { this.actorId = actorId; }
-        public Long getUserId() { return userId; }
-        public void setUserId(Long userId) { this.userId = userId; }
-        public Long getMemberId() { return memberId; }
-        public void setMemberId(Long memberId) { this.memberId = memberId; }
-        public Long getLeaderId() { return leaderId; }
-        public void setLeaderId(Long leaderId) { this.leaderId = leaderId; }
     }
 
+    @Getter
+    @Setter
     public static class StatusResponse {
         private Long withdrawalRequestId;
         private Long groupId;
@@ -155,42 +134,5 @@ public class WithdrawalDTO {
             if ("REJECTED".equals(status)) return "반려";
             return status;
         }
-
-        public Long getWithdrawalRequestId() { return withdrawalRequestId; }
-        public void setWithdrawalRequestId(Long withdrawalRequestId) { this.withdrawalRequestId = withdrawalRequestId; }
-        public Long getGroupId() { return groupId; }
-        public void setGroupId(Long groupId) { this.groupId = groupId; }
-        public Long getMemberId() { return memberId; }
-        public void setMemberId(Long memberId) { this.memberId = memberId; }
-        public String getMemberName() { return memberName; }
-        public void setMemberName(String memberName) { this.memberName = memberName; }
-        public String getReasonType() { return reasonType; }
-        public void setReasonType(String reasonType) { this.reasonType = reasonType; }
-        public String getDetail() { return detail; }
-        public void setDetail(String detail) { this.detail = detail; }
-        public String getSpecialYn() { return specialYn; }
-        public void setSpecialYn(String specialYn) { this.specialYn = specialYn; }
-        public Long getSettlementAmount() { return settlementAmount; }
-        public void setSettlementAmount(Long settlementAmount) { this.settlementAmount = settlementAmount; }
-        public String getSettlementMemo() { return settlementMemo; }
-        public void setSettlementMemo(String settlementMemo) { this.settlementMemo = settlementMemo; }
-        public Long getSettlementBy() { return settlementBy; }
-        public void setSettlementBy(Long settlementBy) { this.settlementBy = settlementBy; }
-        public Date getSettlementAt() { return settlementAt; }
-        public void setSettlementAt(Date settlementAt) { this.settlementAt = settlementAt; }
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-        public Integer getReconfirmCount() { return reconfirmCount; }
-        public void setReconfirmCount(Integer reconfirmCount) { this.reconfirmCount = reconfirmCount; }
-        public Integer getAgreedCount() { return agreedCount; }
-        public void setAgreedCount(Integer agreedCount) { this.agreedCount = agreedCount; }
-        public Integer getTargetCount() { return targetCount; }
-        public void setTargetCount(Integer targetCount) { this.targetCount = targetCount; }
-        public Date getDecidedAt() { return decidedAt; }
-        public void setDecidedAt(Date decidedAt) { this.decidedAt = decidedAt; }
-        public Date getCreatedAt() { return createdAt; }
-        public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
-        public List<Long> getConsents() { return consents; }
-        public void setConsents(List<Long> consents) { this.consents = consents; }
     }
 }
