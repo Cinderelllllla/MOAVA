@@ -21,8 +21,6 @@ import {
   leader,
   isEnded,
   reset,
-  isEnded,
-  reset,
   ensureFinanceOwner
 } from './mock/db';
 
