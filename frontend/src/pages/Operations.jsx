@@ -6,7 +6,7 @@ import { useApp } from '../common/store';
 import { groups, admin, proofs, leader, me, memberName, paidAny, paidThisPeriod, currentPeriod, ensureJoinCode, db } from '../api';
 import { PageHead, Card, Empty } from '../components/ui';
 import { useOpGroup, GroupSelect } from '../components/shared';
-import { won, maskName, maskAccount, VERIFY_LABEL } from '../common/format';
+import { won, wonFromKrw, maskName, maskAccount, VERIFY_LABEL } from '../common/format';
 
 
 // 서버 계모임과 기존 Mock 운영 기능은 별도 컴포넌트로 분리한다.
@@ -47,7 +47,7 @@ function ServerOperations({ token }) {
       <button className="btn soft" onClick={() => nav('/my-groups')}>내 계모임 →</button>
     </PageHead>
     {loading ? <Card><p>계모임을 불러오는 중입니다.</p></Card>
-      : error ? <Card><p role="alert">{error}</p></Card>
+      : error ? <Card><p role="alert">{error}</p><button className="btn small soft" onClick={() => window.location.reload()}>다시 시도</button></Card>
       : !g ? <Card><Empty>모임장으로 생성한 계모임이 없습니다.</Empty>
           <button className="btn primary" onClick={() => nav('/groups/new')}>새 계모임 만들기</button></Card>
       : <>
@@ -66,7 +66,7 @@ function ServerOperations({ token }) {
             <div><span>공개 여부</span><strong>{g.visibility === 'PRIVATE' ? '🔒 비공개' : '🌐 공개'}</strong></div>
             <div><span>지역</span><strong>{[g.regionSido, g.regionSigungu].filter(Boolean).join(' ') || '미등록'}</strong></div>
             <div><span>납입일</span><strong>매월 {g.payDay}일</strong></div>
-            <div><span>월 납입액</span><strong>{won(Number(g.amount || 0))}</strong></div>
+            <div><span>월 납입액</span><strong>{wonFromKrw(g.amount)}</strong></div>
             <div><span>모집 정원</span><strong>최대 {g.maxMembers}명</strong></div>
             <div><span>운영 기간</span><strong>{g.months}개월</strong></div>
           </div>
