@@ -1,6 +1,8 @@
 package com.moava.admin.service;
 
 import com.moava.admin.mapper.AdminAuthMapper;
+import com.moava.admin.dto.AdminAuthResponse;
+import com.moava.admin.dto.AdminView;
 import com.moava.member.service.JwtTokenProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -25,7 +27,7 @@ public class AdminAuthService {
         this.jwtTokenProvider = jwtTokenProvider;
     }
 
-    public AdminLoginResponse login(String email, String password) {
+    public AdminAuthResponse login(String email, String password) {
         if (email == null || password == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이메일과 비밀번호를 입력해 주세요.");
         }
@@ -36,20 +38,16 @@ public class AdminAuthService {
         }
 
         Long adminId = ((Number) admin.get("ADMIN_ID")).longValue();
-        return new AdminLoginResponse(
-                jwtTokenProvider.createToken(adminId, "ADMIN"),
-                "Bearer",
+        AdminView user = new AdminView(
                 adminId,
                 String.valueOf(admin.get("NAME")),
-                String.valueOf(admin.get("EMAIL"))
+                String.valueOf(admin.get("EMAIL")),
+                String.valueOf(admin.get("STATUS"))
         );
-    }
-
-    public record AdminLoginResponse(
-            String accessToken,
-            String tokenType,
-            Long adminId,
-            String name,
-            String email) {
+        return new AdminAuthResponse(
+                jwtTokenProvider.createToken(adminId, "ADMIN"),
+                "Bearer",
+                user
+        );
     }
 }

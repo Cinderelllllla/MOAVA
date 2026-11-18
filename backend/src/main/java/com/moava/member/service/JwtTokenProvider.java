@@ -34,6 +34,7 @@ public class JwtTokenProvider {
         return createToken(memberId, "MEMBER");
     }
 
+    // 회원·관리자 주체 구분을 토큰 role claim에 담으며, 허용된 역할만 토큰화한다.
     public String createToken(Long subjectId, String role) {
         if (subjectId == null || !("MEMBER".equals(role) || "ADMIN".equals(role))) {
             throw new IllegalArgumentException("토큰 주체 정보를 확인해 주세요.");
