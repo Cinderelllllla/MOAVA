@@ -2,9 +2,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
+import useMlFinanceAssessment from '../common/useMlFinanceAssessment';
 import { finance, groups } from '../api';
 import { PageHead, Card, Input } from '../components/ui';
-import { GroupCard, GroupInfo, InlineSimulator, RiskPanel, RiskLabel } from '../components/shared';
+import { FinanceAssessmentStatus, GroupCard, GroupInfo, InlineSimulator, RiskPanel, RiskLabel } from '../components/shared';
 import { won } from '../common/format';
 
 const STEPS = ['금융 정보 입력', '소비 분석', '납입액 추천', '모임 추천'];
@@ -12,6 +13,7 @@ const FIELDS = [['income', '월수입'], ['fixed', '고정지출'], ['variable',
 
 export default function Journey() {
   const { run, ui, setUi } = useApp(); const nav = useNavigate();
+  const mlAssessment = useMlFinanceAssessment();
   const step = finance.getJourneyStep(), f0 = finance.getFinance(), a = finance.affordability();
   const [f, setF] = useState(() => Object.fromEntries(FIELDS.map(([k]) => [k, f0[k]])));
   const [consent, setConsent] = useState(!!f0.consentAt);
@@ -23,8 +25,8 @@ export default function Journey() {
     <div className="form-grid">{FIELDS.map(([k, t]) => <Input key={k} label={`${t} (만 원)`} name={k} type="number" min={0} required value={f[k]} onChange={e => setF({ ...f, [k]: e.target.value })} />)}</div>
     <label className="checkline"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span><b>금융정보 분석 및 추천 목적의 데이터 이용에 동의합니다.</b><br /><small>동의 시각이 FINANCE_PROFILE.CONSENT_AT에 기록됩니다. 데모에서는 브라우저에만 저장됩니다.</small></span></label>
     <div className="actions"><button className="btn primary" disabled={!valid}>다음 단계 →</button></div></form>;
-  if (step === 2) content = <><h2>입력 데이터 분석</h2><div className="grid cols3">{[['월수입', won(f0.income)], ['월지출', won(f0.fixed + f0.variable)], ['가용 금액', won(a.free)]].map(([t, v]) => <Card key={t}><small>{t}</small><div className="metric">{v}</div></Card>)}</div><p className="info journey-analysis-note"><RiskLabel /><br />금액은 입력값에 따른 참고 분석이며 실제 금융 건전성을 보장하지 않습니다.</p><div className="actions"><button className="btn soft" onClick={() => goStep(1)}>← 이전</button><button className="btn primary" onClick={() => goStep(3)}>분석 확인 · 다음 →</button></div></>;
-  if (step === 3) content = <><div className="hero"><h2>추천 월 납입액은 {won(a.rec)}입니다.</h2><p><RiskLabel /></p></div><div className="section"><Card><RiskPanel /></Card></div><div className="actions" style={{ marginTop: 20 }}><button className="btn soft" onClick={() => goStep(2)}>← 이전</button><button className="btn primary" onClick={() => goStep(4)}>모임 추천 보기 →</button></div></>;
+  if (step === 2) content = <><h2>입력 데이터 분석</h2><FinanceAssessmentStatus {...mlAssessment} /><div className="grid cols3">{[['월수입', won(f0.income)], ['월지출', won(f0.fixed + f0.variable)], ['가용 금액', won(a.free)]].map(([t, v]) => <Card key={t}><small>{t}</small><div className="metric">{v}</div></Card>)}</div><p className="info journey-analysis-note"><RiskLabel /><br />금액은 입력값에 따른 참고 분석이며 실제 금융 건전성을 보장하지 않습니다.</p><div className="actions"><button className="btn soft" onClick={() => goStep(1)}>← 이전</button><button className="btn primary" onClick={() => goStep(3)}>분석 확인 · 다음 →</button></div></>;
+  if (step === 3) content = <><div className="hero"><h2>추천 월 납입액은 {won(a.rec)}입니다.</h2><p><RiskLabel /></p></div><FinanceAssessmentStatus {...mlAssessment} /><div className="section"><Card><RiskPanel /></Card></div><div className="actions" style={{ marginTop: 20 }}><button className="btn soft" onClick={() => goStep(2)}>← 이전</button><button className="btn primary" onClick={() => goStep(4)}>모임 추천 보기 →</button></div></>;
   if (step === 4) {
     const recs = groups.recommended(a.rec), picked = recs.find(g => g.id === ui.focus) || null;
     content = <><h2>나에게 어울리는 모임</h2><div className="journey-recommend-layout"><aside className="journey-recommend-info"><h3>{sim ? '간단 시뮬레이션' : '선택한 모임 정보'}</h3>{sim ? <InlineSimulator g={sim} onClose={() => setSim(null)} /> : <GroupInfo g={picked} onSim={setSim} />}</aside>

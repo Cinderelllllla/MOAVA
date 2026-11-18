@@ -6,14 +6,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
+import useMlFinanceAssessment from '../common/useMlFinanceAssessment';
 import { finance, groups, admin, leader } from '../api';
 import { getAccessToken } from '../api/auth';
 import { PageHead, Card } from '../components/ui';
-import { BarChart, RiskLabel } from '../components/shared';
-import { won } from '../common/format';
+import { BarChart, FinanceAssessmentStatus, RiskLabel } from '../components/shared';
+import { won, wonFromKrw } from '../common/format';
 
 export default function Dashboard() {
   const { user, setUi } = useApp();
+  const mlAssessment = useMlFinanceAssessment();
   const nav = useNavigate();
 
   // 기존 금융·알림 기능 유지
@@ -129,6 +131,7 @@ export default function Dashboard() {
         >
           <RiskLabel />
         </p>
+        <FinanceAssessmentStatus {...mlAssessment} />
 
         <button
           className="btn"
@@ -229,6 +232,10 @@ export default function Dashboard() {
             {!loading && error && (
               <div className="empty" role="alert">
                 {error}
+                {' '}
+                <button type="button" className="btn small soft" onClick={() => window.location.reload()}>
+                  다시 시도
+                </button>
               </div>
             )}
 
@@ -294,7 +301,7 @@ export default function Dashboard() {
                         className="muted mini"
                         style={{ margin: '6px 0 0' }}
                       >
-                        월 {won(g.amount)}
+                        월 {isServerUser ? wonFromKrw(g.amount) : won(g.amount)}
 
                         {' · '}매월 {g.payDay}일
 
