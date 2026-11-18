@@ -627,19 +627,22 @@ CREATE TABLE CONSENT (
                          GROUP_ID               NUMBER(10)     NOT NULL,
                          MEMBER_ID              NUMBER(10)     NOT NULL,
                          AGREED_YN              CHAR(1)        NOT NULL,
-                         AGREED_AT              DATE           DEFAULT SYSDATE NOT NULL,
+                         AGREED_AT              DATE,
                          CONSTRAINT PK_CONSENT PRIMARY KEY (CONSENT_ID),
                          CONSTRAINT UK_CONSENT_1 UNIQUE (CONSENT_TYPE, TARGET_ID, MEMBER_ID),
                          CONSTRAINT CK_CONSENT_1 CHECK (CONSENT_TYPE IN ('ORDER','SETTLEMENT','ACCOUNT','TRANSFER')),
-                         CONSTRAINT CK_CONSENT_2 CHECK (AGREED_YN IN ('Y','N'))
+                         CONSTRAINT CK_CONSENT_2 CHECK (
+                             (CONSENT_TYPE = 'ORDER' AND AGREED_YN IN ('Y','N','P'))
+                             OR (CONSENT_TYPE IN ('SETTLEMENT','ACCOUNT','TRANSFER') AND AGREED_YN IN ('Y','N'))
+                         )
 );
 COMMENT ON TABLE CONSENT IS '공식 동의 기록 (수령 순서 / 정산안 / 계좌 변경 / 승계 공용). 법적·운영 감사 증거';
 COMMENT ON COLUMN CONSENT.CONSENT_TYPE IS 'ORDER(수령 순서) / SETTLEMENT(정산안) / ACCOUNT(계좌 변경) / TRANSFER(모임장 승계)';
 COMMENT ON COLUMN CONSENT.TARGET_ID IS 'PAYOUT_REQUEST_ID / WITHDRAWAL_REQUEST_ID / GYE_ACCOUNT_ID / TRANSFER_ID (TYPE으로 구분, FK 없음)';
 COMMENT ON COLUMN CONSENT.GROUP_ID IS '모임 (조회 편의)';
 COMMENT ON COLUMN CONSENT.MEMBER_ID IS '동의 회원';
-COMMENT ON COLUMN CONSENT.AGREED_YN IS 'Y 동의 / N 거부';
-COMMENT ON COLUMN CONSENT.AGREED_AT IS '동의 시각';
+COMMENT ON COLUMN CONSENT.AGREED_YN IS 'P 미응답 / Y 동의 / N 거부';
+COMMENT ON COLUMN CONSENT.AGREED_AT IS '실제 동의·거부 응답 시각. 미응답은 NULL';
 
 -- DISSOLUTION_REQUEST: 해산 신청 → 관리자 최종 승인
 CREATE TABLE DISSOLUTION_REQUEST (
