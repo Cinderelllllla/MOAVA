@@ -72,6 +72,17 @@ export const getVersion = () => version;   // useSyncExternalStore 스냅샷: �
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 export function save() { localStorage.setItem(KEY, JSON.stringify(db)); version++; listeners.forEach(fn => fn()); }
 export function reset() { db = structuredClone(SEED); save(); }
+export function ensureFinanceOwner() {
+  if (db.session?.type !== 'MEMBER') return;      // 관리자 로그인은 무시
+  const owner = String(db.session.id);
+  if (db.financeOwner === owner) return;          // 같은 사람이면 그대로 유지
+  const seed = structuredClone(SEED);
+  db.finance = seed.finance;
+  db.financeMonthly = seed.financeMonthly;
+  db.journey = seed.journey;
+  db.financeOwner = owner;
+}
+
 
 /* ---- 공용 헬퍼 ---- */
 export const uid = () => Date.now() + Math.floor(Math.random() * 100000);
