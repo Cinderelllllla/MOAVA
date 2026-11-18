@@ -85,6 +85,12 @@ public class WithdrawalDTO {
 
     @Getter
     @Setter
+    public static class ConsentExemptionForm {
+        private String reason;
+    }
+
+    @Getter
+    @Setter
     public static class ActionForm {
         private Long actorId;
         private Long userId;
@@ -116,6 +122,7 @@ public class WithdrawalDTO {
         private String status;
         private Integer reconfirmCount;
         private Integer agreedCount;
+        private Integer exemptedCount;
         private Integer targetCount;
         private Date decidedAt;
         private Date createdAt;
@@ -134,5 +141,18 @@ public class WithdrawalDTO {
             if ("REJECTED".equals(status)) return "반려";
             return status;
         }
+    }
+
+    @Getter
+    @Setter
+    public static class ConsentTargetResponse {
+        private Long memberId;
+        private String memberName;
+        private String memberStatus;
+        private String status;
+        private Date respondedAt;
+        private Long exemptedBy;
+        private Date exemptedAt;
+        private String exemptionReason;
     }
 }

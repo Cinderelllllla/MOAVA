@@ -6,6 +6,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -53,8 +54,14 @@ public class SecurityConfig {
                 ).permitAll()
                 .requestMatchers(
                     "/api/auth/signup",
-                    "/api/auth/login"
+                    "/api/auth/login",
+                    "/api/auth/admin/login"
                 ).permitAll()
+                .requestMatchers(HttpMethod.POST,
+                    "/api/v1/groups/*/withdrawals/*/consent-targets/*/exemption").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET,
+                    "/api/v1/groups/*/withdrawals/*/consent-targets").hasAnyRole("ADMIN", "MEMBER")
+                .requestMatchers("/api/v1/groups/**", "/api/groups/**", "/api/auth/me").hasRole("MEMBER")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
             .build();

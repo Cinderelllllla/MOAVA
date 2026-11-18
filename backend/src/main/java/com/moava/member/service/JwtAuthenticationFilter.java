@@ -40,7 +40,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
             String id = jwtTokenProvider.getId(token);
-            var authentication = new UsernamePasswordAuthenticationToken(id, null, List.of(new SimpleGrantedAuthority("ROLE_MEMBER")));
+            String role = jwtTokenProvider.getRole(token);
+            String authority = "ADMIN".equals(role) ? "ROLE_ADMIN" : "ROLE_MEMBER";
+            var authentication = new UsernamePasswordAuthenticationToken(
+                    id, null, List.of(new SimpleGrantedAuthority(authority)));
             SecurityContextHolder.getContext().setAuthentication(authentication);
         } catch (Exception e) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

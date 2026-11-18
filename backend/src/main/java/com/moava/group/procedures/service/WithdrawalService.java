@@ -133,27 +133,35 @@ public class WithdrawalService {
             throw new IllegalArgumentException("정산 산출 근거(메모)를 입력해 주세요.");
         }
 
-        Map<String, Object> req = getWithdrawalRequest(groupId, withdrawalRequestId);
-        requireStatus(req, "SETTLEMENT_PENDING", "CONSENT_PENDING");
+        Map<String, Object> req = getWithdrawalRequestForUpdate(groupId, withdrawalRequestId);
+        requireStatus(req, "SETTLEMENT_PENDING", "CONSENT_PENDING", "REJECTED");
 
         Long applicantId = getLong(req, "MEMBER_ID");
+        String expectedStatus = String.valueOf(req.get("STATUS"));
 
         // 정산안 금액·근거 업데이트 및 CONSENT_PENDING 전환
-        withdrawalMapper.updateSettlementPlan(
+        if (withdrawalMapper.updateSettlementPlan(
+                groupId,
                 withdrawalRequestId,
+                expectedStatus,
                 settlementAmount,
                 settlementMemo.trim(),
                 leaderId
-        );
+        ) == 0) {
+            throw new IllegalStateException("정산안 상태가 변경되어 다시 확인해 주세요.");
+        }
 
-        // 기존 동의 기록 초기화 후 나머지 ACTIVE 회원들에게 '정산안 동의 요청' 알림 발송
+        // 기존 기록을 초기화하고 이 정산안의 동의 대상을 고정
         withdrawalMapper.deleteSettlementConsents(withdrawalRequestId);
-        List<Long> remainingMembers = withdrawalMapper.selectOtherActiveMemberIds(groupId, applicantId);
+        withdrawalMapper.deleteSettlementConsentTargets(withdrawalRequestId);
+        withdrawalMapper.insertSettlementConsentTargets(groupId, withdrawalRequestId, applicantId);
+        List<WithdrawalDTO.ConsentTargetResponse> targets =
+                withdrawalMapper.selectSettlementConsentTargets(groupId, withdrawalRequestId);
 
         String amountDesc = (settlementAmount >= 0 ? "+" : "") + settlementAmount + "원";
-        for (Long targetMemberId : remainingMembers) {
+        for (WithdrawalDTO.ConsentTargetResponse target : targets) {
             withdrawalMapper.insertNotification(
-                    targetMemberId,
+                    target.getMemberId(),
                     "CONSENT_REQUEST",
                     "중도 탈퇴 정산안 동의 요청",
                     "중도 탈퇴 정산안(" + amountDesc + ")이 등록되었습니다. 확인 후 동의 여부를 선택해 주세요.",
@@ -181,13 +189,16 @@ public class WithdrawalService {
         if (memberId == null || form == null) {
             throw new IllegalArgumentException("동의 정보를 확인해 주세요.");
         }
-        Map<String, Object> req = getWithdrawalRequest(groupId, withdrawalRequestId);
+        Map<String, Object> req = getWithdrawalRequestForUpdate(groupId, withdrawalRequestId);
         requireStatus(req, "CONSENT_PENDING");
-        requireActiveMember(groupId, memberId);
 
         Long applicantId = getLong(req, "MEMBER_ID");
         if (applicantId.equals(memberId)) {
             throw new IllegalStateException("탈퇴 신청자 본인은 동의 대상이 아닙니다.");
+        }
+        Map<String, Object> memberInfo = withdrawalMapper.selectGyeMemberInfoForUpdate(groupId, memberId);
+        if (memberInfo == null || !"ACTIVE".equals(memberInfo.get("STATUS"))) {
+            throw new IllegalStateException("현재 모임의 활성(ACTIVE) 참여 회원이 아닙니다.");
         }
 
         String agreedYn = form.getAgreedYn();
@@ -195,6 +206,11 @@ public class WithdrawalService {
             throw new IllegalArgumentException("동의 여부는 Y 또는 N으로 입력해야 합니다.");
         }
         String yn = "Y".equalsIgnoreCase(agreedYn) ? "Y" : "N";
+        String targetStatus = "Y".equals(yn) ? "AGREED" : "REJECTED";
+        if (withdrawalMapper.updateSettlementConsentTarget(
+                groupId, withdrawalRequestId, memberId, targetStatus) == 0) {
+            throw new IllegalStateException("이 정산안의 동의 대상이 아니거나 이미 응답을 완료했습니다.");
+        }
         withdrawalMapper.upsertSettlementConsent(groupId, withdrawalRequestId, memberId, yn);
 
         // 감사 로그 기록 (SETTLEMENT_CONSENT)
@@ -207,11 +223,64 @@ public class WithdrawalService {
         );
 
         if ("N".equals(yn)) {
-            withdrawalMapper.updateWithdrawalStatus(withdrawalRequestId, "REJECTED");
+            if (withdrawalMapper.updateWithdrawalStatus(
+                    groupId, withdrawalRequestId, "CONSENT_PENDING", "REJECTED") == 0) {
+                throw new IllegalStateException("신청 상태가 변경되어 반대 처리를 완료할 수 없습니다.");
+            }
             return "정산안에 반대(N) 처리되어 재조정 상태가 되었습니다.";
         }
 
         return "중도 탈퇴 정산안에 공식 동의하셨습니다.";
+    }
+
+    @Transactional(readOnly = true)
+    public List<WithdrawalDTO.ConsentTargetResponse> getSettlementConsentTargets(
+            Long groupId, Long withdrawalRequestId, Long requesterId) {
+        Map<String, Object> groupInfo = getGroupInfo(groupId);
+        if (!isLeader(groupInfo, requesterId)) {
+            requireActiveMember(groupId, requesterId);
+        }
+        getWithdrawalRequest(groupId, withdrawalRequestId);
+        return withdrawalMapper.selectSettlementConsentTargets(groupId, withdrawalRequestId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<WithdrawalDTO.ConsentTargetResponse> getSettlementConsentTargetsForAdmin(
+            Long groupId, Long withdrawalRequestId, Long adminId) {
+        if (withdrawalMapper.isActiveAdmin(adminId) == 0) {
+            throw new IllegalStateException("활성 관리자만 동의 대상 목록을 조회할 수 있습니다.");
+        }
+        getWithdrawalRequest(groupId, withdrawalRequestId);
+        return withdrawalMapper.selectSettlementConsentTargets(groupId, withdrawalRequestId);
+    }
+
+    @Transactional
+    public void exemptSettlementConsentTarget(
+            Long groupId, Long withdrawalRequestId, Long targetMemberId, Long adminId, String reason) {
+        if (adminId == null) {
+            throw new IllegalArgumentException("관리자 정보를 확인해 주세요.");
+        }
+        if (reason == null || reason.trim().isEmpty() || reason.trim().length() > 200) {
+            throw new IllegalArgumentException("면제 사유는 1~200자 이내로 입력해 주세요.");
+        }
+        if (withdrawalMapper.isActiveAdmin(adminId) == 0) {
+            throw new IllegalStateException("활성 관리자만 동의 의무를 면제할 수 있습니다.");
+        }
+
+        Map<String, Object> req = getWithdrawalRequestForUpdate(groupId, withdrawalRequestId);
+        requireStatus(req, "CONSENT_PENDING");
+        if (withdrawalMapper.exemptSettlementConsentTarget(
+                groupId, withdrawalRequestId, targetMemberId, adminId, reason.trim()) == 0) {
+            throw new IllegalStateException("현재 ACTIVE 상태인 미응답 대상만 면제할 수 있습니다.");
+        }
+
+        withdrawalMapper.insertAdminAuditLog(
+                groupId,
+                adminId,
+                targetMemberId,
+                "WITHDRAW_CONSENT_EXEMPT",
+                "탈퇴 정산 동의 의무 면제 (신청번호: " + withdrawalRequestId + ", 사유: " + reason.trim() + ")"
+        );
     }
 
     /**
@@ -259,7 +328,7 @@ public class WithdrawalService {
             throw new IllegalStateException("모임장만 탈퇴를 최종 승인할 수 있습니다.");
         }
 
-        Map<String, Object> req = getWithdrawalRequest(groupId, withdrawalRequestId);
+        Map<String, Object> req = getWithdrawalRequestForUpdate(groupId, withdrawalRequestId);
         requireStatus(req, "CONSENT_PENDING");
 
         // 정산 금액이 등록되어 있는지 확인
@@ -268,24 +337,30 @@ public class WithdrawalService {
         }
 
         Long applicantId = getLong(req, "MEMBER_ID");
-        Map<String, Object> applicantInfo = withdrawalMapper.selectGyeMemberInfo(groupId, applicantId);
+        Map<String, Object> applicantInfo = withdrawalMapper.selectGyeMemberInfoForUpdate(groupId, applicantId);
         if (applicantInfo == null || !"ACTIVE".equals(applicantInfo.get("STATUS"))) {
             throw new IllegalStateException("탈퇴 신청자가 현재 모임의 활성 회원이 아닙니다.");
         }
 
-        // [예외 4] 미동의 승인 차단 -> '필요한 공식 동의가 완료되지 않았어요'
-        int targetCount = withdrawalMapper.countRemainingActiveMembers(groupId, applicantId);
-        int agreedCount = withdrawalMapper.countAgreedSettlementConsents(withdrawalRequestId);
-
-        if (agreedCount < targetCount) {
+        // 고정 대상 중 현재 ACTIVE인 회원만 확인하며, 이미 탈퇴한 회원은 동의 의무에서 제외
+        withdrawalMapper.lockActiveSettlementConsentTargets(groupId, withdrawalRequestId);
+        if (withdrawalMapper.countSettlementConsentTargets(withdrawalRequestId) == 0) {
+            throw new IllegalStateException("저장된 동의 대상이 없습니다. 정산안을 다시 등록해 주세요.");
+        }
+        if (withdrawalMapper.countUnresolvedActiveSettlementConsentTargets(groupId, withdrawalRequestId) > 0) {
             throw new IllegalStateException("필요한 공식 동의가 완료되지 않았어요");
         }
 
         // 1) WITHDRAWAL_REQUEST.STATUS = 'APPROVED'
-        withdrawalMapper.updateWithdrawalStatus(withdrawalRequestId, "APPROVED");
+        if (withdrawalMapper.updateWithdrawalStatus(
+                groupId, withdrawalRequestId, "CONSENT_PENDING", "APPROVED") == 0) {
+            throw new IllegalStateException("신청 상태가 변경되어 승인할 수 없습니다.");
+        }
 
         // 2) GYE_MEMBER.STATUS = 'WITHDRAWN', LEFT_AT = SYSDATE
-        withdrawalMapper.updateGyeMemberWithdrawn(groupId, applicantId);
+        if (withdrawalMapper.updateGyeMemberWithdrawn(groupId, applicantId) == 0) {
+            throw new IllegalStateException("탈퇴 신청자의 회원 상태가 변경되어 승인할 수 없습니다.");
+        }
 
         // 3) 신청자 및 모임원들에게 탈퇴 승인 알림 발송
         withdrawalMapper.insertNotification(
@@ -317,6 +392,17 @@ public class WithdrawalService {
 
     private Map<String, Object> getWithdrawalRequest(Long groupId, Long withdrawalRequestId) {
         Map<String, Object> req = withdrawalMapper.selectWithdrawalById(withdrawalRequestId);
+        if (req == null) {
+            throw new IllegalArgumentException("탈퇴 신청 내역을 찾을 수 없습니다.");
+        }
+        if (!groupId.equals(getLong(req, "GROUP_ID"))) {
+            throw new IllegalArgumentException("해당 모임의 탈퇴 신청 내역이 아닙니다.");
+        }
+        return req;
+    }
+
+    private Map<String, Object> getWithdrawalRequestForUpdate(Long groupId, Long withdrawalRequestId) {
+        Map<String, Object> req = withdrawalMapper.selectWithdrawalByIdForUpdate(groupId, withdrawalRequestId);
         if (req == null) {
             throw new IllegalArgumentException("탈퇴 신청 내역을 찾을 수 없습니다.");
         }

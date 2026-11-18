@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -80,6 +81,44 @@ public class WithdrawalController {
             Authentication authentication) {
         withdrawalService.approveWithdrawal(groupId, withdrawalId, loginMemberId(authentication));
         return ResponseEntity.ok(Map.of("message", "중도 탈퇴가 최종 승인되었습니다."));
+    }
+
+    @GetMapping("/{withdrawalId}/consent-targets")
+    public ResponseEntity<List<WithdrawalDTO.ConsentTargetResponse>> getConsentTargets(
+            @PathVariable Long groupId,
+            @PathVariable Long withdrawalId,
+            Authentication authentication) {
+        Long requesterId = loginMemberId(authentication);
+        List<WithdrawalDTO.ConsentTargetResponse> targets = isAdmin(authentication)
+                ? withdrawalService.getSettlementConsentTargetsForAdmin(groupId, withdrawalId, requesterId)
+                : withdrawalService.getSettlementConsentTargets(groupId, withdrawalId, requesterId);
+        return ResponseEntity.ok(targets);
+    }
+
+    @PostMapping("/{withdrawalId}/consent-targets/{memberId}/exemption")
+    public ResponseEntity exemptConsentTarget(
+            @PathVariable Long groupId,
+            @PathVariable Long withdrawalId,
+            @PathVariable Long memberId,
+            Authentication authentication,
+            @RequestBody WithdrawalDTO.ConsentExemptionForm form) {
+        requireAdmin(authentication);
+        withdrawalService.exemptSettlementConsentTarget(
+                groupId, withdrawalId, memberId, loginMemberId(authentication), form == null ? null : form.getReason());
+        return ResponseEntity.ok(Map.of("message", "해당 회원의 정산안 동의 의무를 면제하고 감사 기록을 남겼습니다."));
+    }
+
+    private static void requireAdmin(Authentication authentication) {
+        if (!isAdmin(authentication)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "플랫폼 관리자만 동의 의무를 면제할 수 있습니다.");
+        }
+    }
+
+    private static boolean isAdmin(Authentication authentication) {
+        return authentication != null && !(authentication instanceof AnonymousAuthenticationToken)
+                && authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch("ROLE_ADMIN"::equals);
     }
 
     private static Long loginMemberId(Authentication authentication) {
