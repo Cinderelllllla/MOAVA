@@ -57,6 +57,7 @@ public class SecurityConfig {
                     "/api/auth/login",
                     "/api/auth/admin/login"
                 ).permitAll()
+                // F29 관리자 면제는 ADMIN 전용으로 제한하고, 대상 조회는 인증된 회원·관리자에게 허용한다.
                 .requestMatchers(HttpMethod.POST,
                     "/api/v1/groups/*/withdrawals/*/consent-targets/*/exemption").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET,
