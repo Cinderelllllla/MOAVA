@@ -5,9 +5,14 @@ import com.moava.proofs.dto.PaymentProofDto;
 import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.ProofGroupDto;
 import com.moava.proofs.dto.PaymentProofListDto;
+import com.moava.proofs.dto.PaymentProofDetailDto;
+import com.moava.proofs.dto.ProofFileContent;
 import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.mapper.PaymentProofMapper;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
+import com.moava.proofs.dto.ProofReviewResponse;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -24,6 +29,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -33,7 +39,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
+import com.moava.crypto.service.CryptoKeyService;
+import java.util.Base64;
 import com.moava.common.util.NameMasker;
+import com.moava.notification.common.domain.NotifType;
+import com.moava.notification.common.service.NotificationService;
 
 
 @Service
@@ -41,6 +52,9 @@ import com.moava.common.util.NameMasker;
 public class PaymentProofService {
 
     private final PaymentProofMapper paymentProofMapper;
+    private final NotificationService notificationService;
+    private final CryptoKeyService cryptoKeyService;   // 증빙 파일 암호화 (공통 암호화 모듈, 문자열 API 사용)
+
 
     @Value("${moava.upload.dir}")
     private String uploadDir;
@@ -53,8 +67,11 @@ public class PaymentProofService {
             "image/webp", ".webp",
             "application/pdf", ".pdf");
 
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+
     /**
      * F22 납입 증빙 등록
+     *
      * @param memberId 로그인 회원 ID (JWT 연동 전까지는 Controller에서 임시로 받음)
      * @return 생성된 PAYMENT_PROOF_ID
      */
@@ -62,7 +79,7 @@ public class PaymentProofService {
     public Long registerProof(Long memberId, PaymentProofCreateRequest req, List<MultipartFile> files) {
 
         // 1. 필수값 · 귀속 월 형식
-        if (memberId == null || req.getGroupId() == null || req.getPayMonth() == null
+        if (memberId == null || req == null || req.getGroupId() == null || req.getPayMonth() == null
                 || req.getRoundNo() == null || req.getAmount() == null || req.getPayDate() == null) {
             throw badRequest("필수 입력값이 누락되었습니다.");
         }
@@ -71,10 +88,7 @@ public class PaymentProofService {
         }
 
         // 2. 모임 존재 + 해산 완료 모임 차단
-        ProofGroupDto group = paymentProofMapper.findGroupForProof(req.getGroupId());
-        if (group == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
-        }
+        ProofGroupDto group = getGroupOrThrow(req.getGroupId());
         if ("DISSOLVED".equals(group.getStatus())) {
             throw badRequest("해산된 모임에는 증빙을 등록할 수 없습니다.");
         }
@@ -124,7 +138,13 @@ public class PaymentProofService {
         // 10. 파일 저장 + 메타 INSERT (재제출과 공통)
         saveFiles(proof.getPaymentProofId(), files, hashes);
 
-        // TODO: 모임장 알림(F35 NotificationService), AUDIT_LOG(PROOF_UPLOAD) — 공통 모듈 머지 후 연결
+        // 11. 모임장 알림 (같은 모임 하루 1건)
+        notifyLeaderProofPending(group, memberId, proof.getPaymentProofId());
+
+        // 12. 감사 로그
+        audit(req.getGroupId(), memberId, null, "PROOF_UPLOAD",
+                "증빙 등록 #" + proof.getPaymentProofId() + " (귀속 월 " + req.getPayMonth()
+                        + ", " + req.getRoundNo() + "회차, 파일 " + files.size() + "개)");
         return proof.getPaymentProofId();
     }
 
@@ -139,10 +159,11 @@ public class PaymentProofService {
             if (f.isEmpty() || f.getSize() > MAX_FILE_SIZE) {
                 throw badRequest("파일은 1MB 이하만 등록할 수 있습니다.");
             }
-            if (!ALLOWED_MIME.containsKey(f.getContentType())) {
+            String type = f.getContentType();
+            if (type == null || !ALLOWED_MIME.containsKey(type)) {   // Map.of는 containsKey(null)에서 NPE → null 먼저 검사
                 throw badRequest("JPG, PNG, WebP, PDF 파일만 등록할 수 있습니다.");
             }
-            if (!hasValidSignature(f, f.getContentType())) {
+            if (!hasValidSignature(f, type)) {
                 throw badRequest("파일 내용이 선택한 형식과 일치하지 않습니다.");
             }
         }
@@ -162,18 +183,24 @@ public class PaymentProofService {
         return hashes;
     }
 
-    // 파일을 UUID 이름으로 저장 + PAYMENT_PROOF_FILE INSERT (등록·재제출 공통)
+    // 파일을 암호화해 UUID 이름으로 저장 + PAYMENT_PROOF_FILE INSERT (등록·재제출 공통)
+    // 암호화: 파일 바이트 → Base64 문자열 → 공통 암호화(AES-256-GCM) → 저장 (명세 F22-10)
+    // 해시·크기는 암호화 전 원본 기준 (DDL: FILE_HASH·FILE_SIZE는 원본 기준)
     // 중간에 실패하면 이미 쓴 파일은 지우고 예외를 다시 던짐 → DB는 @Transactional로 롤백
     private void saveFiles(Long proofId, List<MultipartFile> files, List<String> hashes) {
         Path dir = Paths.get(uploadDir, "proofs").toAbsolutePath().normalize();
         List<Path> savedFiles = new ArrayList<>();
         try {
             Files.createDirectories(dir);
+            int keyVer = cryptoKeyService.getCurrentKeyVersion();   // 현재 ACTIVE 키 버전 (KEY_VER FK)
             for (int i = 0; i < files.size(); i++) {
                 MultipartFile f = files.get(i);
-                String storedName = UUID.randomUUID() + ALLOWED_MIME.get(f.getContentType());
+                String storedName = UUID.randomUUID() + ".enc";   // 암호문이라 원래 확장자 대신 .enc
                 Path target = dir.resolve(storedName);
-                f.transferTo(target);
+
+                String encrypted = cryptoKeyService.encrypt(
+                        Base64.getEncoder().encodeToString(f.getBytes()), keyVer);
+                Files.writeString(target, encrypted, StandardCharsets.US_ASCII);
                 savedFiles.add(target);
 
                 PaymentProofFileDto meta = new PaymentProofFileDto();
@@ -184,10 +211,12 @@ public class PaymentProofService {
                 meta.setMimeType(f.getContentType());
                 meta.setFileSize(f.getSize());
                 meta.setFileHash(hashes.get(i));
-                meta.setEncryptedYn("N");   // TODO: AES-256-GCM 암호화 모듈 붙이면 'Y'
-                meta.setKeyVer(1);
+                meta.setEncryptedYn("Y");
+                meta.setKeyVer(keyVer);
                 paymentProofMapper.insertProofFile(meta);
             }
+            // 여기까지 성공해도 이후 DB 작업·커밋이 실패해 롤백되면 새로 쓴 파일을 지움
+            afterRollback(() -> deleteQuietly(savedFiles));
         } catch (IOException e) {
             deleteQuietly(savedFiles);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일 저장 중 오류가 발생했습니다.", e);
@@ -199,6 +228,69 @@ public class PaymentProofService {
 
     private ResponseStatusException badRequest(String message) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+    }
+
+
+    // 모임 조회 — 없으면 404 (등록·목록·심사 공통)
+    private ProofGroupDto getGroupOrThrow(Long groupId) {
+        ProofGroupDto group = paymentProofMapper.findGroupForProof(groupId);
+        if (group == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        return group;
+    }
+
+    // 증빙 조회 (경로의 groupId 소속인 것만) — 없으면 404 (심사·재제출 공통)
+    private PaymentProofDto getProofOrThrow(Long groupId, Long proofId) {
+        PaymentProofDto proof = paymentProofMapper.findProofForReview(groupId, proofId);
+        if (proof == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
+        }
+        return proof;
+    }
+
+
+    // 트랜잭션이 커밋된 뒤에만 실행. 트랜잭션 밖이면 실행하지 않음 (파일은 지우는 것보다 남기는 쪽이 안전)
+    private void afterCommit(Runnable task) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    task.run();
+                }
+            });
+        }
+    }
+
+    // 트랜잭션이 롤백되면 실행 (커밋 실패 포함). 커밋 결과를 알 수 없는 경우(UNKNOWN)는 실행하지 않음
+    private void afterRollback(Runnable task) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                        task.run();
+                    }
+                }
+            });
+        }
+    }
+
+    // 모임장에게 '확인할 증빙' 알림 — 같은 모임은 하루 1건, 모임장 본인 증빙이면 생략 (등록·재제출 공통)
+    private void notifyLeaderProofPending(ProofGroupDto group, Long submitterId, Long proofId) {
+        if (group.getOwnerId().equals(submitterId)) {
+            return;
+        }
+        if (paymentProofMapper.countTodayProofPending(group.getOwnerId(), group.getGroupId()) > 0) {
+            return;
+        }
+        notificationService.notifyMember(group.getOwnerId(), NotifType.PROOF_PENDING, proofId,
+                Map.of("group", group.getTitle(), "groupId", group.getGroupId()));
+    }
+
+    // 감사 로그 저장 (등록·심사·재제출 공통). 같은 트랜잭션이라 본 작업이 롤백되면 로그도 같이 롤백됨
+    private void audit(Long groupId, Long actorId, Long targetId, String eventType, String description) {
+        paymentProofMapper.insertAuditLog(groupId, actorId, targetId, eventType, description);
     }
 
     private String sha256(MultipartFile f) {
@@ -217,9 +309,13 @@ public class PaymentProofService {
 
     private void deleteQuietly(List<Path> paths) {
         for (Path p : paths) {
-            try { Files.deleteIfExists(p); } catch (IOException ignored) { }
+            try {
+                Files.deleteIfExists(p);
+            } catch (IOException ignored) {
+            }
         }
     }
+
     // 파일 앞부분(매직 넘버)으로 실제 형식 확인 — Content-Type 위조 차단 (REQ-SEC-02)
     private boolean hasValidSignature(MultipartFile f, String type) {
         byte[] head;
@@ -229,10 +325,10 @@ public class PaymentProofService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일 확인 중 오류가 발생했습니다.", e);
         }
         return switch (type) {
-            case "image/jpeg"      -> startsWith(head, 0, 0xFF, 0xD8, 0xFF);
-            case "image/png"       -> startsWith(head, 0, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
+            case "image/jpeg" -> startsWith(head, 0, 0xFF, 0xD8, 0xFF);
+            case "image/png" -> startsWith(head, 0, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
             case "application/pdf" -> startsWith(head, 0, 0x25, 0x50, 0x44, 0x46);              // "%PDF"
-            case "image/webp"      -> startsWith(head, 0, 0x52, 0x49, 0x46, 0x46)                // "RIFF"
+            case "image/webp" -> startsWith(head, 0, 0x52, 0x49, 0x46, 0x46)                // "RIFF"
                     && startsWith(head, 8, 0x57, 0x45, 0x42, 0x50);              // "WEBP"
             default -> false;
         };
@@ -246,13 +342,11 @@ public class PaymentProofService {
         }
         return true;
     }
+
     @Transactional(readOnly = true)
     public List<PaymentProofListDto> getProofList(Long groupId, Long memberId) {
         // 1. 모임 존재 확인 (등록 때 만든 findGroupForProof 재사용)
-        ProofGroupDto group = paymentProofMapper.findGroupForProof(groupId);
-        if (group == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
-        }
+        ProofGroupDto group = getGroupOrThrow(groupId);
 
         // 2. 권한: 모임장이면 전체, ACTIVE 구성원이면 본인 것만
         boolean isOwner = memberId.equals(group.getOwnerId());
@@ -273,12 +367,91 @@ public class PaymentProofService {
     }
 
     /**
+     * F22 증빙 상세 조회 (모임장: 모임 전체 / ACTIVE 구성원: 본인 것만 — 목록과 같은 기준)
+     */
+    @Transactional(readOnly = true)
+    public PaymentProofDetailDto getProofDetail(Long groupId, Long proofId, Long memberId) {
+        // 1. 모임 존재 + 권한 (모임장 또는 ACTIVE 구성원)
+        ProofGroupDto group = getGroupOrThrow(groupId);
+        boolean isOwner = memberId.equals(group.getOwnerId());
+        if (!isOwner && paymentProofMapper.countActiveMember(groupId, memberId) == 0) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "모임 구성원만 증빙을 볼 수 있습니다.");
+        }
+
+
+        // 2. 증빙 존재 (이 모임의 증빙인지까지 확인)
+        PaymentProofDetailDto detail = paymentProofMapper.findProofDetail(groupId, proofId);
+        if (detail == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
+        }
+
+        // 3. 모임장이 아니면 본인 증빙만
+        if (!isOwner && !memberId.equals(detail.getMemberId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인이 제출한 증빙만 볼 수 있습니다.");
+        }
+
+        // 4. 타인 이름 마스킹 (F03-2) + 첨부 파일 요약
+        if (!memberId.equals(detail.getMemberId())) {
+            detail.setMemberName(NameMasker.mask(detail.getMemberName()));
+        }
+        detail.setFiles(paymentProofMapper.findProofFileSummaries(proofId));
+        return detail;
+    }
+
+    /**
+     * F22 증빙 파일 미리보기·다운로드
+     * 권한: 증빙 작성자·모임장 (API 명세 v0.5 §9 보수적 안 A안, 팀 결정 대기 — B안이면 2번 조건만 변경)
+     */
+    @Transactional(readOnly = true)
+    public ProofFileContent getProofFile(Long groupId, Long proofId, Long fileId, Long memberId) {
+        // 1. 모임·증빙 존재 (이 모임의 증빙인지까지 확인)
+        ProofGroupDto group = getGroupOrThrow(groupId);
+        PaymentProofDto proof = getProofOrThrow(groupId, proofId);
+
+        // 2. 권한: 모임장 또는 증빙 작성자
+        if (!memberId.equals(group.getOwnerId()) && !memberId.equals(proof.getMemberId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "증빙 작성자와 모임장만 파일을 볼 수 있습니다.");
+        }
+
+        // 3. 파일 메타 (이 증빙에 속한 파일인지까지 확인)
+        PaymentProofFileDto file = paymentProofMapper.findProofFile(proofId, fileId);
+        if (file == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 파일입니다.");
+        }
+
+        // 4. 디스크에서 읽기 (업로드 폴더 밖 경로 차단)
+        Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path target = base.resolve(file.getFilePath()).normalize();
+        if (!target.startsWith(base) || !Files.exists(target)) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일을 읽을 수 없습니다.");
+        }
+
+        // 5. 암호화된 파일이면 복호화 (저장 때의 역순: 암호문 → Base64 → 원본 바이트)
+        try {
+            byte[] bytes;
+            if ("Y".equals(file.getEncryptedYn())) {
+                String encrypted = Files.readString(target, StandardCharsets.US_ASCII);
+                bytes = Base64.getDecoder().decode(cryptoKeyService.decrypt(encrypted, file.getKeyVer()));
+            } else {
+                bytes = Files.readAllBytes(target);   // 암호화 적용 전에 올라온 파일
+            }
+            String fileName = "proof-" + fileId + ALLOWED_MIME.getOrDefault(file.getMimeType(), "");
+            return new ProofFileContent(bytes, file.getMimeType(), fileName);
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일을 읽을 수 없습니다.", e);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일 복호화에 실패했습니다.", e);
+        }
+    }
+
+    /**
      * F23 증빙 승인·보완 요청 (모임장)
+     *
      * @param memberId 로그인 회원 ID (JWT 연동 전까지는 Controller에서 임시로 받음)
-     * @return 변경된 상태 (CONFIRMED / REVISION)
+     * @return 심사 결과 (증빙 ID, 변경된 상태, 심사 시각)
      */
     @Transactional
-    public String reviewProof(Long memberId, Long groupId, Long proofId, PaymentProofReviewRequest req) {
+    public ProofReviewResponse reviewProof(Long memberId, Long groupId, Long proofId, PaymentProofReviewRequest req) {
 
         // 1. 결정 값 확인
         String decision = req.getDecision();
@@ -287,69 +460,87 @@ public class PaymentProofService {
         }
 
         // 2. 모임 존재 + 모임장 확인 (REQ-SEC-04 서버 재검증)
-        ProofGroupDto group = paymentProofMapper.findGroupForProof(groupId);
-        if (group == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
-        }
+        ProofGroupDto group = getGroupOrThrow(groupId);
         if (!group.getOwnerId().equals(memberId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 모임장만 승인할 수 있어요.");
         }
 
         // 3. 증빙 존재 (이 모임의 증빙인지까지 확인)
-        PaymentProofDto proof = paymentProofMapper.findProofForReview(groupId, proofId);
-        if (proof == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
-        }
+        PaymentProofDto proof = getProofOrThrow(groupId, proofId);
 
         // 4. 확인 대기(PENDING) 상태만 심사 가능
         if (!"PENDING".equals(proof.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "확인 대기 중인 증빙만 심사할 수 있습니다.");
         }
 
-        // 5. 보완 요청이면 사유 필수, 승인이면 사유 저장 안 함
-        String memo = null;
+        String memo = null;         // 5. 보완 요청이면 사유 필수, 승인이면 사유 저장 안 함
         if ("REVISION".equals(decision)) {
             if (req.getReviewMemo() == null || req.getReviewMemo().isBlank()) {
                 throw badRequest("보완 사유를 입력해 주세요.");
             }
             memo = req.getReviewMemo().trim();
-            if (memo.length() > 500) {   // DDL REVIEW_MEMO VARCHAR2(500)
-                throw badRequest("보완 사유는 500자 이하로 입력해 주세요.");
+            if (memo.getBytes(StandardCharsets.UTF_8).length > 500) {   // VARCHAR2(500) = 500바이트, 한글 1자 = 3바이트
+                throw badRequest("보완 사유는 한글 기준 약 160자까지 입력할 수 있습니다.");
             }
         }
 
         // 6. 상태 변경 (PENDING 조건 UPDATE → 0건이면 그 사이에 다른 요청이 먼저 처리한 것)
-        int updated = paymentProofMapper.updateProofReview(proofId, decision, memberId, memo);
+        //    심사 시각은 여기서 한 번 만들어 DB 저장값과 응답값을 같게 맞춤 (DATE 컬럼이라 초 단위까지)
+        LocalDateTime reviewedAt = LocalDateTime.now(SEOUL).withNano(0);
+        int updated = paymentProofMapper.updateProofReview(proofId, decision, memberId, memo, reviewedAt);
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 처리된 증빙입니다.");
         }
 
-        // TODO F23: 승인 시 같은 모임·회원·귀속 월 OVERDUE_CASE → RESOLVED (F26 미납 감지와 함께 구현)
-        // TODO F23: 회원 알림(NOTIFICATION), 감사 로그(AUDIT_LOG PROOF_CONFIRM / PROOF_REVISION)
+        // 7. 승인 시 같은 회원·귀속 월 미납 건 해소 (F23-2, F26 연계) — 미납 건이 없으면 0행이라 결과 확인 안 함
+        if ("CONFIRMED".equals(decision)) {
+            paymentProofMapper.resolveOverdueCase(groupId, proof.getMemberId(), proof.getPayMonth());
+        }
 
-        return decision;
+        // 8. 보완 요청이면 작성 회원에게 알림 (승인 알림 코드는 아직 없음 — 알림 담당 확인 중)
+        if ("REVISION".equals(decision)) {
+            notificationService.notifyMember(proof.getMemberId(), NotifType.PROOF_REVISION, proofId,
+                    Map.of("group", group.getTitle(),
+                            "round", proof.getRoundNo(),
+                            "reason", memo,
+                            "groupId", groupId));
+        }
+
+        // 9. 감사 로그 (승인 알림은 보내지 않음 — 알림 README: 알림 축소 결정)
+        boolean confirmed = "CONFIRMED".equals(decision);
+        audit(groupId, memberId, proof.getMemberId(), confirmed ? "PROOF_CONFIRM" : "PROOF_REVISION",
+                (confirmed ? "증빙 승인 #" : "증빙 보완 요청 #") + proofId
+                        + " (귀속 월 " + proof.getPayMonth() + ", " + proof.getRoundNo() + "회차)");
+
+        return new ProofReviewResponse(proofId, decision, reviewedAt.atZone(SEOUL).toOffsetDateTime());
     }
 
     /**
      * F22-05 보완 재제출 (증빙 작성자)
      * - REVISION 상태만 가능. 귀속 월·회차·금액은 기존 값 유지, 납입일·파일만 교체
      * - 본인 증빙의 기존 파일은 다시 첨부 가능 (다른 증빙 파일 재사용은 계속 차단)
+     *
      * @return 재제출 후 누적 횟수
      */
     @Transactional
     public int resubmitProof(Long memberId, Long groupId, Long proofId,
                              PaymentProofResubmitRequest req, List<MultipartFile> files) {
-
         // 1. 필수값
         if (memberId == null || req == null || req.getPayDate() == null) {
             throw badRequest("필수 입력값이 누락되었습니다.");
         }
 
-        // 2. 증빙 존재 (이 모임의 증빙인지까지 확인)
-        PaymentProofDto proof = paymentProofMapper.findProofForReview(groupId, proofId);
-        if (proof == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 증빙입니다.");
+        // 1-2. 모임 존재 + 해산 완료 모임 차단 + ACTIVE 구성원만 (등록과 같은 기준, REQ-SEC-04)
+        ProofGroupDto group = getGroupOrThrow(groupId);
+        if ("DISSOLVED".equals(group.getStatus())) {
+            throw badRequest("해산된 모임에는 증빙을 재제출할 수 없습니다.");
         }
+        if (paymentProofMapper.countActiveMember(groupId, memberId) == 0) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "참여 회원만 증빙을 재제출할 수 있습니다.");
+        }
+
+        // 2. 증빙 존재 (이 모임의 증빙인지까지 확인)
+        PaymentProofDto proof = getProofOrThrow(groupId, proofId);
 
         // 3. 작성자 본인만
         if (!memberId.equals(proof.getMemberId())) {
@@ -374,27 +565,26 @@ public class PaymentProofService {
         paymentProofMapper.deleteProofFiles(proofId);
         saveFiles(proofId, files, hashes);
 
-        // 8. 기존 디스크 파일 삭제 (DB 작업이 모두 끝난 뒤)
+        // 8. 기존 디스크 파일 삭제 — DB 커밋이 성공한 뒤에만 (업로드 폴더 밖 경로는 건너뜀)
         Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
         List<Path> oldFiles = new ArrayList<>();
         for (String p : oldPaths) {
-            oldFiles.add(base.resolve(p).normalize());
+            Path target = base.resolve(p).normalize();
+            if (target.startsWith(base)) {   // "../" 등으로 업로드 폴더를 벗어난 경로 차단
+                oldFiles.add(target);
+            }
         }
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    deleteQuietly(oldFiles);
-                }
-            });
-        } else {
-            deleteQuietly(oldFiles);
-        }
+        afterCommit(() -> deleteQuietly(oldFiles));
 
-        // TODO: 모임장 알림(F35), AUDIT_LOG(PROOF_RESUBMIT) — 공통 모듈 머지 후 연결
+        // 9. 모임장 알림 (같은 모임 하루 1건)
+        notifyLeaderProofPending(group, memberId, proofId);
+
+        // 10. 감사 로그
+        audit(groupId, memberId, null, "PROOF_RESUBMIT",
+                "증빙 재제출 #" + proofId + " (" + (proof.getResubmitCount() + 1)
+                        + "번째 재제출, 파일 " + files.size() + "개)");
         return proof.getResubmitCount() + 1;
     }
-
 
 
 }
