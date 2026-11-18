@@ -35,6 +35,9 @@ public class PayoutOrderService {
      */
     @Transactional
     public String requestOrUpdatePayoutOrder(Long groupId, Long memberId, PayoutOrderDTO.RequestForm form) {
+        if (form == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 정보를 확인해 주세요.");
+        }
         Map<String, Object> groupInfo = getGroupInfo(groupId);
         requireActiveMember(groupId, memberId);
 
@@ -194,6 +197,9 @@ public class PayoutOrderService {
         int duplicateCount = payoutOrderMapper.countConfirmedRoundDuplicate(groupId, roundNo, payoutRequestId);
         if (duplicateCount > 0) {
             throw new IllegalStateException("이미 다른 회원에게 확정된 회차입니다. 회차 중복 확정은 불가합니다.");
+        }
+        if (payoutOrderMapper.countConfirmedRequestByMember(groupId, applicantId) > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 수령 회차가 확정된 회원입니다.");
         }
 
         // [검증 2] 신청자 제외 ACTIVE 회원 전원 'Y' 동의 검증

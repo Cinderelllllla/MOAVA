@@ -35,7 +35,7 @@ public class PayoutOrderDTO {
     public static class ConsentForm {
         private Long memberId;
         private Long userId;
-        private String agreedYn; // 기본 'Y'
+        private String agreedYn;
 
         public Long getEffectiveMemberId() {
             return memberId != null ? memberId : userId;
@@ -44,7 +44,7 @@ public class PayoutOrderDTO {
         public void setMemberId(Long memberId) { this.memberId = memberId; }
         public Long getUserId() { return userId; }
         public void setUserId(Long userId) { this.userId = userId; }
-        public String getAgreedYn() { return agreedYn != null ? agreedYn : "Y"; }
+        public String getAgreedYn() { return agreedYn; }
         public void setAgreedYn(String agreedYn) { this.agreedYn = agreedYn; }
     }
 
