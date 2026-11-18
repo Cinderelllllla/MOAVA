@@ -62,6 +62,18 @@ export function getAccessToken() {
   return sessionStorage.getItem(TOKEN_KEY);
 }
 
+export function getAccessTokenMemberId(token = getAccessToken()) {
+  try {
+    const payload = token?.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');
+    if (!payload) return null;
+    const claims = JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, '=')));
+    const id = Number(claims.sub);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export function clearAccessToken() {
   sessionStorage.removeItem(TOKEN_KEY);
 }
