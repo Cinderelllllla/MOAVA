@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.references.mapper.RefNoMapper">
+
+    <!-- ACTIVE 관리자 여부 -->
+    <select id="countActiveAdmin" resultType="int">
+        SELECT COUNT(*)
+        FROM ADMIN
+        WHERE ADMIN_ID = #{adminId}
+        AND STATUS = 'ACTIVE'
+    </select>
+
+    <!-- 목록·단건 공통 컬럼 -->
+    <sql id="proofColumns">
+        p.PAYMENT_PROOF_ID  AS paymentProofId,
+        p.GROUP_ID          AS groupId,
+        g.TITLE             AS groupTitle,
+        p.MEMBER_ID         AS memberId,
+        m.NAME              AS memberName,
+        p.PAY_MONTH         AS payMonth,
+        p.ROUND_NO          AS roundNo,
+        p.AMOUNT            AS amount,
+        p.PAY_DATE          AS payDate,
+        p.STATUS            AS status,
+        p.REF_NO            AS refNo,
+        p.REF_ASSIGNED_AT   AS refAssignedAt,
+        p.REF_CORRECT_COUNT AS refCorrectCount,
+        (SELECT COUNT(*) FROM PAYMENT_PROOF_FILE f
+        WHERE f.PAYMENT_PROOF_ID = p.PAYMENT_PROOF_ID) AS fileCount
+    </sql>
+
+    <!-- A05 목록: 미지정 / 지정 완료 구분 (미지정은 오래된 것부터, 지정 완료는 최근 지정부터) -->
+    <select id="findProofs" resultType="com.moava.references.dto.RefProofDto">
+        SELECT <include refid="proofColumns"/>
+        FROM PAYMENT_PROOF p
+        JOIN GYE_GROUP g ON g.GROUP_ID = p.GROUP_ID
+        JOIN MEMBER m    ON m.MEMBER_ID = p.MEMBER_ID
+        <choose>
+            <when test="assigned">
+                WHERE p.REF_NO IS NOT NULL
+                ORDER BY p.REF_ASSIGNED_AT DESC
+            </when>
+            <otherwise>
+                WHERE p.REF_NO IS NULL
+                ORDER BY p.CREATED_AT
+            </otherwise>
+        </choose>
+    </select>
+
+    <!-- 증빙 1건 -->
+    <select id="findProof" resultType="com.moava.references.dto.RefProofDto">
+        SELECT <include refid="proofColumns"/>
+        FROM PAYMENT_PROOF p
+        JOIN GYE_GROUP g ON g.GROUP_ID = p.GROUP_ID
+        JOIN MEMBER m    ON m.MEMBER_ID = p.MEMBER_ID
+        WHERE p.PAYMENT_PROOF_ID = #{proofId}
+    </select>
+
+    <!-- 다음 번호 미리 보기: NOCACHE 시퀀스라 LAST_NUMBER = 다음 NEXTVAL 값 (시퀀스 소모 없음) -->
+    <select id="peekNextRefNo" resultType="string">
+        SELECT 'MOAVA-' || LPAD(LAST_NUMBER, 5, '0')
+        FROM USER_SEQUENCES
+        WHERE SEQUENCE_NAME = 'SEQ_REF_NO'
+    </select>
+
+    <!-- 다음 번호 발급 (DDL 주석의 사용법 그대로) -->
+    <select id="nextRefNo" resultType="string">
+        SELECT 'MOAVA-' || LPAD(SEQ_REF_NO.NEXTVAL, 5, '0') FROM DUAL
+    </select>
+
+    <select id="countRefNo" resultType="int">
+        SELECT COUNT(*) FROM PAYMENT_PROOF WHERE REF_NO = #{refNo}
+    </select>
+
+    <update id="assignRefNo">
+        UPDATE PAYMENT_PROOF
+        SET REF_NO = #{refNo},
+        REF_ASSIGNED_AT = #{assignedAt}
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+        AND STATUS = 'CONFIRMED'
+        AND REF_NO IS NULL
+    </update>
+
+    <update id="correctRefNo">
+        UPDATE PAYMENT_PROOF
+        SET REF_NO = #{newRefNo},
+        REF_CORRECT_COUNT = REF_CORRECT_COUNT + 1
+        WHERE PAYMENT_PROOF_ID = #{proofId}
+        AND REF_NO = #{oldRefNo}
+    </update>
+
+    <insert id="insertAdminAuditLog">
+        INSERT INTO AUDIT_LOG (
+        AUDIT_LOG_ID, GROUP_ID, ACTOR_ADMIN_ID, TARGET_MEMBER_ID, EVENT_TYPE, DESCRIPTION
+        ) VALUES (
+        SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{actorAdminId}, #{targetMemberId, jdbcType=NUMERIC},
+        #{eventType}, #{description}
+        )
+    </insert>
+</mapper>
