@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.finance.mapper.KosisHouseholdMapper">
+
+    <resultMap id="kosisMap" type="com.moava.finance.dto.KosisHouseholdRow">
+        <constructor>
+            <arg column="DECILE"             javaType="int"/>
+            <arg column="INCOME_LOW"         javaType="long"/>
+            <arg column="INCOME_HIGH"        javaType="java.lang.Long"/>
+            <arg column="AVG_CONSUMPTION"    javaType="long"/>
+            <arg column="AVG_NONCONSUMPTION" javaType="long"/>
+            <arg column="BASE_YM"            javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectAll" resultMap="kosisMap">
+        SELECT DECILE, INCOME_LOW, INCOME_HIGH, AVG_CONSUMPTION, AVG_NONCONSUMPTION, BASE_YM
+          FROM KOSIS_HOUSEHOLD
+         ORDER BY DECILE
+    </select>
+</mapper>
