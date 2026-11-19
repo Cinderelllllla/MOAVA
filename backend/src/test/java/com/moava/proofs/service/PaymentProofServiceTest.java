@@ -8,11 +8,10 @@ import com.moava.proofs.dto.PaymentProofDetailDto;
 import com.moava.proofs.dto.PaymentProofDto;
 import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.PaymentProofListDto;
-import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
+import com.moava.proofs.dto.ProofActionResponse;
 import com.moava.proofs.dto.ProofFileContent;
 import com.moava.proofs.dto.ProofGroupDto;
-import com.moava.proofs.dto.ProofReviewResponse;
 import com.moava.proofs.mapper.PaymentProofMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,7 +19,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
@@ -52,7 +50,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * PaymentProofService 단위 테스트 — DB 없이 가짜 Mapper(Mock)로 검사 로직만 확인
+ * 증빙 서비스 단위 테스트 (PaymentProofService · ProofQueryService · ProofReviewService)
+ * DB 없이 가짜 Mapper(Mock)로 검사 로직만 확인
+ * 부품(ProofFileStorage · ProofAccessChecker)은 가짜가 아니라 진짜 객체를 써서, 서비스 분리 전과 같은 동작인지 확인
  * 파일 저장 테스트는 JUnit 임시 폴더(@TempDir)를 업로드 폴더로 사용
  * 암호화는 가짜 CryptoKeyService가 앞에 "ENC:"를 붙이는 방식으로 흉내 냄
  */
@@ -68,8 +68,10 @@ class PaymentProofServiceTest {
     @Mock
     CryptoKeyService cryptoKeyService;              // 가짜 암호화 서비스
 
-    @InjectMocks
-    PaymentProofService paymentProofService;        // 위 가짜들을 넣어서 만든 진짜 Service
+    // 위 가짜들을 넣어서 setUp()에서 직접 만드는 진짜 객체들
+    PaymentProofService paymentProofService;        // F22 등록·재제출
+    ProofQueryService proofQueryService;            // F22 목록·상세·파일 조회
+    ProofReviewService proofReviewService;          // F23 승인·보완 요청
 
     @TempDir
     Path tempDir;                                   // 테스트마다 새로 생기고 끝나면 지워지는 폴더
@@ -97,8 +99,16 @@ class PaymentProofServiceTest {
         group.setMonths(10);
         group.setStatus("ACTIVE");
 
+        // 부품 → 서비스 순서로 조립 (생성자 매개변수 순서 = 각 클래스의 필드 선언 순서)
+        ProofFileStorage proofFileStorage = new ProofFileStorage(paymentProofMapper, cryptoKeyService);
+        ProofAccessChecker proofAccessChecker = new ProofAccessChecker(paymentProofMapper);
+        paymentProofService = new PaymentProofService(
+                paymentProofMapper, notificationService, proofFileStorage, proofAccessChecker);
+        proofQueryService = new ProofQueryService(paymentProofMapper, proofFileStorage, proofAccessChecker);
+        proofReviewService = new ProofReviewService(paymentProofMapper, notificationService, proofAccessChecker);
+
         // @Value("${moava.upload.dir}") 대신 임시 폴더를 업로드 경로로 지정
-        ReflectionTestUtils.setField(paymentProofService, "uploadDir", tempDir.toString());
+        ReflectionTestUtils.setField(proofFileStorage, "uploadDir", tempDir.toString());
     }
 
     // ===================== 검사 로직 =====================
@@ -128,7 +138,7 @@ class PaymentProofServiceTest {
         req.setDecision("CONFIRMED");
 
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> paymentProofService.reviewProof(MEMBER_ID, GROUP_ID, PROOF_ID, req));
+                () -> proofReviewService.reviewProof(MEMBER_ID, GROUP_ID, PROOF_ID, req));
 
         assertEquals(403, e.getStatusCode().value());
         verify(paymentProofMapper, never()).updateProofReview(any(), any(), any(), any(), any());
@@ -145,7 +155,7 @@ class PaymentProofServiceTest {
         req.setReviewMemo("   ");                     // 공백만 있음
 
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> paymentProofService.reviewProof(OWNER_ID, GROUP_ID, PROOF_ID, req));
+                () -> proofReviewService.reviewProof(OWNER_ID, GROUP_ID, PROOF_ID, req));
 
         assertEquals(400, e.getStatusCode().value());
         verify(paymentProofMapper, never()).updateProofReview(any(), any(), any(), any(), any());
@@ -162,7 +172,7 @@ class PaymentProofServiceTest {
         when(paymentProofMapper.findProofDetail(GROUP_ID, PROOF_ID)).thenReturn(detail);
 
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> paymentProofService.getProofDetail(GROUP_ID, PROOF_ID, MEMBER_ID));
+                () -> proofQueryService.getProofDetail(GROUP_ID, PROOF_ID, MEMBER_ID));
 
         assertEquals(403, e.getStatusCode().value());
         verify(paymentProofMapper, never()).findProofFileSummaries(any());
@@ -178,7 +188,7 @@ class PaymentProofServiceTest {
         PaymentProofReviewRequest req = new PaymentProofReviewRequest();
         req.setDecision("CONFIRMED");
 
-        ProofReviewResponse res = paymentProofService.reviewProof(OWNER_ID, GROUP_ID, PROOF_ID, req);
+        ProofActionResponse res = proofReviewService.reviewProof(OWNER_ID, GROUP_ID, PROOF_ID, req);
 
         assertEquals("CONFIRMED", res.getStatus());
         verify(paymentProofMapper).resolveOverdueCase(GROUP_ID, MEMBER_ID, "202611");
@@ -264,7 +274,7 @@ class PaymentProofServiceTest {
 
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
                 () -> paymentProofService.resubmitProof(OTHER_ID, GROUP_ID, PROOF_ID,
-                        resubmitRequest(), List.of(png("c.png", 3))));
+                        resubmitPayDate(), List.of(png("c.png", 3))));
 
         assertEquals(403, e.getStatusCode().value());
         verify(paymentProofMapper, never()).updateProofResubmit(any(), any());
@@ -281,7 +291,7 @@ class PaymentProofServiceTest {
 
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
                 () -> paymentProofService.resubmitProof(MEMBER_ID, GROUP_ID, PROOF_ID,
-                        resubmitRequest(), List.of(png("c.png", 3))));
+                        resubmitPayDate(), List.of(png("c.png", 3))));
 
         assertEquals(409, e.getStatusCode().value());
         verify(paymentProofMapper, never()).updateProofResubmit(any(), any());
@@ -298,7 +308,7 @@ class PaymentProofServiceTest {
 
         List<MultipartFile> files = List.of(png("c.png", 3));
 
-        int count = paymentProofService.resubmitProof(MEMBER_ID, GROUP_ID, PROOF_ID, resubmitRequest(), files);
+        int count = paymentProofService.resubmitProof(MEMBER_ID, GROUP_ID, PROOF_ID, resubmitPayDate(), files);
 
         assertEquals(2, count);                                        // 1회 → 2회
         verify(paymentProofMapper).deleteProofFiles(PROOF_ID);         // 기존 파일 메타 삭제
@@ -323,7 +333,7 @@ class PaymentProofServiceTest {
         others.setMemberName("이회원");
         when(paymentProofMapper.findProofList(GROUP_ID, null)).thenReturn(List.of(mine, others));  // 모임장은 전체 조회(null)
 
-        List<PaymentProofListDto> list = paymentProofService.getProofList(GROUP_ID, OWNER_ID);
+        List<PaymentProofListDto> list = proofQueryService.getProofList(GROUP_ID, OWNER_ID);
 
         assertEquals("김모임", list.get(0).getMemberName());                     // 본인은 그대로
         assertNotEquals("이회원", list.get(1).getMemberName());                  // 타인은 바뀜
@@ -337,7 +347,7 @@ class PaymentProofServiceTest {
         when(paymentProofMapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
         when(paymentProofMapper.findProofList(GROUP_ID, MEMBER_ID)).thenReturn(List.of());
 
-        paymentProofService.getProofList(GROUP_ID, MEMBER_ID);
+        proofQueryService.getProofList(GROUP_ID, MEMBER_ID);
 
         verify(paymentProofMapper).findProofList(GROUP_ID, MEMBER_ID);   // null(전체)이 아니라 본인 ID
     }
@@ -356,7 +366,7 @@ class PaymentProofServiceTest {
         writeFile("proofs/x.enc", ("ENC:" + Base64.getEncoder().encodeToString(PNG_BYTES))
                 .getBytes(StandardCharsets.US_ASCII));
 
-        ProofFileContent file = paymentProofService.getProofFile(GROUP_ID, PROOF_ID, FILE_ID, OWNER_ID);
+        ProofFileContent file = proofQueryService.getProofFile(GROUP_ID, PROOF_ID, FILE_ID, OWNER_ID);
 
         assertArrayEquals(PNG_BYTES, file.getBytes());    // 원본 그대로
         assertEquals("image/png", file.getMimeType());
@@ -372,7 +382,7 @@ class PaymentProofServiceTest {
 
         writeFile("proofs/old.png", PNG_BYTES);
 
-        ProofFileContent file = paymentProofService.getProofFile(GROUP_ID, PROOF_ID, FILE_ID, MEMBER_ID);  // 작성자 본인
+        ProofFileContent file = proofQueryService.getProofFile(GROUP_ID, PROOF_ID, FILE_ID, MEMBER_ID);  // 작성자 본인
 
         assertArrayEquals(PNG_BYTES, file.getBytes());
         verify(cryptoKeyService, never()).decrypt(any(), eq(1));
@@ -385,7 +395,7 @@ class PaymentProofServiceTest {
         when(paymentProofMapper.findProofForReview(GROUP_ID, PROOF_ID)).thenReturn(pendingProof());  // 작성자는 MEMBER_ID
 
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> paymentProofService.getProofFile(GROUP_ID, PROOF_ID, FILE_ID, OTHER_ID));
+                () -> proofQueryService.getProofFile(GROUP_ID, PROOF_ID, FILE_ID, OTHER_ID));
 
         assertEquals(403, e.getStatusCode().value());
         verify(paymentProofMapper, never()).findProofFile(any(), any());
@@ -399,7 +409,7 @@ class PaymentProofServiceTest {
         when(paymentProofMapper.findProofFile(PROOF_ID, FILE_ID)).thenReturn(null);
 
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> paymentProofService.getProofFile(GROUP_ID, PROOF_ID, FILE_ID, OWNER_ID));
+                () -> proofQueryService.getProofFile(GROUP_ID, PROOF_ID, FILE_ID, OWNER_ID));
 
         assertEquals(404, e.getStatusCode().value());
     }
@@ -437,11 +447,9 @@ class PaymentProofServiceTest {
         return req;
     }
 
-    // 재제출 요청 (납입일만 다시 받음)
-    private PaymentProofResubmitRequest resubmitRequest() {
-        PaymentProofResubmitRequest req = new PaymentProofResubmitRequest();
-        req.setPayDate(LocalDate.of(2026, 11, 7));
-        return req;
+    // 재제출 납입일 (재제출은 납입일만 다시 받음)
+    private LocalDate resubmitPayDate() {
+        return LocalDate.of(2026, 11, 7);
     }
 
     // PNG 매직 넘버로 시작하는 가짜 파일 (seed를 다르게 줘서 해시 중복을 피함)
