@@ -1,6 +1,7 @@
 /* S12 납입 증빙 — 서버에서 모임장 소유 모임과 증빙을 조회·심사 */
 import { useEffect, useState } from 'react';
 import { useApp } from '../common/store';
+import { useInitialGroupId } from '../common/useInitialGroupId';
 import { groups, proofs } from '../api';
 import { getAccessTokenMemberId } from '../api/auth';
 import { PageHead, Card, Empty, Field, Input } from '../components/ui';
@@ -28,6 +29,7 @@ const periodOptions = (group) => {
 export default function Evidence() {
   const { run, toast } = useApp();
   const [serverGroups, setServerGroups] = useState([]);
+  const pickGroup = useInitialGroupId();
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [groupsError, setGroupsError] = useState('');
@@ -49,15 +51,8 @@ export default function Evidence() {
       .then((result) => {
         if (cancelled) return;
         setServerGroups(result);
-        // 알림에서 들어온 경우(?groupId=) 그 모임을 먼저 선택
-        const want = new URLSearchParams(window.location.search).get('groupId');
-        setSelectedGroupId((current) =>
-          want && result.some((group) => String(group.groupId) === want)
-            ? want
-            : result.some((group) => String(group.groupId) === String(current))
-              ? current
-              : String(result[0]?.groupId ?? '')
-        );
+        // 알림에서 들어온 경우(?groupId=) 첫 로드에만 그 모임을 선택
+        setSelectedGroupId(pickGroup(result));
       })
       .catch((error) => {
         if (!cancelled) setGroupsError(error.message || '모임 목록을 불러오지 못했습니다.');
@@ -67,7 +62,7 @@ export default function Evidence() {
       });
 
     return () => { cancelled = true; };
-  }, [groupsRefresh]);
+  }, [groupsRefresh, pickGroup]);
 
   const selectedGroup = serverGroups.find(
     (group) => String(group.groupId) === String(selectedGroupId)

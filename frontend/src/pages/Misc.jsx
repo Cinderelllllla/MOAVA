@@ -1,14 +1,23 @@
-/* S13 알림함(회원·관리자 공용) · S14 내 정보 · S15 고객센터(회원) · A07 신고 처리(관리자) */
-import { useCallback, useEffect, useState } from 'react';
+/* S13 알림함(회원) · S14 내 정보 · S15 고객센터(회원) · A07 신고 처리(관리자) */
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
-import { auth, admin, groups, memberName, fetchNotifications, markNotificationRead, markAllNotificationsRead, hideNotifications } from '../api';
+import { auth, admin, groups, memberName, fetchNotifications, fetchUnreadNotificationCount, markNotificationRead, markAllNotificationsRead, hideNotifications } from '../api';
 import { PageHead, Card, Input, Empty } from '../components/ui';
-import { ThemeSwitcher, NOTIFICATIONS_CHANGED } from '../components/Shell';
+import { ThemeSwitcher } from '../components/Shell';
+import { notifyNotificationsChanged, isInternalLink } from '../common/notificationEvents';
 
-/* ---- 알림 (F35) — 서버 알림함 API(/api/v1/notifications) 연동 ---- */
-const PAGE_SIZE = 50;
-const notifyChanged = () => window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+/* ---- 알림 (F35) — 서버 알림함 API(/api/v1/notifications) 연동 ----
+ * 안 읽은 알림(read=N)과 읽은 알림(read=Y)을 서버에서 따로 받아 온다.
+ * "읽지 않은 알림 N건"은 상단 배지와 같은 서버 unread-count 값을 쓴다. */
+const PAGE_SIZE = 20; // 서버 최대 50
+const EMPTY_LIST = { items: [], page: -1, hasNext: false };
+/** 최신순(createdAt, id 내림차순) 정렬 + id 중복 제거 */
+const mergeById = (...lists) => {
+  const map = new Map();
+  lists.flat().forEach(n => { if (!map.has(n.id)) map.set(n.id, n); });
+  return [...map.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id - a.id);
+};
 /** 서버 시각("2026-11-19T10:24:00") → "11.19 10:24" (올해가 아니면 연도 포함) */
 const fmtTime = v => {
   if (!v) return '';
@@ -17,80 +26,129 @@ const fmtTime = v => {
   const md = `${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}.${md}`;
 };
+/** read('N'|'Y') 목록을 0 ~ lastPage 페이지까지 다시 불러온다 (더 보기로 열어 둔 페이지 유지) */
+const fetchPages = async (read, lastPage) => {
+  const pages = await Promise.all(Array.from({ length: lastPage + 1 }, (_, page) => fetchNotifications({ read, page, size: PAGE_SIZE })));
+  return { items: mergeById(pages.map(d => d?.items || [])), page: lastPage, hasNext: Boolean(pages[lastPage]?.hasNext) };
+};
 
-export function Notifications() {
-  const { run, isAdmin, setUi } = useApp();
-  const nav = useNavigate();
-  const [items, setItems] = useState([]);
-  const [page, setPage] = useState(0), [hasNext, setHasNext] = useState(false);
-  const [loading, setLoading] = useState(true), [error, setError] = useState('');
-  const [sel, setSel] = useState([]);
-
-  const load = useCallback(async (nextPage = 0) => {
-    setLoading(true); setError('');
-    try {
-      const data = await fetchNotifications({ page: nextPage, size: PAGE_SIZE });
-      const list = data?.items || [];
-      setItems(prev => (nextPage === 0 ? list : [...prev, ...list]));
-      setPage(nextPage); setHasNext(Boolean(data?.hasNext));
-    } catch (e) {
-      setError(e.message || '알림을 불러오지 못했어요.');
-    } finally { setLoading(false); }
-  }, []);
-  useEffect(() => { load(0); }, [load]);
-
-  const refresh = async () => { setSel([]); await load(0); notifyChanged(); };
-  const unread = items.filter(x => !x.read), read = items.filter(x => x.read);
-
-  /** 알림 클릭: 안 읽었으면 읽음 처리 → linkPage로 이동. ?groupId= 가 있으면 그 모임을 선택해 둔다 */
-  const open = async n => {
-    if (!n.read) {
-      const r = await run(() => markNotificationRead(n.id));
-      if (!r.ok) return;
-      setItems(prev => prev.map(x => (x.id === n.id ? { ...x, read: true } : x)));
-      notifyChanged();
-    }
-    if (!n.linkPage) return;
-    const gid = new URLSearchParams(n.linkPage.split('?')[1] || '').get('groupId');
-    if (gid) setUi({ selected: Number(gid), focus: Number(gid) });
-    nav(n.linkPage);
-  };
-  const readAll = async () => { const r = await run(() => markAllNotificationsRead(), '모두 읽음으로 표시했어요.'); if (r.ok) refresh(); };
-  const hide = async () => {
-    if (!sel.length) { run(() => Promise.reject(new Error('삭제할 알림을 선택해 주세요.'))); return; }
-    const r = await run(() => hideNotifications(sel), `${sel.length}개 알림을 삭제했어요.`);
-    if (r.ok) refresh();
-  };
-  const toggle = id => setSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
-
-  const Item = ({ n }) => (
+/** 알림 한 줄. 링크가 있는 알림만 제목·본문 클릭(제목은 키보드 Enter/Space)으로 이동, 링크 없는 알림은 '읽음' 버튼 */
+function NotificationItem({ n, checked, onToggle, onOpen, onRead }) {
+  const linked = isInternalLink(n.linkPage);
+  const onKey = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(n); } };
+  return (
     <div className={`list-item notice-row ${n.read ? 'notice-read' : ''}`}>
       <div className="item-head">
         <div className="actions" style={{ margin: 0 }}>
-          <input type="checkbox" className="notice-check" checked={sel.includes(n.id)} onChange={() => toggle(n.id)} aria-label={`${n.title} 선택`} />
-          <b role={n.linkPage ? 'link' : undefined} style={n.linkPage ? { cursor: 'pointer' } : undefined} onClick={() => open(n)}>{n.title}</b>
+          <input type="checkbox" className="notice-check" checked={checked} onChange={() => onToggle(n.id)} aria-label={`${n.title} 선택`} />
+          {linked
+            ? <b role="link" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => onOpen(n)} onKeyDown={onKey}>{n.title}</b>
+            : <b>{n.title}</b>}
           <span className="pill">{n.read ? '읽음' : 'NEW'}</span>
         </div>
         <small className="muted">{fmtTime(n.createdAt)}</small>
       </div>
-      <p className="muted" style={n.linkPage ? { cursor: 'pointer' } : undefined} onClick={() => open(n)}>{n.body}</p>
-      {!n.read && !n.linkPage && <button className="btn small soft" onClick={() => open(n)}>읽음</button>}
+      <p className="muted" style={linked ? { cursor: 'pointer' } : undefined} onClick={linked ? () => onOpen(n) : undefined}>{n.body}</p>
+      {!n.read && !linked && <button className="btn small soft" onClick={() => onRead(n)}>읽음</button>}
     </div>
   );
+}
 
-  return <><PageHead kicker="NOTIFICATION CENTER" title={isAdmin ? '관리자 알림' : '내 알림함'} sub="알림을 누르면 읽음 처리되고 관련 화면으로 이동합니다.">
-      <button className="btn soft" onClick={readAll} disabled={!unread.length}>모두 읽기</button>
+export function Notifications() {
+  const { isAdmin } = useApp();
+  return isAdmin ? <AdminNotificationsPending /> : <MemberNotifications />;
+}
+
+/** 관리자 알림함: 관리자 JWT 로그인(관리자 전용 claim)이 생기기 전까지 안내만 표시 */
+function AdminNotificationsPending() {
+  return <><PageHead kicker="NOTIFICATION CENTER" title="관리자 알림" sub="관리자 알림함은 준비 중입니다." />
+    <Card><Empty>관리자 알림은 관리자 로그인(서버 인증)이 연결된 뒤 제공됩니다.</Empty></Card></>;
+}
+
+function MemberNotifications() {
+  const { run, setUi } = useApp();
+  const nav = useNavigate();
+  const [unread, setUnread] = useState(EMPTY_LIST), [read, setRead] = useState(EMPTY_LIST);
+  const [unreadTotal, setUnreadTotal] = useState(0);
+  const [loading, setLoading] = useState(true), [more, setMore] = useState(null), [error, setError] = useState('');
+  const [sel, setSel] = useState([]);
+  const pagesRef = useRef({ N: 0, Y: 0 }); // 더 보기로 열어 둔 마지막 페이지
+  const busyRef = useRef(new Set());       // 읽음 요청 중인 알림 id (중복 클릭 방지)
+
+  const reload = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const [u, r, count] = await Promise.all([fetchPages('N', pagesRef.current.N), fetchPages('Y', pagesRef.current.Y), fetchUnreadNotificationCount()]);
+      setUnread(u); setRead(r); setUnreadTotal(count);
+    } catch (e) {
+      setError(e.message || '알림을 불러오지 못했어요.');
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  const loadMore = async key => {
+    const cur = key === 'N' ? unread : read, setter = key === 'N' ? setUnread : setRead;
+    const next = cur.page + 1;
+    setMore(key);
+    try {
+      const data = await fetchNotifications({ read: key, page: next, size: PAGE_SIZE });
+      setter(prev => ({ items: mergeById(prev.items, data?.items || []), page: next, hasNext: Boolean(data?.hasNext) }));
+      pagesRef.current[key] = next;
+    } catch (e) {
+      setError(e.message || '알림을 불러오지 못했어요.');
+    } finally { setMore(null); }
+  };
+
+  const afterChange = async () => { setSel([]); await reload(); notifyNotificationsChanged(); };
+
+  /** 읽음 처리 후 화면에서 '읽음' 목록으로 옮긴다. 이미 요청 중이면 무시 */
+  const markRead = async n => {
+    if (n.read) return true;
+    if (busyRef.current.has(n.id)) return false;
+    busyRef.current.add(n.id);
+    try {
+      const r = await run(() => markNotificationRead(n.id));
+      if (!r.ok) return false;
+      setUnread(prev => ({ ...prev, items: prev.items.filter(x => x.id !== n.id) }));
+      setRead(prev => ({ ...prev, items: mergeById([{ ...n, read: true }], prev.items) }));
+      setUnreadTotal(c => Math.max(0, c - 1));
+      notifyNotificationsChanged();
+      return true;
+    } finally { busyRef.current.delete(n.id); }
+  };
+
+  /** 링크 알림 클릭: 읽음 처리 → 앱 내부 경로로만 이동. ?groupId= 가 있으면 그 모임을 선택해 둔다 */
+  const open = async n => {
+    if (!isInternalLink(n.linkPage)) return;
+    if (!(await markRead(n))) return;
+    const gid = Number(new URLSearchParams(n.linkPage.split('?')[1] || '').get('groupId'));
+    if (Number.isSafeInteger(gid) && gid > 0) setUi({ selected: gid, focus: gid });
+    nav(n.linkPage);
+  };
+  const readAll = async () => { const r = await run(() => markAllNotificationsRead(), '모두 읽음으로 표시했어요.'); if (r.ok) afterChange(); };
+  const hide = async () => {
+    const r = await run(() => hideNotifications(sel), `${sel.length}개 알림을 삭제했어요.`);
+    if (r.ok) afterChange();
+  };
+  const toggle = useCallback(id => setSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])), []);
+  const row = n => <NotificationItem key={n.id} n={n} checked={sel.includes(n.id)} onToggle={toggle} onOpen={open} onRead={markRead} />;
+  const moreBtn = (key, list) => list.hasNext && <div className="actions"><button className="btn soft" onClick={() => loadMore(key)} disabled={more === key}>{more === key ? '불러오는 중…' : '이전 알림 더 보기'}</button></div>;
+  const empty = !unread.items.length && !read.items.length;
+
+  return <><PageHead kicker="NOTIFICATION CENTER" title="내 알림함" sub="알림을 누르면 읽음 처리되고 관련 화면으로 이동합니다.">
+      <button className="btn soft" onClick={readAll} disabled={!unreadTotal}>모두 읽기</button>
       <button className="btn danger" onClick={hide} disabled={!sel.length}>선택 삭제{sel.length ? ` (${sel.length})` : ''}</button>
     </PageHead>
     <Card>
-      {error && <p className="muted" role="alert">{error} <button className="btn small soft" onClick={() => load(0)}>다시 시도</button></p>}
-      {loading && !items.length ? <Empty>알림을 불러오는 중이에요…</Empty> : <>
-        <h2>읽지 않은 알림 <small className="muted">{unread.length}건</small></h2>
-        <div className="list">{unread.length ? unread.map(n => <Item key={n.id} n={n} />) : <Empty>아직 읽을 알림이 없습니다.</Empty>}</div>
+      {error && <p className="muted" role="alert">{error} <button className="btn small soft" onClick={reload}>다시 시도</button></p>}
+      {loading && empty ? <Empty>알림을 불러오는 중이에요…</Empty> : <>
+        <h2>읽지 않은 알림 <small className="muted">{unreadTotal}건</small></h2>
+        <div className="list">{unread.items.length ? unread.items.map(row) : <Empty>아직 읽을 알림이 없습니다.</Empty>}</div>
+        {moreBtn('N', unread)}
         <div className="divider" />
-        <h2>읽음 <small className="muted">{read.length}건</small></h2>
-        <div className="list">{read.length ? read.map(n => <Item key={n.id} n={n} />) : <Empty>읽은 알림이 없습니다.</Empty>}</div>
-        {hasNext && <div className="actions"><button className="btn soft" onClick={() => load(page + 1)} disabled={loading}>{loading ? '불러오는 중…' : '이전 알림 더 보기'}</button></div>}
+        <h2>읽음</h2>
+        <div className="list">{read.items.length ? read.items.map(row) : <Empty>읽은 알림이 없습니다.</Empty>}</div>
+        {moreBtn('Y', read)}
       </>}
       <p className="muted mini">선택 삭제는 현재 계정의 알림함에서만 숨기며(DELETED_YN) 운영 감사 이력은 유지됩니다.</p>
     </Card></>;
