@@ -1,5 +1,5 @@
 /* S04 AI 금융 분석 /finance · S05 월별 데이터 /finance/monthly · F06 F08 F09 F10 */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
 import useMlFinanceAssessment from '../common/useMlFinanceAssessment';
@@ -22,8 +22,11 @@ export function Finance() {
 export function FinanceMonthly() {
   const { run, ui, setUi } = useApp(); const f = finance.getFinance();
   const [v, setV] = useState({ month: ui.financeMonth, income: f.income, expense: f.fixed + f.variable });
+  // 화면에 들어올 때 서버의 최신 월별 기록을 받아 온다(실패하면 기존 브라우저 데이터 그대로 표시)
+  useEffect(() => { finance.refreshMonthly().catch(err => console.warn('[F10] 월별 기록 조회 실패', err)); }, []);
+  const onServer = finance.isMonthlyOnServer();
   const submit = async e => { e.preventDefault(); const r = await run(() => finance.saveMonth(v.month, Number(v.income), Number(v.expense)), '월별 데이터가 저장되었어요.'); if (r.ok) setUi({ financeMonth: v.month }); };
   return <><PageHead kicker="MONTHLY DATA" title="월별 금융 데이터 관리" sub="월별 수입·지출 데이터를 추가하고 저장합니다." />
-    <Card><form className="form-grid" onSubmit={submit}><Select label="대상 월" name="month" options={MONTHS} value={v.month} onChange={e => setV({ ...v, month: e.target.value })} /><Input label="월수입 (만 원)" name="income" type="number" min={0} required value={v.income} onChange={e => setV({ ...v, income: e.target.value })} /><Input label="월지출 (만 원)" name="expense" type="number" min={0} required value={v.expense} onChange={e => setV({ ...v, expense: e.target.value })} /><div className="field"><label>데이터 저장</label><button className="btn primary">이 월 데이터 저장</button></div></form><p className="info mini">현재는 브라우저에 저장됩니다. 실제 저장은 Spring Boot API(FINANCE_MONTHLY) 연결 후 동작합니다.</p></Card>
+    <Card><form className="form-grid" onSubmit={submit}><Select label="대상 월" name="month" options={MONTHS} value={v.month} onChange={e => setV({ ...v, month: e.target.value })} /><Input label="월수입 (만 원)" name="income" type="number" min={0} required value={v.income} onChange={e => setV({ ...v, income: e.target.value })} /><Input label="월지출 (만 원)" name="expense" type="number" min={0} required value={v.expense} onChange={e => setV({ ...v, expense: e.target.value })} /><div className="field"><label>데이터 저장</label><button className="btn primary">이 월 데이터 저장</button></div></form><p className="info mini">{onServer ? '로그인한 계정의 서버(FINANCE_MONTHLY)에 저장됩니다. 같은 월을 다시 저장하면 덮어씁니다. 대상 월은 오늘 기준 최근 12개월로 저장돼요.' : '데모(목업) 상태라 브라우저에만 저장됩니다. 로그인하면 서버에 저장돼요.'}</p></Card>
     <div className="section"><Card><h2>저장된 월별 데이터</h2><BarChart data={finance.getMonthly()} /><div className="tablewrap"><table><thead><tr><th>월</th><th>수입</th><th>지출</th><th>잔여</th><th>관리</th></tr></thead><tbody>{finance.getMonthly().map(x => <tr key={x.month}><td>{x.month}</td><td>{won(x.income)}</td><td>{won(x.expense)}</td><td>{won(x.income - x.expense)}</td><td><button className="btn small danger" onClick={() => confirm(`${x.month} 데이터를 삭제할까요?`) && run(() => finance.removeMonth(x.month))}>삭제</button></td></tr>)}</tbody></table></div></Card></div></>;
 }
