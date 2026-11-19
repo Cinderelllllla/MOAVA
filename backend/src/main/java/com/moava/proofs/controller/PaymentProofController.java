@@ -4,14 +4,12 @@ import com.moava.common.response.ApiResponse;
 import com.moava.proofs.dto.PaymentProofCreateRequest;
 import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.dto.PaymentProofDetailDto;
-import com.moava.proofs.dto.ProofRegisterResponse;
-import com.moava.proofs.dto.ProofResubmitResponse;
-import com.moava.proofs.dto.ProofReviewResponse;
-import com.moava.proofs.dto.PaymentProofResubmitRequest;
+import com.moava.proofs.dto.ProofActionResponse;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
 import com.moava.proofs.service.PaymentProofService;
 import lombok.RequiredArgsConstructor;
 import com.moava.proofs.dto.ProofFileContent;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -27,6 +25,7 @@ import org.springframework.validation.BindException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -48,7 +47,7 @@ public class PaymentProofController {
      * - 파일: files (1~5개)
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<ProofRegisterResponse>> register(
+    public ResponseEntity<ApiResponse<ProofActionResponse>> register(
             @PathVariable Long groupId,
             Authentication authentication,
             @ModelAttribute PaymentProofCreateRequest req,
@@ -57,7 +56,7 @@ public class PaymentProofController {
         Long memberId = loginMemberId(authentication);
         req.setGroupId(groupId);   // 모임 ID는 URL 값을 기준으로 (요청 본문 값 무시)
         Long id = paymentProofService.registerProof(memberId, req, files);
-        ProofRegisterResponse data = new ProofRegisterResponse(id, "PENDING", files.size());
+        ProofActionResponse data = ProofActionResponse.registered(id, files.size());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(data, requestId()));
     }
 
@@ -106,7 +105,7 @@ public class PaymentProofController {
      * - 요청 본문(JSON): {"decision": "CONFIRMED" | "REVISION", "reviewMemo": "사유"}
      */
     @PatchMapping("/{proofId}/review")
-    public ApiResponse<ProofReviewResponse> reviewProof(
+    public ApiResponse<ProofActionResponse> reviewProof(
             @PathVariable Long groupId,
             @PathVariable Long proofId,
             Authentication authentication,
@@ -122,17 +121,17 @@ public class PaymentProofController {
      * - 파일: files (1~5개, 전체 교체)
      */
     @PutMapping(value = "/{proofId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ApiResponse<ProofResubmitResponse> resubmitProof(
+    public ApiResponse<ProofActionResponse> resubmitProof(
             @PathVariable Long groupId,
             @PathVariable Long proofId,
             Authentication authentication,
-            @ModelAttribute PaymentProofResubmitRequest req,
+            @RequestParam(value = "payDate", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate payDate,
             @RequestPart("files") List<MultipartFile> files) {
 
         Long memberId = loginMemberId(authentication);
-        int resubmitCount = paymentProofService.resubmitProof(memberId, groupId, proofId, req, files);
-        ProofResubmitResponse data = new ProofResubmitResponse(proofId, "PENDING", resubmitCount);
-        return ApiResponse.ok(data, requestId());
+        int resubmitCount = paymentProofService.resubmitProof(memberId, groupId, proofId, payDate, files);
+        return ApiResponse.ok(ProofActionResponse.resubmitted(proofId, resubmitCount), requestId());
     }
 
     // ---------- 로그인 회원 ----------
