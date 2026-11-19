@@ -7,10 +7,10 @@ import com.moava.proofs.dto.ProofGroupDto;
 import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.dto.PaymentProofDetailDto;
 import com.moava.proofs.dto.ProofFileContent;
-import com.moava.proofs.dto.PaymentProofResubmitRequest;
 import com.moava.proofs.mapper.PaymentProofMapper;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
-import com.moava.proofs.dto.ProofReviewResponse;
+import com.moava.proofs.dto.ProofActionResponse;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
@@ -77,7 +77,6 @@ public class PaymentProofService {
      */
     @Transactional
     public Long registerProof(Long memberId, PaymentProofCreateRequest req, List<MultipartFile> files) {
-
         // 1. 필수값 · 귀속 월 형식
         if (memberId == null || req == null || req.getGroupId() == null || req.getPayMonth() == null
                 || req.getRoundNo() == null || req.getAmount() == null || req.getPayDate() == null) {
@@ -395,6 +394,7 @@ public class PaymentProofService {
             detail.setMemberName(NameMasker.mask(detail.getMemberName()));
         }
         detail.setFiles(paymentProofMapper.findProofFileSummaries(proofId));
+        detail.setFileCount(detail.getFiles().size());   // 추가: 상속받은 fileCount가 null로 나가지 않게
         return detail;
     }
 
@@ -451,7 +451,7 @@ public class PaymentProofService {
      * @return 심사 결과 (증빙 ID, 변경된 상태, 심사 시각)
      */
     @Transactional
-    public ProofReviewResponse reviewProof(Long memberId, Long groupId, Long proofId, PaymentProofReviewRequest req) {
+    public ProofActionResponse reviewProof(Long memberId, Long groupId, Long proofId, PaymentProofReviewRequest req) {
 
         // 1. 결정 값 확인
         String decision = req.getDecision();
@@ -512,7 +512,7 @@ public class PaymentProofService {
                 (confirmed ? "증빙 승인 #" : "증빙 보완 요청 #") + proofId
                         + " (귀속 월 " + proof.getPayMonth() + ", " + proof.getRoundNo() + "회차)");
 
-        return new ProofReviewResponse(proofId, decision, reviewedAt.atZone(SEOUL).toOffsetDateTime());
+        return ProofActionResponse.reviewed(proofId, decision, reviewedAt.atZone(SEOUL).toOffsetDateTime());
     }
 
     /**
@@ -524,9 +524,9 @@ public class PaymentProofService {
      */
     @Transactional
     public int resubmitProof(Long memberId, Long groupId, Long proofId,
-                             PaymentProofResubmitRequest req, List<MultipartFile> files) {
+                             LocalDate payDate, List<MultipartFile> files) {
         // 1. 필수값
-        if (memberId == null || req == null || req.getPayDate() == null) {
+        if (memberId == null || payDate == null) {
             throw badRequest("필수 입력값이 누락되었습니다.");
         }
 
@@ -556,7 +556,7 @@ public class PaymentProofService {
         List<String> hashes = validateFiles(files, proofId);
 
         // 6. 상태·납입일·재제출 횟수 갱신 (REVISION 조건 UPDATE → 0건이면 다른 요청이 먼저 처리한 것)
-        if (paymentProofMapper.updateProofResubmit(proofId, req.getPayDate()) == 0) {
+        if (paymentProofMapper.updateProofResubmit(proofId, payDate) == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 처리된 증빙입니다.");
         }
 
@@ -585,6 +585,4 @@ public class PaymentProofService {
                         + "번째 재제출, 파일 " + files.size() + "개)");
         return proof.getResubmitCount() + 1;
     }
-
-
 }
