@@ -5,10 +5,10 @@
     <resultMap id="kosisMap" type="com.moava.finance.dto.KosisHouseholdRow">
         <constructor>
             <arg column="DECILE"             javaType="int"/>
-            <arg column="INCOME_LOW"         javaType="long"/>
+            <arg column="INCOME_LOW"         javaType="_long"/>
             <arg column="INCOME_HIGH"        javaType="java.lang.Long"/>
-            <arg column="AVG_CONSUMPTION"    javaType="long"/>
-            <arg column="AVG_NONCONSUMPTION" javaType="long"/>
+            <arg column="AVG_CONSUMPTION"    javaType="_long"/>
+            <arg column="AVG_NONCONSUMPTION" javaType="_long"/>
             <arg column="BASE_YM"            javaType="java.lang.String"/>
         </constructor>
     </resultMap>
