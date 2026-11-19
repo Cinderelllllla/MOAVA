@@ -1,18 +1,99 @@
 /* S13 알림함(회원·관리자 공용) · S14 내 정보 · S15 고객센터(회원) · A07 신고 처리(관리자) */
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
-import { auth, admin, groups, memberName } from '../api';
+import { auth, admin, groups, memberName, fetchNotifications, markNotificationRead, markAllNotificationsRead, hideNotifications } from '../api';
 import { PageHead, Card, Input, Empty } from '../components/ui';
-import { ThemeSwitcher } from '../components/Shell';
+import { ThemeSwitcher, NOTIFICATIONS_CHANGED } from '../components/Shell';
 
-/* ---- 알림 (F29 F35) ---- */
+/* ---- 알림 (F35) — 서버 알림함 API(/api/v1/notifications) 연동 ---- */
+const PAGE_SIZE = 50;
+const notifyChanged = () => window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+/** 서버 시각("2026-11-19T10:24:00") → "11.19 10:24" (올해가 아니면 연도 포함) */
+const fmtTime = v => {
+  if (!v) return '';
+  const d = new Date(v); if (Number.isNaN(d.getTime())) return String(v);
+  const p = n => String(n).padStart(2, '0');
+  const md = `${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}.${md}`;
+};
+
 export function Notifications() {
-  const { run, isAdmin } = useApp(); const [sel, setSel] = useState([]);
-  const list = admin.myNotices(), unread = list.filter(x => !x.read), read = list.filter(x => x.read);
-  const Item = ({ n, isRead }) => <div className={`list-item notice-row ${isRead ? 'notice-read' : ''}`}><div className="item-head"><div className="actions" style={{ margin: 0 }}>{!isRead && <input type="checkbox" className="notice-check" checked={sel.includes(n.id)} onChange={e => setSel(e.target.checked ? [...sel, n.id] : sel.filter(x => x !== n.id))} aria-label={`${n.title} 선택`} />}<b>{n.title}</b><span className="pill">{isRead ? '읽음' : 'NEW'}</span></div>{!isRead && <button className="btn small soft" onClick={() => run(() => admin.readNotice(n.id))}>읽음</button>}</div><p className="muted">{n.body}</p></div>;
-  return <><PageHead kicker="NOTIFICATION CENTER" title={isAdmin ? '관리자 알림' : '내 알림함'} sub="읽지 않은 알림과 읽은 알림을 구분해 표시합니다."><button className="btn soft" onClick={() => run(() => admin.readAllNotices())}>모두 읽기</button><button className="btn danger" onClick={() => run(() => admin.deleteNotices(sel), `${sel.length}개 알림을 삭제했어요.`).then(r => r.ok && setSel([]))}>선택 삭제</button></PageHead>
-    <Card><h2>읽지 않은 알림 <small className="muted">{unread.length}건</small></h2><div className="list">{unread.length ? unread.map(n => <Item key={n.id} n={n} />) : <Empty>아직 읽을 알림이 없습니다.</Empty>}</div><div className="divider" /><h2>읽음 <small className="muted">{read.length}건</small></h2><div className="list">{read.length ? read.map(n => <Item key={n.id} n={n} isRead />) : <Empty>읽은 알림이 없습니다.</Empty>}</div><p className="muted mini">선택 삭제는 현재 계정의 알림함에서만 숨기며(DELETED_YN) 운영 감사 이력은 유지됩니다.</p></Card></>;
+  const { run, isAdmin, setUi } = useApp();
+  const nav = useNavigate();
+  const [items, setItems] = useState([]);
+  const [page, setPage] = useState(0), [hasNext, setHasNext] = useState(false);
+  const [loading, setLoading] = useState(true), [error, setError] = useState('');
+  const [sel, setSel] = useState([]);
+
+  const load = useCallback(async (nextPage = 0) => {
+    setLoading(true); setError('');
+    try {
+      const data = await fetchNotifications({ page: nextPage, size: PAGE_SIZE });
+      const list = data?.items || [];
+      setItems(prev => (nextPage === 0 ? list : [...prev, ...list]));
+      setPage(nextPage); setHasNext(Boolean(data?.hasNext));
+    } catch (e) {
+      setError(e.message || '알림을 불러오지 못했어요.');
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(0); }, [load]);
+
+  const refresh = async () => { setSel([]); await load(0); notifyChanged(); };
+  const unread = items.filter(x => !x.read), read = items.filter(x => x.read);
+
+  /** 알림 클릭: 안 읽었으면 읽음 처리 → linkPage로 이동. ?groupId= 가 있으면 그 모임을 선택해 둔다 */
+  const open = async n => {
+    if (!n.read) {
+      const r = await run(() => markNotificationRead(n.id));
+      if (!r.ok) return;
+      setItems(prev => prev.map(x => (x.id === n.id ? { ...x, read: true } : x)));
+      notifyChanged();
+    }
+    if (!n.linkPage) return;
+    const gid = new URLSearchParams(n.linkPage.split('?')[1] || '').get('groupId');
+    if (gid) setUi({ selected: Number(gid), focus: Number(gid) });
+    nav(n.linkPage);
+  };
+  const readAll = async () => { const r = await run(() => markAllNotificationsRead(), '모두 읽음으로 표시했어요.'); if (r.ok) refresh(); };
+  const hide = async () => {
+    if (!sel.length) { run(() => Promise.reject(new Error('삭제할 알림을 선택해 주세요.'))); return; }
+    const r = await run(() => hideNotifications(sel), `${sel.length}개 알림을 삭제했어요.`);
+    if (r.ok) refresh();
+  };
+  const toggle = id => setSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+
+  const Item = ({ n }) => (
+    <div className={`list-item notice-row ${n.read ? 'notice-read' : ''}`}>
+      <div className="item-head">
+        <div className="actions" style={{ margin: 0 }}>
+          <input type="checkbox" className="notice-check" checked={sel.includes(n.id)} onChange={() => toggle(n.id)} aria-label={`${n.title} 선택`} />
+          <b role={n.linkPage ? 'link' : undefined} style={n.linkPage ? { cursor: 'pointer' } : undefined} onClick={() => open(n)}>{n.title}</b>
+          <span className="pill">{n.read ? '읽음' : 'NEW'}</span>
+        </div>
+        <small className="muted">{fmtTime(n.createdAt)}</small>
+      </div>
+      <p className="muted" style={n.linkPage ? { cursor: 'pointer' } : undefined} onClick={() => open(n)}>{n.body}</p>
+      {!n.read && !n.linkPage && <button className="btn small soft" onClick={() => open(n)}>읽음</button>}
+    </div>
+  );
+
+  return <><PageHead kicker="NOTIFICATION CENTER" title={isAdmin ? '관리자 알림' : '내 알림함'} sub="알림을 누르면 읽음 처리되고 관련 화면으로 이동합니다.">
+      <button className="btn soft" onClick={readAll} disabled={!unread.length}>모두 읽기</button>
+      <button className="btn danger" onClick={hide} disabled={!sel.length}>선택 삭제{sel.length ? ` (${sel.length})` : ''}</button>
+    </PageHead>
+    <Card>
+      {error && <p className="muted" role="alert">{error} <button className="btn small soft" onClick={() => load(0)}>다시 시도</button></p>}
+      {loading && !items.length ? <Empty>알림을 불러오는 중이에요…</Empty> : <>
+        <h2>읽지 않은 알림 <small className="muted">{unread.length}건</small></h2>
+        <div className="list">{unread.length ? unread.map(n => <Item key={n.id} n={n} />) : <Empty>아직 읽을 알림이 없습니다.</Empty>}</div>
+        <div className="divider" />
+        <h2>읽음 <small className="muted">{read.length}건</small></h2>
+        <div className="list">{read.length ? read.map(n => <Item key={n.id} n={n} />) : <Empty>읽은 알림이 없습니다.</Empty>}</div>
+        {hasNext && <div className="actions"><button className="btn soft" onClick={() => load(page + 1)} disabled={loading}>{loading ? '불러오는 중…' : '이전 알림 더 보기'}</button></div>}
+      </>}
+      <p className="muted mini">선택 삭제는 현재 계정의 알림함에서만 숨기며(DELETED_YN) 운영 감사 이력은 유지됩니다.</p>
+    </Card></>;
 }
 
 /* ---- 내 정보 (F03 F04) ---- */
