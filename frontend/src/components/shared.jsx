@@ -46,11 +46,24 @@ export function InlineSimulator({ g, onClose }) {
 
 export function RiskPanel({ compact }) {
   const { run } = useApp(); const f = finance.getFinance(), a = finance.affordability(), free = Math.max(0, a.free);
-  return <div className="policy-panel" style={{ marginTop: 0 }}><h3>연체 위험 등급 <span className="policy-tag">데모 가정</span></h3><p className="muted mini">실제 서비스에서는 KH 데이터로 학습한 FastAPI 모델(RISK_SCORE)이 등급을 산출합니다. 모델 미연동 상태라 기본값 <b>주의</b>로 두고 시연용으로 등급을 바꿔볼 수 있어요.</p>
-    <div className="field" style={{ maxWidth: 420 }}><label>위험 등급</label><select value={f.risk} onChange={e => run(() => finance.setRisk(e.target.value), `위험 등급을 ${e.target.value}로 바꿨어요. 데모 가정입니다.`)}>{Object.entries(finance.RISK).map(([k, v]) => <option key={k} value={k}>{k} · 안전계수 {v.coef} · {v.prob}</option>)}</select></div>
-    {!compact && <p className="info mini" style={{ marginTop: 12 }}>추천 납입액 = min( (월수입 − 지출 − 저축 − 비상금) × 안전계수, 월수입 × 12% )<br />= min( {won(free)} × {finance.riskCoef()}, {won(f.income)} × 0.12 ) ≈ <b>{won(a.rec)}</b> (5만 원 단위 내림){a.capped && ' · 월수입 12% 상한 적용'}</p>}</div>;
+  const assessment = finance.getMlAssessment();
+  return <div className="policy-panel" style={{ marginTop: 0 }}><h3>연체 위험 등급 <span className="policy-tag">{assessment ? 'ML 모델 분석' : '데모 가정'}</span></h3>
+    {assessment ? <p className="muted mini">FastAPI 분석 결과 · 연체 확률 {(assessment.risk.default_probability * 100).toFixed(1)}% · 안전계수 {assessment.risk.safety_factor} · {assessment.risk.source === 'persona' ? '가상 인물 데이터' : '입력 지표 분석'}</p>
+      : <p className="muted mini">금융정보 이용 동의 후 실행되는 FastAPI 모델 분석 결과가 없을 때는 데모 등급을 사용합니다.</p>}
+    {!assessment && <div className="field" style={{ maxWidth: 420 }}><label>위험 등급 (데모)</label><select value={f.risk} onChange={e => run(() => finance.setRisk(e.target.value), `위험 등급을 ${e.target.value}로 바꿨어요. 데모 가정입니다.`)}>{Object.entries(finance.RISK).map(([k, v]) => <option key={k} value={k}>{k} · 안전계수 {v.coef} · {v.prob}</option>)}</select></div>}
+    {!compact && <p className="info mini" style={{ marginTop: 12 }}>추천 월 납입액 <b>{won(a.rec)}</b>{assessment ? ` · ML 모델 기준${a.capped ? ' · 월수입 상한 적용' : ''}` : <> · 데모 계산: min( (월수입 − 지출 − 저축 − 비상금) × 안전계수, 월수입 × 12% )<br />= min( {won(free)} × {finance.riskCoef()}, {won(f.income)} × 0.12 ) (5만 원 단위 내림){a.capped && ' · 월수입 12% 상한 적용'}</>}</p>}</div>;
 }
-export const RiskLabel = () => <>위험 등급 <b>{finance.getFinance().risk}</b> 가정 · 안전계수 {finance.riskCoef()} · AI 모델 미연동(데모)</>;
+export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return <>위험 등급 <b>{finance.getFinance().risk}</b>{assessment ? ` · 연체 확률 ${(assessment.risk.default_probability * 100).toFixed(1)}% · ML 모델` : ` 가정 · 안전계수 ${finance.riskCoef()} · 데모`}</>; };
+
+export function FinanceAssessmentStatus({ status, error, retry }) {
+  const text = status === 'loading' ? 'ML 금융 분석을 요청 중입니다.'
+    : status === 'success' ? 'ML 금융 분석이 완료되었습니다.'
+      : status === 'error' ? `ML 금융 분석 실패: ${error}`
+        : '금융정보 이용 동의 후 ML 분석을 실행합니다.';
+  return <p className={`info mini finance-api-status ${status === 'error' ? 'warning' : ''}`} role={status === 'error' ? 'alert' : 'status'}>
+    {text}{status === 'error' && <>{' '}<button type="button" className="btn small soft" onClick={retry}>다시 시도</button></>}
+  </p>;
+}
 
 export const ProofAttachment = ({ data }) => String(data || '').startsWith('data:application/pdf') ? <a className="pdf-proof-link" href={data} target="_blank" rel="noopener noreferrer" download="MOAVA_거래증빙.pdf">📄 PDF 증빙 보기 · 저장</a> : <img className="upload-preview" src={data} alt="거래 증빙 이미지" />;
 

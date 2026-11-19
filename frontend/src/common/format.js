@@ -1,5 +1,6 @@
 /* 포맷·마스킹 유틸 — 화면 단위 만 원(won), API·DB 단위 원(krw) */
 export const won = n => Number(n || 0).toLocaleString('ko-KR') + '만 원';
+export const wonFromKrw = n => won(Number(n || 0) / 10000);
 export const krw = man => Math.round(Number(man || 0) * 10000).toLocaleString('ko-KR') + '원';
 export const signed = (n, fmt) => (n > 0 ? '+' : '') + fmt(n);
 export function maskName(name) { name = String(name || '회원'); if (name.length === 1) return name + '○'; if (name.length === 2) return name[0] + '○'; return name[0] + '○'.repeat(name.length - 2) + name.slice(-1); }
