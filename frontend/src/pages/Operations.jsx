@@ -31,8 +31,10 @@ function ServerOperations({ token }) {
       .then(data => {
         if (cancelled) return;
         setItems(data);
-        setSelectedId(prev => data.some(g => String(g.groupId) === prev)
-          ? prev : String(data[0]?.groupId ?? ''));
+        // 알림에서 들어온 경우(?groupId=) 그 모임을 먼저 선택
+        const want = new URLSearchParams(window.location.search).get('groupId');
+        setSelectedId(prev => want && data.some(g => String(g.groupId) === want) ? want
+          : data.some(g => String(g.groupId) === prev) ? prev : String(data[0]?.groupId ?? ''));
       })
       .catch(err => { if (!cancelled) setError(err.message || '모임 조회 실패'); })
       .finally(() => { if (!cancelled) setLoading(false); });

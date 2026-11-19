@@ -2,7 +2,10 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
-import { auth, admin as adminApi, proofs } from '../api';
+import { auth, proofs, fetchUnreadNotificationCount } from '../api';
+
+/** 알림함에서 읽음·삭제 등이 일어나면 발생시키는 이벤트 → 상단 배지가 개수를 다시 불러옴 */
+export const NOTIFICATIONS_CHANGED = 'moava:notifications-changed';
 
 export const MENU = [
   ['/dashboard', '◈', '마이 홈'], ['/journey', '✧', '맞춤 추천 시작'], ['/finance', '◉', 'AI 금융 분석'], ['/finance/monthly', '▤', '월별 금융 데이터'],
@@ -50,10 +53,20 @@ export default function Shell({ role }) {
   const { pathname } = useLocation(); const nav = useNavigate();
   const [mobile, setMobile] = useState(false);
   useEffect(() => { if (isAdmin) proofs.detectOverdue(); }, [isAdmin, pathname]);
+  // 상단 알림 배지: 서버의 안 읽은 개수. 화면 이동 시·알림함 변경 시·60초마다 갱신
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    if (!session) return undefined;
+    let alive = true;
+    const loadUnread = () => fetchUnreadNotificationCount().then(c => { if (alive) setUnread(c); }).catch(() => {});
+    loadUnread();
+    const timer = setInterval(loadUnread, 60000);
+    window.addEventListener(NOTIFICATIONS_CHANGED, loadUnread);
+    return () => { alive = false; clearInterval(timer); window.removeEventListener(NOTIFICATIONS_CHANGED, loadUnread); };
+  }, [session, pathname]);
   if (!session || !user) return <Navigate to="/login" replace />;
   if (role === 'ADMIN' && !isAdmin) return <Navigate to="/dashboard" replace />;
   if (role === 'MEMBER' && isAdmin) return <Navigate to="/admin" replace />;
-  const unread = adminApi.myNotices().filter(n => !n.read).length;
   const logout = async () => { await run(() => auth.logout()); nav('/'); };
   return <div className="app">
     <aside className={`sidebar ${mobile ? 'open' : ''}`}>
