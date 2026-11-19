@@ -5,8 +5,8 @@
     <resultMap id="monthlyMap" type="com.moava.finance.dto.MonthlyRecord">
         <constructor>
             <arg column="YEAR_MONTH" javaType="java.lang.String"/>
-            <arg column="INCOME"     javaType="long"/>
-            <arg column="EXPENSE"    javaType="long"/>
+            <arg column="INCOME"     javaType="_long"/>
+            <arg column="EXPENSE"    javaType="_long"/>
         </constructor>
     </resultMap>
 
