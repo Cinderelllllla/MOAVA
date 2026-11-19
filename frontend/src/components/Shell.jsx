@@ -1,11 +1,9 @@
 /* 공통 껍데기: 사이드바(접이식 메뉴) · 탑바(알림 배지) · 푸터 · 권한 가드 */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
 import { auth, proofs, fetchUnreadNotificationCount } from '../api';
-
-/** 알림함에서 읽음·삭제 등이 일어나면 발생시키는 이벤트 → 상단 배지가 개수를 다시 불러옴 */
-export const NOTIFICATIONS_CHANGED = 'moava:notifications-changed';
+import { NOTIFICATIONS_CHANGED } from '../common/notificationEvents';
 
 export const MENU = [
   ['/dashboard', '◈', '마이 홈'], ['/journey', '✧', '맞춤 추천 시작'], ['/finance', '◉', 'AI 금융 분석'], ['/finance/monthly', '▤', '월별 금융 데이터'],
@@ -53,17 +51,26 @@ export default function Shell({ role }) {
   const { pathname } = useLocation(); const nav = useNavigate();
   const [mobile, setMobile] = useState(false);
   useEffect(() => { if (isAdmin) proofs.detectOverdue(); }, [isAdmin, pathname]);
-  // 상단 알림 배지: 서버의 안 읽은 개수. 화면 이동 시·알림함 변경 시·60초마다 갱신
+  // 상단 알림 배지: 서버의 안 읽은 개수 (회원만. 관리자 알림함은 관리자 로그인 연결 전까지 미지원)
   const [unread, setUnread] = useState(0);
+  const canNotify = Boolean(session) && !isAdmin;
+  const canNotifyRef = useRef(canNotify);
+  useEffect(() => { canNotifyRef.current = canNotify; }, [canNotify]);
+  const loadUnread = useCallback(() => {
+    if (!canNotifyRef.current) return;
+    fetchUnreadNotificationCount()
+      .then(c => { if (canNotifyRef.current) setUnread(c); })
+      .catch(e => console.warn('[알림] 안 읽은 개수 조회 실패:', e?.message || e));
+  }, []);
+  // 구독: 60초 타이머 + 알림함 변경 이벤트 (로그인 상태가 바뀔 때만 다시 등록). 로그아웃하면 0으로
   useEffect(() => {
-    if (!session) return undefined;
-    let alive = true;
-    const loadUnread = () => fetchUnreadNotificationCount().then(c => { if (alive) setUnread(c); }).catch(() => {});
-    loadUnread();
+    if (!canNotify) { setUnread(0); return undefined; }
     const timer = setInterval(loadUnread, 60000);
     window.addEventListener(NOTIFICATIONS_CHANGED, loadUnread);
-    return () => { alive = false; clearInterval(timer); window.removeEventListener(NOTIFICATIONS_CHANGED, loadUnread); };
-  }, [session, pathname]);
+    return () => { clearInterval(timer); window.removeEventListener(NOTIFICATIONS_CHANGED, loadUnread); };
+  }, [canNotify, loadUnread]);
+  // 화면 이동·로그인 시 한 번 갱신
+  useEffect(() => { if (canNotify) loadUnread(); }, [canNotify, pathname, loadUnread]);
   if (!session || !user) return <Navigate to="/login" replace />;
   if (role === 'ADMIN' && !isAdmin) return <Navigate to="/dashboard" replace />;
   if (role === 'MEMBER' && isAdmin) return <Navigate to="/admin" replace />;

@@ -1,6 +1,7 @@
 /* S10 운영 홈 — /operations · F20 F28 F33 F18 */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useInitialGroupId } from '../common/useInitialGroupId';
 import { getAccessToken } from '../api/auth';
 import { useApp } from '../common/store';
 import { groups, admin, proofs, leader, me, memberName, paidAny, paidThisPeriod, currentPeriod, ensureJoinCode, db } from '../api';
@@ -18,6 +19,7 @@ export default function Operations() {
 
 function ServerOperations({ token }) {
   const nav = useNavigate();
+  const pickGroup = useInitialGroupId();
   const [items, setItems] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -31,15 +33,13 @@ function ServerOperations({ token }) {
       .then(data => {
         if (cancelled) return;
         setItems(data);
-        // 알림에서 들어온 경우(?groupId=) 그 모임을 먼저 선택
-        const want = new URLSearchParams(window.location.search).get('groupId');
-        setSelectedId(prev => want && data.some(g => String(g.groupId) === want) ? want
-          : data.some(g => String(g.groupId) === prev) ? prev : String(data[0]?.groupId ?? ''));
+        // 알림에서 들어온 경우(?groupId=) 첫 로드에만 그 모임을 선택
+        setSelectedId(pickGroup(data));
       })
       .catch(err => { if (!cancelled) setError(err.message || '모임 조회 실패'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, pickGroup]);
 
   const g = items.find(x => String(x.groupId) === selectedId);
   const status = { RECRUITING: '모집 중', ACTIVE: '진행 중', COMPLETED: '완료', DISSOLVED: '해산 완료' };
