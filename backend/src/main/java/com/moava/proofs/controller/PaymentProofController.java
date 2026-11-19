@@ -7,6 +7,8 @@ import com.moava.proofs.dto.PaymentProofDetailDto;
 import com.moava.proofs.dto.ProofActionResponse;
 import com.moava.proofs.dto.PaymentProofReviewRequest;
 import com.moava.proofs.service.PaymentProofService;
+import com.moava.proofs.service.ProofQueryService;
+import com.moava.proofs.service.ProofReviewService;
 import lombok.RequiredArgsConstructor;
 import com.moava.proofs.dto.ProofFileContent;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -40,6 +42,8 @@ import java.util.UUID;
 public class PaymentProofController {
 
     private final PaymentProofService paymentProofService;
+    private final ProofQueryService proofQueryService;       // F22 목록·상세·파일 조회
+    private final ProofReviewService proofReviewService;     // F23 승인·보완 요청
 
     /**
      * F22 납입 증빙 등록 (multipart/form-data)
@@ -66,7 +70,7 @@ public class PaymentProofController {
             @PathVariable Long groupId,
             Authentication authentication) {
         Long memberId = loginMemberId(authentication);
-        return ApiResponse.ok(paymentProofService.getProofList(groupId, memberId), requestId());
+        return ApiResponse.ok(proofQueryService.getProofList(groupId, memberId), requestId());
     }
 
     /** F22 증빙 상세 (모임장: 모임 전체 / 회원: 본인 것만) */
@@ -76,7 +80,7 @@ public class PaymentProofController {
             @PathVariable Long proofId,
             Authentication authentication) {
         Long memberId = loginMemberId(authentication);
-        return ApiResponse.ok(paymentProofService.getProofDetail(groupId, proofId, memberId), requestId());
+        return ApiResponse.ok(proofQueryService.getProofDetail(groupId, proofId, memberId), requestId());
     }
 
     /**
@@ -92,7 +96,7 @@ public class PaymentProofController {
             Authentication authentication) {
 
         Long memberId = loginMemberId(authentication);
-        ProofFileContent file = paymentProofService.getProofFile(groupId, proofId, fileId, memberId);
+        ProofFileContent file = proofQueryService.getProofFile(groupId, proofId, fileId, memberId);
         String disposition = (download ? "attachment" : "inline") + "; filename=\"" + file.getFileName() + "\"";
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.getMimeType()))
@@ -112,7 +116,7 @@ public class PaymentProofController {
             @RequestBody PaymentProofReviewRequest req) {
 
         Long memberId = loginMemberId(authentication);
-        return ApiResponse.ok(paymentProofService.reviewProof(memberId, groupId, proofId, req), requestId());
+        return ApiResponse.ok(proofReviewService.reviewProof(memberId, groupId, proofId, req), requestId());
     }
 
     /**
