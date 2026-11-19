@@ -49,10 +49,14 @@ export default function Evidence() {
       .then((result) => {
         if (cancelled) return;
         setServerGroups(result);
+        // 알림에서 들어온 경우(?groupId=) 그 모임을 먼저 선택
+        const want = new URLSearchParams(window.location.search).get('groupId');
         setSelectedGroupId((current) =>
-          result.some((group) => String(group.groupId) === String(current))
-            ? current
-            : String(result[0]?.groupId ?? '')
+          want && result.some((group) => String(group.groupId) === want)
+            ? want
+            : result.some((group) => String(group.groupId) === String(current))
+              ? current
+              : String(result[0]?.groupId ?? '')
         );
       })
       .catch((error) => {
