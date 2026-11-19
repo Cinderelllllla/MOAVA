@@ -159,7 +159,7 @@ API 명세서 v0.5 F35 기준. **회원(S13)·관리자(A07) 공용** — 로그
 - 삭제는 실제 DELETE가 아니라 `DELETED_YN='Y'` (숨김)
 - 남의 알림 ID → 읽음은 404, 숨김은 해당 건 무시
 
-**로그인 전 임시 방식**: JWT가 붙기 전까지 `moava.dev.receiver-header-enabled=true`일 때만 `X-Member-Id` 또는 `X-Admin-Id` 헤더로 받는 사람을 정합니다. 기본값 false(401). **개인 PC 설정에서만 켜고 팀 공통 설정에 넣지 마세요.** JWT 연동 시 `NotificationController.currentReceiver()`만 교체합니다.
+**받는 사람 판별 (JWT)**: 로그인 토큰(JWT)의 subject(MEMBER_ID)로 받는 사람을 정합니다. 요청 헤더나 파라미터로 회원 ID를 받지 않으며, 로그인하지 않은 요청은 401입니다. `NotificationController.resolveReceiver()` 참고. 관리자 알림함은 관리자 전용 JWT claim이 생긴 뒤 연결합니다(현재 화면에서는 "준비 중" 안내).
 
 ---
 
@@ -190,7 +190,8 @@ backend/src/main/resources/mapper/notification/common/
 ## 4. 남은 작업
 
 - [ ] 알림함 API PR
-- [ ] JWT 연동 후 임시 헤더 방식 제거
+- [x] JWT 연동 후 임시 헤더 방식 제거 (PR #33)
+- [ ] 관리자 JWT 로그인(관리자 전용 claim) 후 관리자 알림함 연결
 - [ ] SMS 규칙 v0.5 반영 — 자동 미납 안내 SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 시 SMS (코드표 v3.1)
 - [ ] 배치: 오래된 알림 정리(읽음 30일·안 읽음 90일), 납입 3일 전·미납 안내
 - [ ] 2차: SOLAPI SMS 발송 (`PHONE_ENC`가 NULL인 탈퇴 회원은 건너뜀)
