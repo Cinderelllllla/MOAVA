@@ -13,7 +13,7 @@ export const setToken = (token) => {
 /**
  * 백엔드 공통 호출 함수
  * - Authorization: Bearer <token> 자동 첨부 (MemberController, GroupCreateController 용)
- * - X-Member-Id / X-Admin-Id 자동 첨부 (PaymentProofController, NotificationController 용)
+ * - X-Member-Id / X-Admin-Id 자동 첨부 (PaymentProofController, PayoutOrderController 용)
  * - ApiResponse.java ({ data, meta } / { error, requestId }) 자동 파싱
  */
 export async function apiFetch(url, options = {}) {
