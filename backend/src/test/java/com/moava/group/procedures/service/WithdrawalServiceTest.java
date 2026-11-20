@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,7 +37,7 @@ class WithdrawalServiceTest {
 
     @Test
     void approveRequiresSnapshotAndAllCurrentTargetsResolved() {
-        when(withdrawalMapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo());
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo());
         when(withdrawalMapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID)).thenReturn(consentPendingRequest());
         when(withdrawalMapper.selectGyeMemberInfoForUpdate(GROUP_ID, APPLICANT_ID))
                 .thenReturn(memberInfo("ACTIVE"));
@@ -52,7 +53,7 @@ class WithdrawalServiceTest {
 
     @Test
     void approveRejectsLegacyRequestWithoutFixedTargets() {
-        when(withdrawalMapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo());
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo());
         when(withdrawalMapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID)).thenReturn(consentPendingRequest());
         when(withdrawalMapper.selectGyeMemberInfoForUpdate(GROUP_ID, APPLICANT_ID))
                 .thenReturn(memberInfo("ACTIVE"));
@@ -68,6 +69,7 @@ class WithdrawalServiceTest {
     @Test
     void exemptionStoresReasonAndAdminAudit() {
         when(withdrawalMapper.isActiveAdmin(ADMIN_ID)).thenReturn(1);
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo());
         when(withdrawalMapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID)).thenReturn(consentPendingRequest());
         when(withdrawalMapper.exemptSettlementConsentTarget(
                 GROUP_ID, REQUEST_ID, TARGET_ID, ADMIN_ID, "연락 두절")).thenReturn(1);
@@ -81,7 +83,7 @@ class WithdrawalServiceTest {
 
     @Test
     void requestWithdrawalRejectsGroupThatIsNotActive() {
-        when(withdrawalMapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo("DISSOLVED"));
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo("DISSOLVED"));
 
         assertThrows(IllegalStateException.class,
                 () -> withdrawalService.requestWithdrawal(GROUP_ID, APPLICANT_ID, validApplyForm()));
@@ -92,7 +94,7 @@ class WithdrawalServiceTest {
 
     @Test
     void registerSettlementRejectsGroupThatIsNotActive() {
-        when(withdrawalMapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo("DISSOLVE_PENDING"));
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo("DISSOLVE_PENDING"));
         WithdrawalDTO.SettlementForm form = new WithdrawalDTO.SettlementForm();
         form.setSettlementAmount(10000L);
         form.setSettlementMemo("정산 근거");
@@ -104,8 +106,25 @@ class WithdrawalServiceTest {
                 eq(GROUP_ID), eq(REQUEST_ID), anyString(), eq(10000L), anyString(), eq(OWNER_ID));
     }
 
+    @Test
+    void requestWithdrawalLocksGroupBeforeCheckingDuplicateRequests() {
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo());
+        when(withdrawalMapper.selectGyeMemberInfo(GROUP_ID, APPLICANT_ID))
+                .thenReturn(Map.of("STATUS", "ACTIVE", "PAYOUT_RECEIVED_YN", "N"));
+        when(withdrawalMapper.countActiveWithdrawalByMember(GROUP_ID, APPLICANT_ID)).thenReturn(1);
+
+        assertThrows(IllegalStateException.class,
+                () -> withdrawalService.requestWithdrawal(GROUP_ID, APPLICANT_ID, validApplyForm()));
+
+        var calls = inOrder(withdrawalMapper);
+        calls.verify(withdrawalMapper).selectGroupInfoForUpdate(GROUP_ID);
+        calls.verify(withdrawalMapper).countActiveWithdrawalByMember(GROUP_ID, APPLICANT_ID);
+        verify(withdrawalMapper, never()).insertWithdrawalRequest(
+                eq(GROUP_ID), eq(APPLICANT_ID), anyString(), anyString(), anyString());
+    }
+
     private Map<String, Object> groupInfo() {
-        return Map.of("OWNER_ID", OWNER_ID);
+        return Map.of("OWNER_ID", OWNER_ID, "STATUS", "ACTIVE");
     }
 
     private Map<String, Object> groupInfo(String status) {
