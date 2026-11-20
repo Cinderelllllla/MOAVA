@@ -43,8 +43,26 @@
                STATUS,
                RECONFIRM_COUNT
         FROM WITHDRAWAL_REQUEST
+        WHERE WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
+    </select>
+
+    <select id="selectWithdrawalByIdForUpdate" resultType="map">
+        SELECT WITHDRAWAL_REQUEST_ID,
+               GROUP_ID,
+               MEMBER_ID,
+               REASON_TYPE,
+               DETAIL,
+               SPECIAL_YN,
+               SETTLEMENT_AMOUNT,
+               SETTLEMENT_MEMO,
+               SETTLEMENT_BY,
+               SETTLEMENT_AT,
+               STATUS,
+               RECONFIRM_COUNT
+        FROM WITHDRAWAL_REQUEST
         WHERE GROUP_ID = #{groupId}
           AND WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
+        FOR UPDATE
     </select>
 
     <!-- 1. [신청] WITHDRAWAL_REQUEST 신규 등록 -->
@@ -82,7 +100,7 @@
             STATUS            = 'CONSENT_PENDING'
         WHERE GROUP_ID = #{groupId}
           AND WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
-          AND STATUS IN ('SETTLEMENT_PENDING', 'REJECTED')
+          AND STATUS = #{expectedStatus}
     </update>
 
     <!-- 기존 정산안 동의 내역 초기화 -->
@@ -92,27 +110,27 @@
           AND TARGET_ID = #{withdrawalRequestId}
     </delete>
 
+    <delete id="deleteSettlementConsentTargets">
+        DELETE FROM WITHDRAWAL_CONSENT_TARGET
+        WHERE WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
+    </delete>
+
+    <insert id="insertSettlementConsentTargets">
+        INSERT INTO WITHDRAWAL_CONSENT_TARGET (
+            WITHDRAWAL_REQUEST_ID, GROUP_ID, MEMBER_ID, STATUS, CREATED_AT
+        )
+        SELECT #{withdrawalRequestId}, gm.GROUP_ID, gm.MEMBER_ID, 'PENDING', SYSDATE
+        FROM GYE_MEMBER gm
+        WHERE gm.GROUP_ID = #{groupId}
+          AND gm.STATUS = 'ACTIVE'
+          AND gm.MEMBER_ID != #{applicantId}
+    </insert>
+
     <!-- 3. [동의] 나머지 회원 정산안 동의 MERGE (UK_CONSENT_1 활용) -->
     <update id="upsertSettlementConsent">
         MERGE INTO CONSENT c
-        USING (
-            SELECT #{groupId} AS GROUP_ID, #{targetId} AS TARGET_ID, #{memberId} AS MEMBER_ID
-            FROM DUAL
-            WHERE EXISTS (
-                SELECT 1
-                FROM WITHDRAWAL_REQUEST wr
-                JOIN GYE_MEMBER gm
-                  ON gm.GROUP_ID = wr.GROUP_ID
-                 AND gm.MEMBER_ID = #{memberId}
-                 AND gm.STATUS = 'ACTIVE'
-                WHERE wr.GROUP_ID = #{groupId}
-                  AND wr.WITHDRAWAL_REQUEST_ID = #{targetId}
-                  AND wr.STATUS = 'CONSENT_PENDING'
-                  AND wr.MEMBER_ID != #{memberId}
-            )
-        ) src
-        ON (c.CONSENT_TYPE = 'SETTLEMENT' AND c.TARGET_ID = src.TARGET_ID
-            AND c.GROUP_ID = src.GROUP_ID AND c.MEMBER_ID = src.MEMBER_ID)
+        USING DUAL
+        ON (c.CONSENT_TYPE = 'SETTLEMENT' AND c.TARGET_ID = #{targetId} AND c.MEMBER_ID = #{memberId})
         WHEN MATCHED THEN
             UPDATE SET c.AGREED_YN = #{agreedYn},
                        c.AGREED_AT = SYSDATE
@@ -121,41 +139,106 @@
             VALUES (SEQ_CONSENT.NEXTVAL, 'SETTLEMENT', #{targetId}, #{groupId}, #{memberId}, #{agreedYn}, SYSDATE)
     </update>
 
+    <select id="selectGyeMemberInfoForUpdate" resultType="map">
+        SELECT GYE_MEMBER_ID, GROUP_ID, MEMBER_ID, STATUS, PAYOUT_RECEIVED_YN
+        FROM GYE_MEMBER
+        WHERE GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+        FOR UPDATE
+    </select>
+
+    <update id="updateSettlementConsentTarget">
+        UPDATE WITHDRAWAL_CONSENT_TARGET
+        SET STATUS = #{status},
+            RESPONDED_AT = SYSDATE
+        WHERE WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
+          AND GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+          AND STATUS = 'PENDING'
+    </update>
+
+    <update id="exemptSettlementConsentTarget">
+        UPDATE WITHDRAWAL_CONSENT_TARGET
+        SET STATUS = 'EXEMPT',
+            EXEMPTED_BY = #{adminId},
+            EXEMPTED_AT = SYSDATE,
+            EXEMPTION_REASON = #{reason}
+        WHERE WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
+          AND GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+          AND STATUS = 'PENDING'
+          AND EXISTS (
+              SELECT 1
+              FROM GYE_MEMBER gm
+              WHERE gm.GROUP_ID = #{groupId}
+                AND gm.MEMBER_ID = #{memberId}
+                AND gm.STATUS = 'ACTIVE'
+          )
+    </update>
+
+    <select id="isActiveAdmin" resultType="int">
+        SELECT COUNT(*)
+        FROM ADMIN
+        WHERE ADMIN_ID = #{adminId}
+          AND STATUS = 'ACTIVE'
+    </select>
+
+    <select id="selectSettlementConsentTargets"
+            resultType="com.moava.group.procedures.dto.WithdrawalDTO$ConsentTargetResponse">
+        SELECT wct.MEMBER_ID AS memberId,
+               m.NAME AS memberName,
+               gm.STATUS AS memberStatus,
+               wct.STATUS AS status,
+               wct.RESPONDED_AT AS respondedAt,
+               wct.EXEMPTED_BY AS exemptedBy,
+               wct.EXEMPTED_AT AS exemptedAt,
+               wct.EXEMPTION_REASON AS exemptionReason
+        FROM WITHDRAWAL_CONSENT_TARGET wct
+        JOIN MEMBER m ON m.MEMBER_ID = wct.MEMBER_ID
+        LEFT JOIN GYE_MEMBER gm
+          ON gm.GROUP_ID = wct.GROUP_ID
+         AND gm.MEMBER_ID = wct.MEMBER_ID
+        WHERE wct.GROUP_ID = #{groupId}
+          AND wct.WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
+        ORDER BY wct.MEMBER_ID
+    </select>
+
+    <select id="lockActiveSettlementConsentTargets" resultType="long">
+        SELECT gm.MEMBER_ID
+        FROM WITHDRAWAL_CONSENT_TARGET wct
+        JOIN GYE_MEMBER gm
+          ON gm.GROUP_ID = wct.GROUP_ID
+         AND gm.MEMBER_ID = wct.MEMBER_ID
+         AND gm.STATUS = 'ACTIVE'
+        WHERE wct.GROUP_ID = #{groupId}
+          AND wct.WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
+        FOR UPDATE OF gm.STATUS
+    </select>
+
+    <select id="countSettlementConsentTargets" resultType="int">
+        SELECT COUNT(*)
+        FROM WITHDRAWAL_CONSENT_TARGET
+        WHERE WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
+    </select>
+
+    <select id="countUnresolvedActiveSettlementConsentTargets" resultType="int">
+        SELECT COUNT(*)
+        FROM WITHDRAWAL_CONSENT_TARGET wct
+        JOIN GYE_MEMBER gm
+          ON gm.GROUP_ID = wct.GROUP_ID
+         AND gm.MEMBER_ID = wct.MEMBER_ID
+         AND gm.STATUS = 'ACTIVE'
+        WHERE wct.GROUP_ID = #{groupId}
+          AND wct.WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
+          AND wct.STATUS NOT IN ('AGREED', 'EXEMPT')
+    </select>
+
     <!-- 4. [재확인] 신청자 재확인 요청 횟수 +1 -->
     <update id="incrementReconfirmCount">
         UPDATE WITHDRAWAL_REQUEST
         SET RECONFIRM_COUNT = RECONFIRM_COUNT + 1
         WHERE WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}
-          AND GROUP_ID = #{groupId}
-          AND STATUS IN ('SETTLEMENT_PENDING', 'REJECTED')
     </update>
-
-    <!-- 5. [승인 검증] 신청자 제외 나머지 ACTIVE 회원 수 조회 -->
-    <select id="countRemainingActiveMembers" resultType="int">
-        SELECT COUNT(*)
-        FROM GYE_MEMBER
-        WHERE GROUP_ID = #{groupId}
-          AND STATUS = 'ACTIVE'
-          AND MEMBER_ID != #{applicantId}
-    </select>
-
-    <!-- 5. [승인 검증] 정산안에 'Y' 동의한 ACTIVE 회원 수 조회 -->
-    <select id="countAgreedSettlementConsents" resultType="int">
-        SELECT COUNT(DISTINCT c.MEMBER_ID)
-        FROM CONSENT c
-        JOIN GYE_MEMBER gm
-          ON gm.GROUP_ID = c.GROUP_ID
-         AND gm.MEMBER_ID = c.MEMBER_ID
-         AND gm.STATUS = 'ACTIVE'
-        JOIN WITHDRAWAL_REQUEST wr
-          ON wr.GROUP_ID = c.GROUP_ID
-         AND wr.WITHDRAWAL_REQUEST_ID = c.TARGET_ID
-        WHERE c.CONSENT_TYPE = 'SETTLEMENT'
-          AND c.GROUP_ID = #{groupId}
-          AND c.TARGET_ID = #{targetId}
-          AND c.AGREED_YN = 'Y'
-          AND c.MEMBER_ID != wr.MEMBER_ID
-    </select>
 
     <!-- 탈퇴 신청 상태 업데이트 (APPROVED / REJECTED) -->
     <update id="updateWithdrawalStatus">
@@ -201,21 +284,26 @@
                wr.SETTLEMENT_AT         AS settlementAt,
                wr.STATUS                AS status,
                wr.RECONFIRM_COUNT       AS reconfirmCount,
-               (SELECT COUNT(DISTINCT c.MEMBER_ID)
-                FROM CONSENT c
-                JOIN GYE_MEMBER gm
-                  ON gm.GROUP_ID = c.GROUP_ID
-                 AND gm.MEMBER_ID = c.MEMBER_ID
-                 AND gm.STATUS = 'ACTIVE'
-                WHERE c.CONSENT_TYPE = 'SETTLEMENT'
-                  AND c.GROUP_ID = wr.GROUP_ID
-                  AND c.TARGET_ID = wr.WITHDRAWAL_REQUEST_ID
-                  AND c.MEMBER_ID != wr.MEMBER_ID
-                  AND c.AGREED_YN = 'Y') AS agreedCount,
-               (SELECT COUNT(*) FROM GYE_MEMBER gm
-                WHERE gm.GROUP_ID = wr.GROUP_ID
-                  AND gm.STATUS = 'ACTIVE'
-                  AND gm.MEMBER_ID != wr.MEMBER_ID) AS targetCount,
+               (SELECT COUNT(*)
+                FROM WITHDRAWAL_CONSENT_TARGET wct
+                JOIN GYE_MEMBER gm ON gm.GROUP_ID = wct.GROUP_ID
+                                  AND gm.MEMBER_ID = wct.MEMBER_ID
+                                  AND gm.STATUS = 'ACTIVE'
+                WHERE wct.WITHDRAWAL_REQUEST_ID = wr.WITHDRAWAL_REQUEST_ID
+                  AND wct.STATUS = 'AGREED') AS agreedCount,
+               (SELECT COUNT(*)
+                FROM WITHDRAWAL_CONSENT_TARGET wct
+                JOIN GYE_MEMBER gm ON gm.GROUP_ID = wct.GROUP_ID
+                                  AND gm.MEMBER_ID = wct.MEMBER_ID
+                                  AND gm.STATUS = 'ACTIVE'
+                WHERE wct.WITHDRAWAL_REQUEST_ID = wr.WITHDRAWAL_REQUEST_ID
+                  AND wct.STATUS = 'EXEMPT') AS exemptedCount,
+               (SELECT COUNT(*)
+                FROM WITHDRAWAL_CONSENT_TARGET wct
+                JOIN GYE_MEMBER gm ON gm.GROUP_ID = wct.GROUP_ID
+                                  AND gm.MEMBER_ID = wct.MEMBER_ID
+                                  AND gm.STATUS = 'ACTIVE'
+                WHERE wct.WITHDRAWAL_REQUEST_ID = wr.WITHDRAWAL_REQUEST_ID) AS targetCount,
                wr.DECIDED_AT            AS decidedAt,
                wr.CREATED_AT            AS createdAt
         FROM WITHDRAWAL_REQUEST wr
@@ -272,6 +360,26 @@
                      #{description},
                      SYSDATE
                  )
+    </insert>
+
+    <insert id="insertAdminAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_ADMIN_ID,
+            TARGET_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        ) VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId},
+            #{adminId},
+            #{targetMemberId},
+            #{eventType},
+            #{description},
+            SYSDATE
+        )
     </insert>
 
 </mapper>
