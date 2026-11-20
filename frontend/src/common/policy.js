@@ -1,4 +1,6 @@
-/* 서비스 정책 상수 — 한 곳에서만 바꾼다. (ML 서버 ml/src/common/config.py 의 값과 같아야 한다) */
+/* 서비스 정책 기본값.
+   기준은 ML 서버(ml/src/common/config.py, GET /ml-api/risk/model)이고, 화면은 finance.getPolicy() 로 그 값을 받아 쓴다.
+   여기 값은 ML 서버에 연결하지 못했을 때만 쓰는 기본값이다. */
 
 /** 위험 등급별 안전계수와 연체 확률 구간 */
 export const RISK = {
