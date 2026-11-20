@@ -67,7 +67,7 @@
                           JOIN GYE_GROUP g ON dr.GROUP_ID = g.GROUP_ID
                           JOIN MEMBER m ON dr.REQUESTED_BY = m.MEMBER_ID
                  WHERE dr.GROUP_ID = #{groupId}
-                 ORDER BY dr.CREATED_AT DESC
+                 ORDER BY dr.CREATED_AT DESC, dr.DISSOLUTION_REQUEST_ID DESC
              )
         WHERE ROWNUM = 1
     </select>
@@ -102,7 +102,7 @@
             </if>
         </where>
         ORDER BY CASE WHEN dr.STATUS = 'PENDING' THEN 0 ELSE 1 END,
-        dr.CREATED_AT DESC
+        dr.CREATED_AT DESC, dr.DISSOLUTION_REQUEST_ID DESC
     </select>
 
     <!-- 1. [신청] DISSOLUTION_REQUEST(PENDING) INSERT -->
@@ -156,9 +156,13 @@
 
     <select id="countActivePayoutRequests" resultType="int">
         SELECT COUNT(*)
-        FROM PAYOUT_REQUEST
-        WHERE GROUP_ID = #{groupId}
-          AND STATUS IN ('REQUESTED', 'CONSENT_PENDING')
+        FROM PAYOUT_REQUEST pr
+        JOIN GYE_MEMBER gm
+          ON gm.GROUP_ID = pr.GROUP_ID
+         AND gm.MEMBER_ID = pr.MEMBER_ID
+         AND gm.STATUS = 'ACTIVE'
+        WHERE pr.GROUP_ID = #{groupId}
+          AND pr.STATUS IN ('REQUESTED', 'CONSENT_PENDING')
     </select>
 
     <!-- 2. [승인 검증] 미종결 증빙(STATUS != 'CONFIRMED') 건수 카운트 -->

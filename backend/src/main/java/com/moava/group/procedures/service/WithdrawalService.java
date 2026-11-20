@@ -6,6 +6,7 @@ import com.moava.group.procedures.mapper.WithdrawalMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -72,6 +73,10 @@ public class WithdrawalService {
         if (detail == null || detail.trim().isEmpty()) {
             throw ProcedureException.badRequest("상세 탈퇴 사유를 입력해 주세요.");
         }
+        String cleanDetail = detail.trim();
+        if (cleanDetail.getBytes(StandardCharsets.UTF_8).length > 1000) {
+            throw ProcedureException.badRequest("상세 탈퇴 사유는 1000바이트 이하여야 합니다.");
+        }
 
         // [예외 3] 수령 완료자(PAYOUT_RECEIVED_YN='Y')는 특별 정산 예외 요청(SPECIAL_YN='Y')만 가능
         String payoutReceivedYn = String.valueOf(memberInfo.get("PAYOUT_RECEIVED_YN"));
@@ -83,7 +88,7 @@ public class WithdrawalService {
                 groupId,
                 memberId,
                 reasonType,
-                detail.trim(),
+                cleanDetail,
                 specialYn
         );
 
@@ -135,6 +140,10 @@ public class WithdrawalService {
         if (settlementMemo == null || settlementMemo.trim().isEmpty()) {
             throw ProcedureException.badRequest("정산 산출 근거(메모)를 입력해 주세요.");
         }
+        String cleanMemo = settlementMemo.trim();
+        if (cleanMemo.getBytes(StandardCharsets.UTF_8).length > 500) {
+            throw ProcedureException.badRequest("정산 산출 근거(메모)는 500바이트 이하여야 합니다.");
+        }
 
         Map<String, Object> req = getWithdrawalRequestForUpdate(groupId, withdrawalRequestId);
         requireStatus(req, "SETTLEMENT_PENDING", "CONSENT_PENDING", "REJECTED");
@@ -148,7 +157,7 @@ public class WithdrawalService {
                 withdrawalRequestId,
                 expectedStatus,
                 settlementAmount,
-                settlementMemo.trim(),
+                cleanMemo,
                 leaderId
         ) == 0) {
             throw ProcedureException.conflict("정산안 상태가 변경되어 다시 확인해 주세요.");
@@ -304,6 +313,11 @@ public class WithdrawalService {
         Long applicantId = getLong(req, "MEMBER_ID");
         if (!applicantId.equals(memberId)) {
             throw ProcedureException.forbidden("탈퇴 신청자 본인만 재확인 요청을 보낼 수 있습니다.");
+        }
+        requireActiveMember(groupId, memberId);
+        Object reconfirmCount = req.get("RECONFIRM_COUNT");
+        if (reconfirmCount instanceof Number && ((Number) reconfirmCount).intValue() >= 99) {
+            throw ProcedureException.conflict("재확인 요청 가능 횟수를 초과했습니다.");
         }
 
         withdrawalMapper.incrementReconfirmCount(withdrawalRequestId);

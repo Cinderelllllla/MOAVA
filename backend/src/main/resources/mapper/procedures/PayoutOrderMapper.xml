@@ -139,8 +139,10 @@
         SET AGREED_YN = #{agreedYn},
             AGREED_AT = SYSDATE
         WHERE CONSENT_TYPE = 'ORDER'
+          AND GROUP_ID = #{groupId}
           AND TARGET_ID = #{targetId}
           AND MEMBER_ID = #{memberId}
+          AND AGREED_YN = 'P'
           AND EXISTS (
               SELECT 1
               FROM PAYOUT_REQUEST pr
