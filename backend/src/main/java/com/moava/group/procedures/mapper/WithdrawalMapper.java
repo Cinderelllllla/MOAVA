@@ -20,8 +20,9 @@ public interface WithdrawalMapper {
     int countActiveWithdrawalByMember(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
 
     // 단건 탈퇴 신청 조회
-    Map<String, Object> selectWithdrawalById(@Param("groupId") Long groupId,
-                                             @Param("withdrawalRequestId") Long withdrawalRequestId);
+    Map<String, Object> selectWithdrawalById(@Param("withdrawalRequestId") Long withdrawalRequestId);
+    Map<String, Object> selectWithdrawalByIdForUpdate(@Param("groupId") Long groupId,
+                                                      @Param("withdrawalRequestId") Long withdrawalRequestId);
 
     // 1. [신청] 중도 탈퇴 신청 등록 (WITHDRAWAL_REQUEST)
     void insertWithdrawalRequest(@Param("groupId") Long groupId,
@@ -33,28 +34,48 @@ public interface WithdrawalMapper {
     // 2. [정산안] 모임장 정산 금액·근거 등록 및 CONSENT_PENDING 전환
     int updateSettlementPlan(@Param("groupId") Long groupId,
                              @Param("withdrawalRequestId") Long withdrawalRequestId,
+                             @Param("expectedStatus") String expectedStatus,
                              @Param("settlementAmount") Long settlementAmount,
                              @Param("settlementMemo") String settlementMemo,
                              @Param("leaderId") Long leaderId);
 
     // 정산안 재등록 시 기존 정산 동의 내역 초기화
     void deleteSettlementConsents(@Param("withdrawalRequestId") Long withdrawalRequestId);
+    void deleteSettlementConsentTargets(@Param("withdrawalRequestId") Long withdrawalRequestId);
+    int insertSettlementConsentTargets(@Param("groupId") Long groupId,
+                                       @Param("withdrawalRequestId") Long withdrawalRequestId,
+                                       @Param("applicantId") Long applicantId);
 
     // 3. [동의] 나머지 회원 정산안 동의 저장 (CONSENT: type='SETTLEMENT')
-    int upsertSettlementConsent(@Param("groupId") Long groupId,
-                                @Param("targetId") Long withdrawalRequestId,
-                                @Param("memberId") Long memberId,
-                                @Param("agreedYn") String agreedYn);
+    void upsertSettlementConsent(@Param("groupId") Long groupId,
+                                 @Param("targetId") Long withdrawalRequestId,
+                                 @Param("memberId") Long memberId,
+                                 @Param("agreedYn") String agreedYn);
+    Map<String, Object> selectGyeMemberInfoForUpdate(@Param("groupId") Long groupId,
+                                                     @Param("memberId") Long memberId);
+    int updateSettlementConsentTarget(@Param("groupId") Long groupId,
+                                      @Param("withdrawalRequestId") Long withdrawalRequestId,
+                                      @Param("memberId") Long memberId,
+                                      @Param("status") String status);
+    int exemptSettlementConsentTarget(@Param("groupId") Long groupId,
+                                      @Param("withdrawalRequestId") Long withdrawalRequestId,
+                                      @Param("memberId") Long memberId,
+                                      @Param("adminId") Long adminId,
+                                      @Param("reason") String reason);
+    int isActiveAdmin(@Param("adminId") Long adminId);
+    List<WithdrawalDTO.ConsentTargetResponse> selectSettlementConsentTargets(
+            @Param("groupId") Long groupId,
+            @Param("withdrawalRequestId") Long withdrawalRequestId);
+    List<Long> lockActiveSettlementConsentTargets(@Param("groupId") Long groupId,
+                                                  @Param("withdrawalRequestId") Long withdrawalRequestId);
+    int countSettlementConsentTargets(@Param("withdrawalRequestId") Long withdrawalRequestId);
+    int countUnresolvedActiveSettlementConsentTargets(@Param("groupId") Long groupId,
+                                                       @Param("withdrawalRequestId") Long withdrawalRequestId);
 
     // 4. [재확인] 신청자 탈퇴 재확인 요청 횟수 +1
-    int incrementReconfirmCount(@Param("groupId") Long groupId,
-                                @Param("withdrawalRequestId") Long withdrawalRequestId);
+    void incrementReconfirmCount(@Param("withdrawalRequestId") Long withdrawalRequestId);
 
     // 5. [승인] 전원 동의 검증용 카운트 조회
-    int countRemainingActiveMembers(@Param("groupId") Long groupId, @Param("applicantId") Long applicantId);
-    int countAgreedSettlementConsents(@Param("groupId") Long groupId,
-                                      @Param("targetId") Long withdrawalRequestId);
-
     // 탈퇴 신청 상태 변경 (APPROVED / REJECTED)
     int updateWithdrawalStatus(@Param("groupId") Long groupId,
                                @Param("withdrawalRequestId") Long withdrawalRequestId,
@@ -83,4 +104,10 @@ public interface WithdrawalMapper {
                         @Param("targetMemberId") Long targetMemberId,
                         @Param("eventType") String eventType,
                         @Param("description") String description);
+
+    void insertAdminAuditLog(@Param("groupId") Long groupId,
+                             @Param("adminId") Long adminId,
+                             @Param("targetMemberId") Long targetMemberId,
+                             @Param("eventType") String eventType,
+                             @Param("description") String description);
 }

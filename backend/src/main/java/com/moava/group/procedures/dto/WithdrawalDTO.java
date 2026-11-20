@@ -1,10 +1,11 @@
 package com.moava.group.procedures.dto;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import lombok.Getter;
-import lombok.Setter;
 
 public class WithdrawalDTO {
 
@@ -22,21 +23,19 @@ public class WithdrawalDTO {
         public Long getEffectiveMemberId() {
             return memberId != null ? memberId : userId;
         }
+
         public String getEffectiveReasonType() {
             return (reasonType != null && !reasonType.isBlank()) ? reasonType : "PERSONAL";
         }
+
         public String getEffectiveDetail() {
             return (detail != null && !detail.isBlank()) ? detail : reason;
         }
+
         public String getEffectiveSpecialYn() {
             if (special != null) return special ? "Y" : "N";
-            if (specialYn == null || specialYn.isBlank()) return "N";
-            if ("Y".equalsIgnoreCase(specialYn) || "N".equalsIgnoreCase(specialYn)) {
-                return specialYn.toUpperCase(java.util.Locale.ROOT);
-            }
-            return null;
+            return "Y".equalsIgnoreCase(specialYn) ? "Y" : "N";
         }
-
     }
 
     @Getter
@@ -52,20 +51,20 @@ public class WithdrawalDTO {
         public Long getEffectiveLeaderId() {
             return leaderId != null ? leaderId : userId;
         }
+
         public Long getEffectiveAmount() {
             Long raw = settlementAmount != null ? settlementAmount : amount;
             if (raw == null) return null;
             // 프론트에서 '50'(50만 원)처럼 만 원 단위로 보낸 경우 DB(KRW 원 단위)에 맞게 * 10000 변환
-            if (raw != 0 && Math.abs(raw) < 10000) {
-                return raw * 10000L;
+            if (raw > -10000 && raw < 10000 && raw != 0) {
+                return Math.multiplyExact(raw, 10000L);
             }
             return raw;
         }
-        public String getEffectiveMemo() {
-            String m = (settlementMemo != null && !settlementMemo.isBlank()) ? settlementMemo : memo;
-            return m;
-        }
 
+        public String getEffectiveMemo() {
+            return (settlementMemo != null && !settlementMemo.isBlank()) ? settlementMemo : memo;
+        }
     }
 
     @Getter
@@ -78,6 +77,16 @@ public class WithdrawalDTO {
         public Long getEffectiveMemberId() {
             return memberId != null ? memberId : userId;
         }
+
+        public String getAgreedYn() {
+            return agreedYn;
+        }
+    }
+
+    @Getter
+    @Setter
+    public static class ConsentExemptionForm {
+        private String reason;
     }
 
     @Getter
@@ -113,6 +122,7 @@ public class WithdrawalDTO {
         private String status;
         private Integer reconfirmCount;
         private Integer agreedCount;
+        private Integer exemptedCount;
         private Integer targetCount;
         private Date decidedAt;
         private Date createdAt;
@@ -131,6 +141,18 @@ public class WithdrawalDTO {
             if ("REJECTED".equals(status)) return "반려";
             return status;
         }
+    }
 
+    @Getter
+    @Setter
+    public static class ConsentTargetResponse {
+        private Long memberId;
+        private String memberName;
+        private String memberStatus;
+        private String status;
+        private Date respondedAt;
+        private Long exemptedBy;
+        private Date exemptedAt;
+        private String exemptionReason;
     }
 }

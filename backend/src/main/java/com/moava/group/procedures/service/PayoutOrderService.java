@@ -2,22 +2,22 @@ package com.moava.group.procedures.service;
 
 import com.moava.group.procedures.dto.PayoutOrderDTO;
 import com.moava.group.procedures.mapper.PayoutOrderMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 public class PayoutOrderService {
 
     private final PayoutOrderMapper payoutOrderMapper;
 
+    public PayoutOrderService(PayoutOrderMapper payoutOrderMapper) {
+        this.payoutOrderMapper = payoutOrderMapper;
+    }
     /**
      * 신청·동의 현황 목록 조회 (AI 제안 회차 포함)
      */
@@ -36,24 +36,25 @@ public class PayoutOrderService {
     @Transactional
     public String requestOrUpdatePayoutOrder(Long groupId, Long memberId, PayoutOrderDTO.RequestForm form) {
         if (form == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "수령 순서 신청 정보를 입력해 주세요.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 정보를 확인해 주세요.");
         }
         Map<String, Object> groupInfo = getGroupInfo(groupId);
         requireActiveMember(groupId, memberId);
 
         // [예외 1] 사유 미입력 -> 차단
-        if (form.getReason() == null || form.getReason().isBlank()) {
+        if (form.getReason() == null || form.getReason().trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 사유를 반드시 입력해야 합니다.");
         }
-        String reason = form.getReason().trim();
-        if (reason.getBytes(StandardCharsets.UTF_8).length > 500) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 사유는 500바이트 이하여야 합니다.");
-        }
+        // 희망 회차 범위 검증 (1 ~ 최대 인원)
+        // 희망 회차 범위 검증 (1 ~ 최대 인원)
         int maxMembers = ((Number) groupInfo.get("MAX_MEMBERS")).intValue();
         Integer roundNo = form.getEffectiveRoundNo();
         if (roundNo == null || roundNo < 1 || roundNo > maxMembers) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "희망 회차는 1회차부터 " + maxMembers + "회차 사이로 신청해야 합니다.");
+        }
+        if (payoutOrderMapper.countConfirmedRequestByMember(groupId, memberId) > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 수령 회차가 확정된 회원은 추가 신청할 수 없습니다.");
         }
 
         // 2. [AI 제안] 모임원 연체 확률 내림차순 추천 회차 조회 (AI_SUGGESTED_ROUND)
@@ -68,15 +69,12 @@ public class PayoutOrderService {
 
             // [예외 2] CONSENT_PENDING 중엔 수정 불가
             if ("CONSENT_PENDING".equals(currentStatus)) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 동의 요청 중입니다.");
+                throw new IllegalStateException("이미 동의 요청 중입니다.");
             }
 
             // REQUESTED 건이 있으면 수정 (회차·사유 갱신, 기존 CONSENT 삭제 후 재동의)
             if ("REQUESTED".equals(currentStatus)) {
-                if (payoutOrderMapper.updatePayoutRequest(
-                        groupId, existingReqId, "REQUESTED", roundNo, reason, aiSuggestedRound) == 0) {
-                    throw new ResponseStatusException(HttpStatus.CONFLICT, "신청 상태가 변경되어 수정할 수 없습니다.");
-                }
+                payoutOrderMapper.updatePayoutRequest(existingReqId, roundNo, form.getReason(), aiSuggestedRound);
                 payoutOrderMapper.deleteConsentsByRequestId(existingReqId);
                 payoutOrderMapper.insertAuditLog(groupId, memberId, "ORDER_REQUEST",
                         "수령 순서 신청 수정: " + roundNo + "회차");
@@ -84,9 +82,8 @@ public class PayoutOrderService {
             }
         }
 
-        requireGroupNotDissolving(groupInfo);
         // 신규 신청 (REQUESTED)
-        payoutOrderMapper.insertPayoutRequest(groupId, memberId, roundNo, reason, aiSuggestedRound);
+        payoutOrderMapper.insertPayoutRequest(groupId, memberId, roundNo, form.getReason(), aiSuggestedRound);
         payoutOrderMapper.insertAuditLog(groupId, memberId, "ORDER_REQUEST",
                 "수령 순서 신규 신청: " + roundNo + "회차");
         return "수령 순서 신청이 완료되었습니다.";
@@ -142,14 +139,14 @@ public class PayoutOrderService {
     public String submitMemberConsent(Long groupId, Long payoutRequestId, Long memberId,
                                       PayoutOrderDTO.ConsentForm form) {
         requireActiveMember(groupId, memberId);
-        if (form == null || form.getAgreedYn() == null
-                || !("Y".equalsIgnoreCase(form.getAgreedYn()) || "N".equalsIgnoreCase(form.getAgreedYn()))) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "동의 여부는 Y 또는 N으로 입력해 주세요.");
-        }
 
-        Map<String, Object> req = payoutOrderMapper.selectPayoutRequestById(groupId, payoutRequestId);
+        Map<String, Object> req = payoutOrderMapper.selectPayoutRequestForUpdate(groupId, payoutRequestId);
         if (req == null || !"CONSENT_PENDING".equals(req.get("STATUS"))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "현재 동의 진행 중인 신청 건이 아닙니다.");
+        }
+        if (form == null || !("Y".equalsIgnoreCase(form.getAgreedYn())
+                || "N".equalsIgnoreCase(form.getAgreedYn()))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "동의 여부는 Y 또는 N으로 입력해야 합니다.");
         }
 
         String yn = "Y".equalsIgnoreCase(form.getAgreedYn()) ? "Y" : "N";
@@ -182,7 +179,10 @@ public class PayoutOrderService {
         Map<String, Object> groupInfo = getGroupInfo(groupId);
         requireLeader(groupInfo, leaderId);
 
-        Map<String, Object> req = payoutOrderMapper.selectPayoutRequestById(groupId, payoutRequestId);
+        if (payoutOrderMapper.lockGroupForOrderUpdate(groupId) == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        Map<String, Object> req = payoutOrderMapper.selectPayoutRequestForUpdate(groupId, payoutRequestId);
         if (req == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "신청 내역을 찾을 수 없습니다.");
         }
@@ -196,16 +196,19 @@ public class PayoutOrderService {
         // [검증 1] 회차 중복 확정 불가 검사
         int duplicateCount = payoutOrderMapper.countConfirmedRoundDuplicate(groupId, roundNo, payoutRequestId);
         if (duplicateCount > 0) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "이미 다른 회원에게 확정된 회차입니다. 회차 중복 확정은 불가합니다.");
+            throw new IllegalStateException("이미 다른 회원에게 확정된 회차입니다. 회차 중복 확정은 불가합니다.");
+        }
+        if (payoutOrderMapper.countConfirmedRequestByMember(groupId, applicantId) > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 수령 회차가 확정된 회원입니다.");
         }
 
         // [검증 2] 신청자 제외 ACTIVE 회원 전원 'Y' 동의 검증
-        int totalTargetMembers = payoutOrderMapper.countTotalActiveOtherMembers(groupId, applicantId);
-        int agreedMembers = payoutOrderMapper.countAgreedConsents(groupId, payoutRequestId);
+        List<Long> activeTargetMembers =
+                payoutOrderMapper.lockActiveConsentTargets(groupId, payoutRequestId, applicantId);
+        int agreedMembers = payoutOrderMapper.countAgreedConsents(groupId, payoutRequestId, applicantId);
 
-        if (agreedMembers < totalTargetMembers) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "영향받는 회원 전원의 동의가 필요해요.");
+        if (agreedMembers < activeTargetMembers.size()) {
+            throw new IllegalStateException("영향받는 회원 전원의 동의가 필요해요.");
         }
 
         // 신청 건 CONFIRMED 처리 및 모임원 확정 회차 반영
@@ -260,12 +263,5 @@ public class PayoutOrderService {
         Object ownerId = groupInfo.get("OWNER_ID");
         return ownerId instanceof Number && memberId != null
                 && ((Number) ownerId).longValue() == memberId.longValue();
-    }
-
-    private void requireGroupNotDissolving(Map<String, Object> groupInfo) {
-        Object status = groupInfo.get("STATUS");
-        if ("DISSOLVE_PENDING".equals(status) || "DISSOLVED".equals(status)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "해산 검토 중이거나 해산된 모임에서는 처리할 수 없습니다.");
-        }
     }
 }
