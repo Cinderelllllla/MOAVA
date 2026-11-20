@@ -9,11 +9,30 @@ import { GroupCard, GroupInfo, InlineSimulator } from '../components/shared';
 const PIN_POS = { 101: [22, 26], 102: [48, 48], 103: [33, 75], 104: [78, 29], 105: [79, 75] };
 
 // TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거 — 모임 검색·지도·상세·가입 신청 (아래 GroupsMock 참고)
+
 export default function Groups() {
-  return <ComingSoon kicker="LOCAL COMMUNITY" title="지역 계모임 찾기 · 지도" text="동네 계모임 검색과 지도 기능은 아직 준비 중이에요. 지금은 직접 계모임을 만들어 시작할 수 있어요.">
-    <Link className="btn primary" to="/groups/new">계모임 만들기</Link><Link className="btn soft" to="/my-groups">내 계모임</Link>
-  </ComingSoon>;
+  return (
+    <ComingSoon
+      kicker="LOCAL COMMUNITY"
+      title="지역 계모임 찾기 · 지도"
+      text="동네 계모임 검색과 지도 기능은 아직 준비 중이에요. 지금은 직접 계모임을 만들거나 초대받은 모임에 가입할 수 있어요."
+    >
+      <Link className="btn primary" to="/groups/new">
+        계모임 만들기
+      </Link>
+
+      <Link className="btn soft" to="/my-groups">
+        내 계모임
+      </Link>
+
+      {/* F18: 비공개 모임 초대 진입 */}
+      <Link className="btn soft" to="/invite">
+        🔑 초대코드로 가입하기
+      </Link>
+    </ComingSoon>
+  );
 }
+
 
 // eslint-disable-next-line no-unused-vars -- 서버 API 연결 시 참고용 목업 화면 (현재 화면에서 사용하지 않음)
 function GroupsMock() {
