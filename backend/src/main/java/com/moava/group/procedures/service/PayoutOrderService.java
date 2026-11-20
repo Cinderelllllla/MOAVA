@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -45,7 +46,10 @@ public class PayoutOrderService {
         if (form.getReason() == null || form.getReason().trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 사유를 반드시 입력해야 합니다.");
         }
-        // 희망 회차 범위 검증 (1 ~ 최대 인원)
+        String cleanReason = form.getReason().trim();
+        if (cleanReason.getBytes(StandardCharsets.UTF_8).length > 500) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 사유는 500바이트 이하여야 합니다.");
+        }
         // 희망 회차 범위 검증 (1 ~ 최대 인원)
         int maxMembers = ((Number) groupInfo.get("MAX_MEMBERS")).intValue();
         Integer roundNo = form.getEffectiveRoundNo();
@@ -74,7 +78,7 @@ public class PayoutOrderService {
 
             // REQUESTED 건이 있으면 수정 (회차·사유 갱신, 기존 CONSENT 삭제 후 재동의)
             if ("REQUESTED".equals(currentStatus)) {
-                payoutOrderMapper.updatePayoutRequest(existingReqId, roundNo, form.getReason(), aiSuggestedRound);
+                payoutOrderMapper.updatePayoutRequest(existingReqId, roundNo, cleanReason, aiSuggestedRound);
                 payoutOrderMapper.deleteConsentsByRequestId(existingReqId);
                 payoutOrderMapper.insertAuditLog(groupId, memberId, "ORDER_REQUEST",
                         "수령 순서 신청 수정: " + roundNo + "회차");
@@ -83,7 +87,7 @@ public class PayoutOrderService {
         }
 
         // 신규 신청 (REQUESTED)
-        payoutOrderMapper.insertPayoutRequest(groupId, memberId, roundNo, form.getReason(), aiSuggestedRound);
+        payoutOrderMapper.insertPayoutRequest(groupId, memberId, roundNo, cleanReason, aiSuggestedRound);
         payoutOrderMapper.insertAuditLog(groupId, memberId, "ORDER_REQUEST",
                 "수령 순서 신규 신청: " + roundNo + "회차");
         return "수령 순서 신청이 완료되었습니다.";
@@ -106,6 +110,9 @@ public class PayoutOrderService {
         }
 
         Long applicantId = ((Number) req.get("MEMBER_ID")).longValue();
+        if (payoutOrderMapper.countActiveMember(groupId, applicantId) == 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "신청 회원이 현재 모임의 활성 회원이 아닙니다.");
+        }
         Integer roundNo = ((Number) req.get("ROUND_NO")).intValue();
 
         // 상태를 CONSENT_PENDING으로 변경
@@ -142,7 +149,10 @@ public class PayoutOrderService {
         requireActiveMember(groupId, memberId);
 
         Map<String, Object> req = payoutOrderMapper.selectPayoutRequestForUpdate(groupId, payoutRequestId);
-        if (req == null || !"CONSENT_PENDING".equals(req.get("STATUS"))) {
+        if (req == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "신청 내역을 찾을 수 없습니다.");
+        }
+        if (!"CONSENT_PENDING".equals(req.get("STATUS"))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "현재 동의 진행 중인 신청 건이 아닙니다.");
         }
         if (form == null || !("Y".equalsIgnoreCase(form.getAgreedYn())
@@ -188,6 +198,9 @@ public class PayoutOrderService {
         }
 
         Long applicantId = ((Number) req.get("MEMBER_ID")).longValue();
+        if (payoutOrderMapper.countActiveMember(groupId, applicantId) == 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "신청 회원이 현재 모임의 활성 회원이 아닙니다.");
+        }
         Integer roundNo = ((Number) req.get("ROUND_NO")).intValue();
 
         // [검증 1] 회차 중복 확정 불가 검사
@@ -203,6 +216,10 @@ public class PayoutOrderService {
         // [검증 2] 신청자 제외 ACTIVE 회원 전원 'Y' 동의 검증
         List<Long> activeTargetMembers =
                 payoutOrderMapper.lockActiveConsentTargets(groupId, payoutRequestId, applicantId);
+        if (activeTargetMembers.isEmpty()
+                && !payoutOrderMapper.selectOtherActiveMemberIds(groupId, applicantId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "저장된 동의 대상이 없습니다. 동의 요청을 다시 진행해 주세요.");
+        }
         int agreedMembers = payoutOrderMapper.countAgreedConsents(groupId, payoutRequestId, applicantId);
 
         if (agreedMembers < activeTargetMembers.size()) {

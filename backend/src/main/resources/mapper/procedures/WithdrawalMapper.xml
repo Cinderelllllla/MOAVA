@@ -104,6 +104,7 @@
             SETTLEMENT_MEMO   = #{settlementMemo},
             SETTLEMENT_BY     = #{leaderId},
             SETTLEMENT_AT     = SYSDATE,
+            DECIDED_AT        = NULL,
             STATUS            = 'CONSENT_PENDING'
         WHERE GROUP_ID = #{groupId}
           AND WITHDRAWAL_REQUEST_ID = #{withdrawalRequestId}

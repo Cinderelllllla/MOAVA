@@ -55,10 +55,10 @@ class ProceduresWorkflowTest {
             when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(Map.of("GROUP_ID", GROUP_ID));
             when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(0);
 
-            ProcedureException error = assertThrows(ProcedureException.class,
+            ResponseStatusException error = assertThrows(ResponseStatusException.class,
                     () -> service.getGroupDissolutionStatus(GROUP_ID, MEMBER_ID));
 
-            assertEquals(HttpStatus.FORBIDDEN, error.getStatus());
+            assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
             verify(mapper, never()).selectLatestDissolutionByGroup(GROUP_ID);
         }
 
@@ -74,6 +74,23 @@ class ProceduresWorkflowTest {
             DissolutionDTO.StatusResponse result = service.getGroupDissolutionStatus(GROUP_ID, MEMBER_ID);
 
             assertEquals(500L, result.getPerMemberRefundAmount());
+        }
+
+        @Test
+        void zeroActiveMembersProducesZeroRefundEstimateAndRejectedHasNoApprovedAt() {
+            DissolutionDTO.StatusResponse response = new DissolutionDTO.StatusResponse();
+            response.setStatus("REJECTED");
+            response.setDecidedAt(new Date());
+            response.setMemberCount(0);
+            response.setTotalConfirmedAmount(100_000L);
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(Map.of("GROUP_ID", GROUP_ID));
+            when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.selectLatestDissolutionByGroup(GROUP_ID)).thenReturn(response);
+
+            DissolutionDTO.StatusResponse result = service.getGroupDissolutionStatus(GROUP_ID, MEMBER_ID);
+
+            assertEquals(0L, result.getPerMemberRefundAmount());
+            assertEquals(null, result.getApprovedAt());
         }
 
         @Test
@@ -125,11 +142,28 @@ class ProceduresWorkflowTest {
         }
 
         @Test
+        void rejectsOverlongReasonAsBadRequest() {
+            when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
+            when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            PayoutOrderDTO.RequestForm form = new PayoutOrderDTO.RequestForm();
+            form.setRoundNo(1);
+            form.setReason("가".repeat(167)); // 501 bytes in UTF-8
+
+            ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> service.requestOrUpdatePayoutOrder(GROUP_ID, MEMBER_ID, form));
+
+            assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+            verify(mapper, never()).insertPayoutRequest(any(), any(), any(), any(), any());
+        }
+
+        @Test
         void confirmationConflictsUntilEveryActiveMemberHasAgreed() {
             when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
             when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
             when(mapper.selectPayoutRequestForUpdate(GROUP_ID, REQUEST_ID))
                     .thenReturn(payoutRequest("CONSENT_PENDING"));
+            when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
             when(mapper.countConfirmedRoundDuplicate(GROUP_ID, 2, REQUEST_ID)).thenReturn(0);
             when(mapper.countConfirmedRequestByMember(GROUP_ID, MEMBER_ID)).thenReturn(0);
             when(mapper.lockActiveConsentTargets(GROUP_ID, REQUEST_ID, MEMBER_ID)).thenReturn(List.of(30L));
@@ -141,6 +175,37 @@ class ProceduresWorkflowTest {
             assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
             verify(mapper, never()).updatePayoutRequestStatus(
                     GROUP_ID, REQUEST_ID, "CONSENT_PENDING", "CONFIRMED");
+        }
+
+        @Test
+        void confirmationRejectsInactiveApplicantAndEmptyConsentSnapshot() {
+            when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
+            when(mapper.selectPayoutRequestForUpdate(GROUP_ID, REQUEST_ID))
+                    .thenReturn(payoutRequest("CONSENT_PENDING"));
+            when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(0);
+
+            ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> service.confirmPayoutOrder(GROUP_ID, REQUEST_ID, OWNER_ID));
+
+            assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+            verify(mapper, never()).updatePayoutRequestStatus(any(), any(), any(), any());
+        }
+
+        @Test
+        void submitConsentReturnsNotFoundWhenRequestDoesNotExist() {
+            when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
+            when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.selectPayoutRequestForUpdate(GROUP_ID, REQUEST_ID)).thenReturn(null);
+
+            PayoutOrderDTO.ConsentForm form = new PayoutOrderDTO.ConsentForm();
+            form.setAgreedYn("Y");
+
+            ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> service.submitMemberConsent(GROUP_ID, REQUEST_ID, MEMBER_ID, form));
+
+            assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
         }
     }
 
@@ -189,6 +254,8 @@ class ProceduresWorkflowTest {
             when(mapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE"));
             when(mapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID))
                     .thenReturn(consentPendingRequest());
+            when(mapper.selectGyeMemberInfo(GROUP_ID, MEMBER_ID))
+                    .thenReturn(Map.of("STATUS", "ACTIVE"));
 
             service.reconfirmWithdrawal(GROUP_ID, REQUEST_ID, MEMBER_ID);
 
@@ -197,6 +264,22 @@ class ProceduresWorkflowTest {
                     OWNER_ID, "CONSENT_REQUEST", "중도 탈퇴 재확인 요청",
                     "탈퇴 신청 회원이 정산 및 탈퇴 처리 재확인을 요청했습니다.",
                     "/operations?groupId=" + GROUP_ID, REQUEST_ID);
+        }
+
+        @Test
+        void reconfirmRejectsWhenCountReachesColumnLimit() {
+            Map<String, Object> req = consentPendingRequest();
+            req.put("RECONFIRM_COUNT", 99);
+            when(mapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE"));
+            when(mapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID)).thenReturn(req);
+            when(mapper.selectGyeMemberInfo(GROUP_ID, MEMBER_ID))
+                    .thenReturn(Map.of("STATUS", "ACTIVE"));
+
+            ProcedureException error = assertThrows(ProcedureException.class,
+                    () -> service.reconfirmWithdrawal(GROUP_ID, REQUEST_ID, MEMBER_ID));
+
+            assertEquals(HttpStatus.CONFLICT, error.getStatus());
+            verify(mapper, never()).incrementReconfirmCount(REQUEST_ID);
         }
     }
 
