@@ -69,7 +69,7 @@ public class PayoutOrderService {
 
             // [예외 2] CONSENT_PENDING 중엔 수정 불가
             if ("CONSENT_PENDING".equals(currentStatus)) {
-                throw new IllegalStateException("이미 동의 요청 중입니다.");
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 동의 요청 중입니다.");
             }
 
             // REQUESTED 건이 있으면 수정 (회차·사유 갱신, 기존 CONSENT 삭제 후 재동의)
@@ -193,7 +193,8 @@ public class PayoutOrderService {
         // [검증 1] 회차 중복 확정 불가 검사
         int duplicateCount = payoutOrderMapper.countConfirmedRoundDuplicate(groupId, roundNo, payoutRequestId);
         if (duplicateCount > 0) {
-            throw new IllegalStateException("이미 다른 회원에게 확정된 회차입니다. 회차 중복 확정은 불가합니다.");
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "이미 다른 회원에게 확정된 회차입니다. 회차 중복 확정은 불가합니다.");
         }
         if (payoutOrderMapper.countConfirmedRequestByMember(groupId, applicantId) > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 수령 회차가 확정된 회원입니다.");
@@ -205,7 +206,7 @@ public class PayoutOrderService {
         int agreedMembers = payoutOrderMapper.countAgreedConsents(groupId, payoutRequestId, applicantId);
 
         if (agreedMembers < activeTargetMembers.size()) {
-            throw new IllegalStateException("영향받는 회원 전원의 동의가 필요해요.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "영향받는 회원 전원의 동의가 필요해요.");
         }
 
         // 신청 건 CONFIRMED 처리 및 모임원 확정 회차 반영

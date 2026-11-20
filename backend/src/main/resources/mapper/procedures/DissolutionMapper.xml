@@ -11,6 +11,14 @@
         WHERE GROUP_ID = #{groupId}
     </select>
 
+    <select id="countActiveMember" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_MEMBER
+        WHERE GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+          AND STATUS = 'ACTIVE'
+    </select>
+
     <!-- 해산 신청·승인·반려의 상태 전이를 직렬화 -->
     <select id="lockGroupForDissolution" resultType="map">
         SELECT GROUP_ID, OWNER_ID, TITLE, STATUS, AMOUNT, MAX_MEMBERS

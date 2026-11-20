@@ -22,8 +22,10 @@ public class DissolutionController {
 
     // [S10 ⑤] 특정 모임의 해산 상태 배지 및 상세 조회
     @GetMapping("/api/v1/groups/{groupId}/dissolution")
-    public ResponseEntity<DissolutionDTO.StatusResponse> getGroupDissolution(@PathVariable Long groupId) {
-        return ResponseEntity.ok(dissolutionService.getGroupDissolutionStatus(groupId));
+    public ResponseEntity<DissolutionDTO.StatusResponse> getGroupDissolution(
+            @PathVariable Long groupId, Authentication authentication) {
+        return ResponseEntity.ok(
+                dissolutionService.getGroupDissolutionStatus(groupId, loginMemberId(authentication)));
     }
 
     // [S10 ⑤ - 신청] 모임장의 계모임 해산 신청
