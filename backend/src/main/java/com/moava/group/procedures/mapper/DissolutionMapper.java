@@ -13,6 +13,9 @@ public interface DissolutionMapper {
     // 모임 기본 정보 및 OWNER_ID, STATUS 조회
     Map<String, Object> selectGroupInfo(@Param("groupId") Long groupId);
 
+    // 모임 행 잠금 후 상태 전이를 직렬화한다.
+    Map<String, Object> lockGroupForDissolution(@Param("groupId") Long groupId);
+
     // 모임의 현재 진행 중(PENDING)인 해산 신청 건 조회
     Map<String, Object> selectPendingDissolutionByGroup(@Param("groupId") Long groupId);
 
