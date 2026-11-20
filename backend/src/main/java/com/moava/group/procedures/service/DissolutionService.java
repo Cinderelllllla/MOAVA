@@ -24,7 +24,13 @@ public class DissolutionService {
      * 특정 모임의 해산 신청 현황 조회 (모임 운영 센터 현재 상태 배지 표시용)
      */
     @Transactional(readOnly = true)
-    public DissolutionDTO.StatusResponse getGroupDissolutionStatus(Long groupId) {
+    public DissolutionDTO.StatusResponse getGroupDissolutionStatus(Long groupId, Long memberId) {
+        if (dissolutionMapper.selectGroupInfo(groupId) == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        if (memberId == null || dissolutionMapper.countActiveMember(groupId, memberId) == 0) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 모임의 활성 회원만 조회할 수 있습니다.");
+        }
         DissolutionDTO.StatusResponse status = dissolutionMapper.selectLatestDissolutionByGroup(groupId);
         if (status != null) {
             populateRefundEstimate(status);
