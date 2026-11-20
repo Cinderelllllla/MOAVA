@@ -12,6 +12,7 @@ public interface WithdrawalMapper {
 
     // 모임 정보 및 모임장(OWNER_ID) 조회
     Map<String, Object> selectGroupInfo(@Param("groupId") Long groupId);
+    Map<String, Object> selectGroupInfoForUpdate(@Param("groupId") Long groupId);
 
     // 모임원의 참여 상태 및 기수령 여부(PAYOUT_RECEIVED_YN) 조회
     Map<String, Object> selectGyeMemberInfo(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
@@ -84,6 +85,12 @@ public interface WithdrawalMapper {
 
     // GYE_MEMBER 상태를 WITHDRAWN으로 변경 및 LEFT_AT 기록
     int updateGyeMemberWithdrawn(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
+
+    // 신청자의 미종결 납입 증빙(PENDING/REVISION) 건수 조회
+    int countUnconfirmedProofsByMember(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
+
+    // 탈퇴 승인 시 신청자의 진행 중(REQUESTED/CONSENT_PENDING) 수령 순서 신청 정리
+    int rejectOpenPayoutRequestsByMember(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
 
     // 신청자 제외 ACTIVE 회원 ID 목록 조회 (알림 발송용)
     List<Long> selectOtherActiveMemberIds(@Param("groupId") Long groupId, @Param("excludeMemberId") Long excludeMemberId);

@@ -133,14 +133,26 @@
                  )
     </insert>
 
+    <!-- 대상 회원의 현재 동의 응답 상태 조회 (미대상=null, 미응답='P', 응답완료='Y'/'N') -->
+    <select id="selectMemberConsentStatus" resultType="string">
+        SELECT AGREED_YN
+        FROM CONSENT
+        WHERE CONSENT_TYPE = 'ORDER'
+          AND GROUP_ID = #{groupId}
+          AND TARGET_ID = #{targetId}
+          AND MEMBER_ID = #{memberId}
+    </select>
+
     <!-- [동의] 실제 동의/거부 응답 시에만 값과 응답 시각을 기록 -->
     <update id="updateMemberConsent">
         UPDATE CONSENT
         SET AGREED_YN = #{agreedYn},
             AGREED_AT = SYSDATE
         WHERE CONSENT_TYPE = 'ORDER'
+          AND GROUP_ID = #{groupId}
           AND TARGET_ID = #{targetId}
           AND MEMBER_ID = #{memberId}
+          AND AGREED_YN = 'P'
           AND EXISTS (
               SELECT 1
               FROM PAYOUT_REQUEST pr
@@ -188,6 +200,28 @@
           AND STATUS = 'CONFIRMED'
           AND PAYOUT_REQUEST_ID != #{excludeRequestId}
     </select>
+
+    <!-- 같은 회차로 경합 중인 미확정 신청 건 조회 (확정 시 자동 반려 및 재조정 안내용) -->
+    <select id="selectCompetingOpenRequests" resultType="map">
+        SELECT PAYOUT_REQUEST_ID, MEMBER_ID
+        FROM PAYOUT_REQUEST
+        WHERE GROUP_ID = #{groupId}
+          AND ROUND_NO = #{roundNo}
+          AND STATUS IN ('REQUESTED', 'CONSENT_PENDING')
+          AND PAYOUT_REQUEST_ID != #{excludeRequestId}
+        FOR UPDATE
+    </select>
+
+    <!-- 같은 회차 확정 시 경합 중인 타 회원의 REQUESTED/CONSENT_PENDING 신청을 자동 REJECTED 처리 -->
+    <update id="rejectCompetingOpenRequests">
+        UPDATE PAYOUT_REQUEST
+        SET STATUS = 'REJECTED',
+            DECIDED_AT = SYSDATE
+        WHERE GROUP_ID = #{groupId}
+          AND ROUND_NO = #{roundNo}
+          AND STATUS IN ('REQUESTED', 'CONSENT_PENDING')
+          AND PAYOUT_REQUEST_ID != #{excludeRequestId}
+    </update>
 
     <!-- [수정 2] GYE_MEMBER.PAYOUT_ROUND 컬럼 없음 반영:
          PAYOUT_REQUEST에서 STATUS='CONFIRMED'를 받지 못한 ACTIVE 회원 수 조회 -->
@@ -279,12 +313,13 @@
         ORDER BY pr.ROUND_NO ASC, pr.CREATED_AT DESC
     </select>
 
-    <!-- [수정 5] NOTIFICATION: NOTIF_TYPE (NOT NULL) 컬럼 추가 -->
+    <!-- NOTIFICATION: NOTIF_TYPE, LINK_PAGE, REF_ID 포함 저장 -->
     <insert id="insertNotification">
         INSERT INTO NOTIFICATION (
-            NOTIFICATION_ID, MEMBER_ID, NOTIF_TYPE, TITLE, BODY, READ_YN, DELETED_YN, SMS_SENT_YN, CREATED_AT
+            NOTIFICATION_ID, MEMBER_ID, NOTIF_TYPE, TITLE, BODY, LINK_PAGE, REF_ID, READ_YN, DELETED_YN, SMS_SENT_YN, CREATED_AT
         ) VALUES (
-                     SEQ_NOTIFICATION.NEXTVAL, #{memberId}, #{notifType}, #{title}, #{body}, 'N', 'N', 'N', SYSDATE
+                     SEQ_NOTIFICATION.NEXTVAL, #{memberId}, #{notifType}, #{title}, #{body},
+                     #{linkPage, jdbcType=VARCHAR}, #{refId, jdbcType=NUMERIC}, 'N', 'N', 'N', SYSDATE
                  )
     </insert>
 
