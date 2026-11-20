@@ -12,6 +12,7 @@ public interface WithdrawalMapper {
 
     // 모임 정보 및 모임장(OWNER_ID) 조회
     Map<String, Object> selectGroupInfo(@Param("groupId") Long groupId);
+    Map<String, Object> selectGroupInfoForUpdate(@Param("groupId") Long groupId);
 
     // 모임원의 참여 상태 및 기수령 여부(PAYOUT_RECEIVED_YN) 조회
     Map<String, Object> selectGyeMemberInfo(@Param("groupId") Long groupId, @Param("memberId") Long memberId);

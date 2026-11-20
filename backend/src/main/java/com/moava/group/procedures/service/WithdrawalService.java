@@ -40,7 +40,7 @@ public class WithdrawalService {
         if (form == null || memberId == null) {
             throw new IllegalArgumentException("탈퇴 신청 정보를 확인해 주세요.");
         }
-        Map<String, Object> groupInfo = getGroupInfo(groupId);
+        Map<String, Object> groupInfo = getActiveGroupForUpdate(groupId);
         requireActiveGroup(groupInfo);
 
         Long ownerId = getLong(groupInfo, "OWNER_ID");
@@ -117,7 +117,7 @@ public class WithdrawalService {
         if (form == null || leaderId == null) {
             throw new IllegalArgumentException("정산안 정보를 확인해 주세요.");
         }
-        Map<String, Object> groupInfo = getGroupInfo(groupId);
+        Map<String, Object> groupInfo = getActiveGroupForUpdate(groupId);
         requireActiveGroup(groupInfo);
 
         Long ownerId = getLong(groupInfo, "OWNER_ID");
@@ -191,6 +191,7 @@ public class WithdrawalService {
         if (memberId == null || form == null) {
             throw new IllegalArgumentException("동의 정보를 확인해 주세요.");
         }
+        requireActiveGroup(getActiveGroupForUpdate(groupId));
         Map<String, Object> req = getWithdrawalRequestForUpdate(groupId, withdrawalRequestId);
         requireStatus(req, "CONSENT_PENDING");
 
@@ -269,6 +270,7 @@ public class WithdrawalService {
             throw new IllegalStateException("활성 관리자만 동의 의무를 면제할 수 있습니다.");
         }
 
+        requireActiveGroup(getActiveGroupForUpdate(groupId));
         Map<String, Object> req = getWithdrawalRequestForUpdate(groupId, withdrawalRequestId);
         requireStatus(req, "CONSENT_PENDING");
         if (withdrawalMapper.exemptSettlementConsentTarget(
@@ -293,7 +295,9 @@ public class WithdrawalService {
         if (memberId == null) {
             throw new IllegalArgumentException("로그인 정보를 확인해 주세요.");
         }
-        Map<String, Object> req = getWithdrawalRequest(groupId, withdrawalRequestId);
+        Map<String, Object> groupInfo = getActiveGroupForUpdate(groupId);
+        requireActiveGroup(groupInfo);
+        Map<String, Object> req = getWithdrawalRequestForUpdate(groupId, withdrawalRequestId);
         requireStatus(req, "SETTLEMENT_PENDING", "CONSENT_PENDING");
 
         Long applicantId = getLong(req, "MEMBER_ID");
@@ -303,7 +307,7 @@ public class WithdrawalService {
 
         withdrawalMapper.incrementReconfirmCount(withdrawalRequestId);
 
-        Long ownerId = getLong(getGroupInfo(groupId), "OWNER_ID");
+        Long ownerId = getLong(groupInfo, "OWNER_ID");
 
         withdrawalMapper.insertNotification(
                 ownerId,
@@ -323,7 +327,8 @@ public class WithdrawalService {
         if (leaderId == null) {
             throw new IllegalArgumentException("로그인 정보를 확인해 주세요.");
         }
-        Map<String, Object> groupInfo = getGroupInfo(groupId);
+        Map<String, Object> groupInfo = getActiveGroupForUpdate(groupId);
+        requireActiveGroup(groupInfo);
 
         Long ownerId = getLong(groupInfo, "OWNER_ID");
         if (!ownerId.equals(leaderId)) {
@@ -386,6 +391,14 @@ public class WithdrawalService {
 
     private Map<String, Object> getGroupInfo(Long groupId) {
         Map<String, Object> groupInfo = withdrawalMapper.selectGroupInfo(groupId);
+        if (groupInfo == null) {
+            throw new IllegalArgumentException("존재하지 않는 모임입니다.");
+        }
+        return groupInfo;
+    }
+
+    private Map<String, Object> getActiveGroupForUpdate(Long groupId) {
+        Map<String, Object> groupInfo = withdrawalMapper.selectGroupInfoForUpdate(groupId);
         if (groupInfo == null) {
             throw new IllegalArgumentException("존재하지 않는 모임입니다.");
         }

@@ -11,6 +11,13 @@
         WHERE GROUP_ID = #{groupId}
     </select>
 
+    <select id="selectGroupInfoForUpdate" resultType="map">
+        SELECT GROUP_ID, OWNER_ID, STATUS
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        FOR UPDATE
+    </select>
+
     <!-- 모임원 참여 상태 및 수령 완료 여부(PAYOUT_RECEIVED_YN) 조회 -->
     <select id="selectGyeMemberInfo" resultType="map">
         SELECT GYE_MEMBER_ID, GROUP_ID, MEMBER_ID, STATUS, PAYOUT_RECEIVED_YN
