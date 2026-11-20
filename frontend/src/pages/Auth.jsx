@@ -188,13 +188,6 @@ export function Login() {
         </button>
       </form>
 
-      <div
-        className="info mini"
-        style={{ marginTop: 18 }}
-      >
-        Spring Boot 인증 서버와 연결된 로그인입니다.
-      </div>
-
       <div className="auth-link">
         아직 계정이 없나요?{' '}
         <Link
@@ -222,8 +215,8 @@ export function Signup() {
     email: '',
     password: '',
     phone: '',
-    regionSido: '서울',
-    regionSigungu: '마포구',
+    regionSido: '',
+    regionSigungu: '',
     termsAgreed: false,
     privacyAgreed: false
   });
@@ -336,6 +329,7 @@ export function Signup() {
           <Input
             label="활동 지역 · 시/도"
             name="regionSido"
+            placeholder="예: 서울"
             required
             value={f.regionSido}
             onChange={on('regionSido')}
@@ -344,6 +338,7 @@ export function Signup() {
           <Input
             label="활동 지역 · 시/군/구"
             name="regionSigungu"
+            placeholder="예: 마포구"
             required
             value={f.regionSigungu}
             onChange={on('regionSigungu')}

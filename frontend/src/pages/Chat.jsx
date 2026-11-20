@@ -3,11 +3,20 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
 import { groups, proofs, me, memberName } from '../api';
-import { PageHead } from '../components/ui';
+import { Link } from 'react-router-dom';
+import { PageHead, ComingSoon } from '../components/ui';
 import { useOpGroup } from '../components/shared';
 import { won } from '../common/format';
 
+// TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거 — 모임별 실시간 채팅 (아래 ChatMock 참고)
 export default function Chat() {
+  return <ComingSoon kicker="GROUP CHAT" title="모임별 채팅 · 협의" text="모임별 채팅은 아직 준비 중이에요.">
+    <Link className="btn soft" to="/my-groups">내 계모임</Link>
+  </ComingSoon>;
+}
+
+// eslint-disable-next-line no-unused-vars -- 서버 API 연결 시 참고용 목업 화면 (현재 화면에서 사용하지 않음)
+function ChatMock() {
   const { run } = useApp(); const nav = useNavigate(); const [g, setGroup] = useOpGroup(); const mine = groups.myGroups();
   const [text, setText] = useState(''); const log = useRef();
   const msgs = g ? proofs.messages(g.id) : [];
