@@ -2,8 +2,12 @@ package com.moava.group.procedures.controller;
 
 import com.moava.group.procedures.dto.PayoutOrderDTO;
 import com.moava.group.procedures.service.PayoutOrderService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -23,17 +27,18 @@ public class PayoutOrderController {
     @GetMapping
     public ResponseEntity<List<PayoutOrderDTO.StatusResponse>> getPayoutRequestList(
             @PathVariable Long groupId,
-            @RequestHeader("X-Member-Id") Long memberId) {
-        return ResponseEntity.ok(payoutOrderService.getPayoutOrderList(groupId, memberId));
+            Authentication authentication) {
+        return ResponseEntity.ok(payoutOrderService.getPayoutOrderList(groupId, loginMemberId(authentication)));
     }
 
     // 2. 회원의 수령 순서 신청 및 수정 (REQUESTED)
     @PostMapping
     public ResponseEntity requestOrUpdateOrder(
             @PathVariable Long groupId,
-            @RequestHeader("X-Member-Id") Long memberId,
+            Authentication authentication,
             @RequestBody PayoutOrderDTO.RequestForm form) {
-        String message = payoutOrderService.requestOrUpdatePayoutOrder(groupId, memberId, form);
+        String message = payoutOrderService.requestOrUpdatePayoutOrder(
+                groupId, loginMemberId(authentication), form);
         return ResponseEntity.ok(Map.of("message", message));
     }
 
@@ -42,8 +47,8 @@ public class PayoutOrderController {
     public ResponseEntity requestConsent(
             @PathVariable Long groupId,
             @PathVariable Long requestId,
-            @RequestHeader("X-Member-Id") Long memberId) {
-        payoutOrderService.requestConsentByLeader(groupId, requestId, memberId);
+            Authentication authentication) {
+        payoutOrderService.requestConsentByLeader(groupId, requestId, loginMemberId(authentication));
         return ResponseEntity.ok(Map.of("message", "신청자 제외 전원에게 동의 요청 알림을 발송했습니다."));
     }
 
@@ -52,9 +57,10 @@ public class PayoutOrderController {
     public ResponseEntity submitConsent(
             @PathVariable Long groupId,
             @PathVariable Long requestId,
-            @RequestHeader("X-Member-Id") Long memberId,
+            Authentication authentication,
             @RequestBody PayoutOrderDTO.ConsentForm form) {
-        String message = payoutOrderService.submitMemberConsent(groupId, requestId, memberId, form);
+        String message = payoutOrderService.submitMemberConsent(
+                groupId, requestId, loginMemberId(authentication), form);
         return ResponseEntity.ok(Map.of("message", message));
     }
 
@@ -63,8 +69,19 @@ public class PayoutOrderController {
     public ResponseEntity confirmOrder(
             @PathVariable Long groupId,
             @PathVariable Long requestId,
-            @RequestHeader("X-Member-Id") Long memberId) {
-        payoutOrderService.confirmPayoutOrder(groupId, requestId, memberId);
+            Authentication authentication) {
+        payoutOrderService.confirmPayoutOrder(groupId, requestId, loginMemberId(authentication));
         return ResponseEntity.ok(Map.of("message", "수령 순서가 최종 확정되었습니다."));
+    }
+
+    private static Long loginMemberId(Authentication authentication) {
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
+        }
+        try {
+            return Long.valueOf(authentication.getName());
+        } catch (NumberFormatException e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인 정보가 올바르지 않습니다.");
+        }
     }
 }
