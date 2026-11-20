@@ -25,8 +25,8 @@ public class NotificationCleanupService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationCleanupService.class);
 
-    static final int READ_RETENTION_DAYS = 30;
-    static final int UNREAD_RETENTION_DAYS = 90;
+    static final int READ_RETENTION_DAYS = 14;
+    static final int UNREAD_RETENTION_DAYS = 30;
 
     private final NotificationCleanupMapper mapper;
     private final boolean enabled;
