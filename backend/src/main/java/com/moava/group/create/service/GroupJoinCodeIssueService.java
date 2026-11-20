@@ -1,23 +1,27 @@
 
 package com.moava.group.create.service;
 
+import com.moava.crypto.service.CryptoKeyService;
 import com.moava.group.create.mapper.GroupJoinCodeIssueMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.moava.group.create.dto.GroupJoinCodeIssueResponse;
 
 import java.util.Map;
 
 @Service
 public class GroupJoinCodeIssueService {
 
-    private final GroupJoinCodeIssueMapper mapper;
+        private final GroupJoinCodeIssueMapper mapper;
+        private final CryptoKeyService cryptoKeyService;
 
-    public GroupJoinCodeIssueService(
-            GroupJoinCodeIssueMapper mapper
-    ) {
+        public GroupJoinCodeIssueService(
+                GroupJoinCodeIssueMapper mapper,
+                CryptoKeyService cryptoKeyService
+        ) {
         this.mapper = mapper;
-    }
-
+        this.cryptoKeyService = cryptoKeyService;
+        }
     /**
      * 인증코드 발급 전 모임장 권한 및 모임 상태 확인
      *
@@ -95,29 +99,64 @@ public class GroupJoinCodeIssueService {
      *
      * 현재는 실제 발급 API에서 호출하지 않는다.
      */
-    @Transactional
-    public void prepareJoinCodeIssue(
-            Long groupId,
-            Long memberId
-    ) {
 
-        // 모임장 및 비공개 모임 확인
-        validateIssuePermission(groupId, memberId);
+        @Transactional
+        public GroupJoinCodeIssueResponse prepareJoinCodeIssue(
+                Long groupId,
+                Long memberId
+        ) {
+        // 1. 모임장 권한 및 PRIVATE 여부 확인
+        int currentVersion =
+                validateIssuePermission(groupId, memberId);
 
-        // 6자리 인증코드 생성
-        String joinCode = GroupJoinCodeGenerator.generate();
-
-        // 코드 형식 검증
-        if (!joinCode.matches("[0-9]{6}")) {
-            throw new IllegalStateException(
-                    "인증코드 생성에 실패했습니다."
-            );
+        // DDL: JOIN_CODE_VERSION NUMBER(3)
+        if (currentVersion >= 999) {
+                throw new IllegalStateException(
+                        "인증코드 재발급 가능 횟수를 초과했습니다."
+                );
         }
 
-        // 실제 발급은 아직 지원하지 않음
-        throw new UnsupportedOperationException(
-                "인증코드 발급은 보안팀 암호화 키 관리 연동 후 사용할 수 있습니다."
+        // 2. 6자리 인증코드 생성
+        String joinCode = GroupJoinCodeGenerator.generate();
+
+        if (!joinCode.matches("[0-9]{6}")) {
+                throw new IllegalStateException(
+                        "인증코드 생성에 실패했습니다."
+                );
+        }
+
+        // 3. 보안팀 공통 암호화 키 버전 조회
+        int keyVersion =
+                cryptoKeyService.getCurrentKeyVersion();
+
+        // 4. AES-256-GCM 암호화
+        String encryptedCode =
+                cryptoKeyService.encrypt(joinCode, keyVersion);
+
+        // 5. 암호문 및 키 버전 저장
+        // JOIN_CODE_VERSION은 Mapper SQL에서 +1
+        int updatedRows = mapper.updateJoinCode(
+                groupId,
+                memberId,
+                encryptedCode,
+                keyVersion
         );
-    }
+
+        if (updatedRows != 1) {
+                throw new IllegalStateException(
+                        "인증코드 저장에 실패했습니다."
+                );
+        }
+
+        // 6. 모임장에게 발급 결과 반환
+        return new GroupJoinCodeIssueResponse(
+                groupId,
+                joinCode,
+                currentVersion + 1,
+                null,
+                "인증코드가 발급되었습니다."
+        );
+        }
+
 
 }
