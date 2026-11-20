@@ -5,12 +5,29 @@ import { useApp } from '../common/store';
 import { finance, groups, joined, leader, memberName, activeJoined, db } from '../api';
 import { won, krw, signed } from '../common/format';
 import { Empty } from './ui';
+import { INCOME_CAP_RATIO, AMOUNT_UNIT_MANWON } from '../common/policy';
 
 export function BarChart({ data, limit }) {
+  if (!data?.length) return <Empty>아직 월별 기록이 없어요. 월별 금융 데이터에서 수입·지출을 저장해 보세요.</Empty>;
   const a = limit ? data.slice(-limit) : data, max = Math.max(1, ...a.flatMap(x => [x.income, x.expense]));
   return <><div className="chart">{a.map(x => <div className="bar-pair" key={x.month}><div className="bar income" style={{ height: `${x.income / max * 100}%` }} title={`수입 ${x.income}만 원`} /><div className="bar expense" style={{ height: `${x.expense / max * 100}%` }} title={`지출 ${x.expense}만 원`} /></div>)}</div>
     <div className="chart-labels">{a.map(x => <span key={x.month}>{x.month}</span>)}</div>
     <p className="muted mini" style={{ textAlign: 'right', marginTop: 12 }}>● 수입(진한 색)　● 지출(연한 색) · 단위: 만 원{limit ? ` · 최근 ${a.length}개월` : ''}</p></>;
+}
+
+/** 서버 목록 공통 상태 표시: 불러오는 중 / 오류 + 다시 시도. 정상이면 children 을 그린다. */
+export function LoadState({ status, error, onRetry, loadingText = '불러오는 중이에요.', children }) {
+  if (status === 'loading') return <div className="empty" role="status">{loadingText}</div>;
+  if (status === 'error') return <div className="empty warning" role="alert">{error || '불러오지 못했어요.'}{onRetry && <>{' '}<button type="button" className="btn small soft" onClick={onRetry}>다시 시도</button></>}</div>;
+  return children;
+}
+
+/** 월별 수입·지출 차트 (서버 값만). 불러오는 중·실패·기록 없음 상태를 함께 보여 준다. */
+export function MonthlyChart({ limit }) {
+  const { status, items, error } = finance.getMonthlyState();
+  return <LoadState status={status} error={error} onRetry={() => finance.refreshMonthly().catch(() => {})} loadingText="월별 기록을 불러오는 중이에요.">
+    <BarChart data={items} limit={limit} />
+  </LoadState>;
 }
 
 export function GroupCard({ g, selected, onSelect, onSim }) {
@@ -44,22 +61,23 @@ export function InlineSimulator({ g, onClose }) {
     <p className="muted mini">수령 순서에 따른 가상 보정 계산이며 실제 이자나 지급액이 아닙니다.</p><div className="actions"><button className="btn soft" onClick={onClose}>← 모임 상세로 돌아가기</button></div></div>;
 }
 
+/** 연체 위험 등급 패널. AI 분석 결과가 있을 때만 등급·추천액을 보여 주고, 없으면 분석 안내만 한다(가정 등급을 쓰지 않음). */
 export function RiskPanel({ compact }) {
-  const { run } = useApp(); const f = finance.getFinance(), a = finance.affordability(), free = Math.max(0, a.free);
-  const assessment = finance.getMlAssessment();
-  return <div className="policy-panel" style={{ marginTop: 0 }}><h3>연체 위험 등급 <span className="policy-tag">{assessment ? 'ML 모델 분석' : '데모 가정'}</span></h3>
-    {assessment ? <p className="muted mini">FastAPI 분석 결과 · 연체 확률 {(assessment.risk.default_probability * 100).toFixed(1)}% · 안전계수 {assessment.risk.safety_factor} · {assessment.risk.source === 'persona' ? '가상 인물 데이터' : '입력 지표 분석'}</p>
-      : <p className="muted mini">금융정보 이용 동의 후 실행되는 FastAPI 모델 분석 결과가 없을 때는 데모 등급을 사용합니다.</p>}
-    {!assessment && <div className="field" style={{ maxWidth: 420 }}><label>위험 등급 (데모)</label><select value={f.risk} onChange={e => run(() => finance.setRisk(e.target.value), `위험 등급을 ${e.target.value}로 바꿨어요. 데모 가정입니다.`)}>{Object.entries(finance.RISK).map(([k, v]) => <option key={k} value={k}>{k} · 안전계수 {v.coef} · {v.prob}</option>)}</select></div>}
-    {!compact && <p className="info mini" style={{ marginTop: 12 }}>추천 월 납입액 <b>{won(a.rec)}</b>{assessment ? ` · ML 모델 기준${a.capped ? ' · 월수입 상한 적용' : ''}` : <> · 데모 계산: min( (월수입 − 지출 − 저축 − 비상금) × 안전계수, 월수입 × 12% )<br />= min( {won(free)} × {finance.riskCoef()}, {won(f.income)} × 0.12 ) (5만 원 단위 내림){a.capped && ' · 월수입 12% 상한 적용'}</>}</p>}</div>;
+  const nav = useNavigate();
+  const assessment = finance.getMlAssessment(), a = finance.affordability();
+  const unit = AMOUNT_UNIT_MANWON, cap = Math.round(INCOME_CAP_RATIO * 100);
+  return <div className="policy-panel" style={{ marginTop: 0 }}><h3>연체 위험 등급 {assessment && <span className="policy-tag">AI 분석</span>}</h3>
+    {assessment ? <p className="muted mini">위험 등급 <b>{assessment.risk.risk_label}</b> · 연체 확률 {(assessment.risk.default_probability * 100).toFixed(1)}% · 안전계수 {assessment.risk.safety_factor}</p>
+      : <><p className="muted mini">아직 분석 결과가 없어요. 맞춤 추천에서 금융정보를 입력하고 이용에 동의하면 AI가 위험 등급과 추천 납입액을 계산해 드려요.</p><div className="actions"><button type="button" className="btn small soft" onClick={() => nav('/journey')}>맞춤 추천 시작 →</button></div></>}
+    {!compact && assessment && a && <p className="info mini" style={{ marginTop: 12 }}>추천 월 납입액 <b>{won(a.rec)}</b>{a.capped ? ` · 월수입 ${cap}% 상한 적용` : ''}<br />계산 방식: min( 월 가용 금액 × 안전계수, 월수입 × {cap}% )을 {unit}만 원 단위로 내림</p>}</div>;
 }
-export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return <>위험 등급 <b>{finance.getFinance().risk}</b>{assessment ? ` · 연체 확률 ${(assessment.risk.default_probability * 100).toFixed(1)}% · ML 모델` : ` 가정 · 안전계수 ${finance.riskCoef()} · 데모`}</>; };
+export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return assessment ? <>위험 등급 <b>{assessment.risk.risk_label}</b> · 연체 확률 {(assessment.risk.default_probability * 100).toFixed(1)}%</> : <>아직 위험 등급 분석 전이에요.</>; };
 
 export function FinanceAssessmentStatus({ status, error, retry }) {
-  const text = status === 'loading' ? 'ML 금융 분석을 요청 중입니다.'
-    : status === 'success' ? 'ML 금융 분석이 완료되었습니다.'
-      : status === 'error' ? `ML 금융 분석 실패: ${error}`
-        : '금융정보 이용 동의 후 ML 분석을 실행합니다.';
+  const text = status === 'loading' ? 'AI가 금융정보를 분석하고 있어요.'
+    : status === 'success' ? 'AI 금융 분석이 끝났어요.'
+      : status === 'error' ? `금융 분석을 하지 못했어요. ${error}`
+        : '금융정보를 입력하고 이용에 동의하면 AI 분석을 시작해요.';
   return <p className={`info mini finance-api-status ${status === 'error' ? 'warning' : ''}`} role={status === 'error' ? 'alert' : 'status'}>
     {text}{status === 'error' && <>{' '}<button type="button" className="btn small soft" onClick={retry}>다시 시도</button></>}
   </p>;
