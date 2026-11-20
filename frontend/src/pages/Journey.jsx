@@ -8,7 +8,6 @@ import { PageHead, Card, Input } from '../components/ui';
 import { FinanceAssessmentStatus, GroupCard, GroupInfo, InlineSimulator, RiskPanel, RiskLabel } from '../components/shared';
 import { won } from '../common/format';
 import { useEffect } from 'react';
-import { apiFetch, getToken } from '../api/client';
 
 const STEPS = ['금융 정보 입력', '소비 분석', '납입액 추천', '모임 추천'];
 const FIELDS = [['income', '월수입'], ['fixed', '고정지출'], ['variable', '변동지출'], ['saving', '기존 저축액'], ['reserve', '비상예비금'], ['goal', '희망 월 납입액']];
@@ -23,12 +22,11 @@ export default function Journey() {
   // F07 지출 기본값 제안: 월수입 입력이 0.6초 멈추면 비슷한 소득대 평균 지출을 조회(안내만, 입력값은 바꾸지 않음)
   const [spendHint, setSpendHint] = useState(null);
   useEffect(() => {
-    const income = Number(f.income);
-    if (step !== 1 || !getToken() || f.income === '' || !Number.isFinite(income) || income <= 0) { setSpendHint(null); return; }
+    if (step !== 1 || f.income === '') { setSpendHint(null); return; }
     let alive = true;
     const timer = setTimeout(() => {
-      apiFetch(`/api/v1/finance/spending-defaults?income=${Math.round(income * 10000)}`)
-        .then(d => { if (alive) setSpendHint(d?.available ? d : null); })
+      finance.getSpendingDefaults(f.income)
+        .then(d => { if (alive) setSpendHint(d); })
         .catch(() => { if (alive) setSpendHint(null); });
     }, 600);
     return () => { alive = false; clearTimeout(timer); };
@@ -38,7 +36,7 @@ export default function Journey() {
   let content;
   if (step === 1) content = <form noValidate onSubmit={e => { e.preventDefault(); if (consent) run(() => finance.saveFinance(f)); }}>
     <div className="form-grid">{FIELDS.map(([k, t]) => <Input key={k} label={`${t} (만 원)`} name={k} type="number" min={0} required value={f[k]} onChange={e => setF({ ...f, [k]: e.target.value })} />)}</div>
-    {spendHint && <p className="muted mini" style={{ marginTop: 10 }}>비슷한 소득대 평균 소비지출 {won(Math.round(Number(spendHint.avgConsumption) / 10000))} · 비소비지출 {won(Math.round(Number(spendHint.avgNonconsumption) / 10000))}</p>}
+    {spendHint && <p className="muted mini" style={{ marginTop: 10 }}>비슷한 소득대 평균 소비지출 {won(spendHint.consumption)} · 비소비지출 {won(spendHint.nonconsumption)}</p>}
     <label className="checkline"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /><span><b>금융정보 분석 및 추천 목적의 데이터 이용에 동의합니다.</b></span></label>
     <div className="actions"><button className="btn primary" disabled={!valid}>다음 단계 →</button></div></form>;
   if (step === 2) content = <><h2>입력 데이터 분석</h2><FinanceAssessmentStatus {...mlAssessment} /><div className="grid cols3">{[['월수입', won(f0.income)], ['월지출', won(f0.fixed + f0.variable)], ['가용 금액', won(a.free)]].map(([t, v]) => <Card key={t}><small>{t}</small><div className="metric">{v}</div></Card>)}</div><p className="info journey-analysis-note"><RiskLabel /><br />금액은 입력값에 따른 참고 분석이며 실제 금융 건전성을 보장하지 않습니다.</p><div className="actions"><button className="btn soft" onClick={() => goStep(1)}>← 이전</button><button className="btn primary" onClick={() => goStep(3)}>분석 확인 · 다음 →</button></div></>;

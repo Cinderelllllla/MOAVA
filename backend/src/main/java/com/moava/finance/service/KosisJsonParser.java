@@ -24,7 +24,7 @@ public final class KosisJsonParser {
             throw new IllegalStateException("KOSIS 응답이 비어 있습니다.");
         }
         String body = text.strip();
-        if (body.startsWith("﻿")) {
+        if (body.startsWith("﻿")) { // 응답 맨 앞의 BOM(눈에 안 보이는 표시 문자) 제거
             body = body.substring(1);
         }
         if (body.startsWith("{")) {
