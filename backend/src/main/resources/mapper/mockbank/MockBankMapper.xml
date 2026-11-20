@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.mockbank.MockBankMapper">
+
+    <update id="revokeActiveCertificatesByUserId">
+        UPDATE MOCK_CERTIFICATES
+        SET STATUS = 'REVOKED'
+        WHERE USER_ID = #{userId}
+          AND STATUS = 'ACTIVE'
+    </update>
+
+    <insert id="insertCertificate" parameterType="com.moava.mockbank.MockBankDto$CertificateRecord">
+        INSERT INTO MOCK_CERTIFICATES (
+            USER_ID, SERIAL_NO, PUBLIC_KEY, STATUS, ISSUED_AT, EXPIRES_AT
+        ) VALUES (
+                     #{userId}, #{serialNo}, #{publicKey}, #{status}, SYSTIMESTAMP, #{expiresAt, jdbcType=TIMESTAMP}
+                 )
+    </insert>
+
+    <select id="findActiveCertificateBySerialNo"
+            resultType="com.moava.mockbank.MockBankDto$CertificateRecord">
+        SELECT
+            CERT_ID    AS certId,
+            USER_ID    AS userId,
+            SERIAL_NO  AS serialNo,
+            PUBLIC_KEY AS publicKey,
+            STATUS     AS status,
+            ISSUED_AT  AS issuedAt,
+            EXPIRES_AT AS expiresAt
+        FROM MOCK_CERTIFICATES
+        WHERE SERIAL_NO = #{serialNo}
+          AND STATUS = 'ACTIVE'
+    </select>
+
+    <insert id="insertChallenge" parameterType="com.moava.mockbank.MockBankDto$ChallengeRecord">
+        INSERT INTO MOCK_CHALLENGES (
+            NONCE, USER_ID, ACCOUNT_NO, SCOPE, CONSENT_TEXT, USED_YN, EXPIRES_AT
+        ) VALUES (
+                     #{nonce}, #{userId}, #{accountNo}, #{scope}, #{consentText}, #{usedYn}, #{expiresAt, jdbcType=TIMESTAMP}
+                 )
+    </insert>
+
+    <select id="findChallengeByNonce"
+            resultType="com.moava.mockbank.MockBankDto$ChallengeRecord">
+        SELECT
+            NONCE        AS nonce,
+            USER_ID      AS userId,
+            ACCOUNT_NO   AS accountNo,
+            SCOPE        AS scope,
+            CONSENT_TEXT AS consentText,
+            USED_YN      AS usedYn,
+            EXPIRES_AT   AS expiresAt
+        FROM MOCK_CHALLENGES
+        WHERE NONCE = #{nonce}
+    </select>
+
+    <update id="markChallengeUsed">
+        UPDATE MOCK_CHALLENGES
+        SET USED_YN = 'Y'
+        WHERE NONCE = #{nonce}
+          AND USED_YN = 'N'
+          AND EXPIRES_AT &gt;= SYSTIMESTAMP
+    </update>
+
+    <insert id="insertConsentToken" parameterType="com.moava.mockbank.MockBankDto$ConsentTokenRecord">
+        INSERT INTO MOCK_CONSENT_TOKENS (
+            TOKEN_ID, USER_ID, ACCOUNT_NO, SCOPE, VALID_FROM, USED_YN, SIGNATURE_HASH, CREATED_AT, EXPIRES_AT
+        ) VALUES (
+                     #{tokenId}, #{userId}, #{accountNo}, #{scope}, #{validFrom, jdbcType=TIMESTAMP},
+                     #{usedYn}, #{signatureHash}, SYSTIMESTAMP, #{expiresAt, jdbcType=TIMESTAMP}
+                 )
+    </insert>
+
+    <select id="findConsentTokenById"
+            resultType="com.moava.mockbank.MockBankDto$ConsentTokenRecord">
+        SELECT
+            TOKEN_ID       AS tokenId,
+            USER_ID        AS userId,
+            ACCOUNT_NO     AS accountNo,
+            SCOPE          AS scope,
+            VALID_FROM     AS validFrom,
+            USED_YN        AS usedYn,
+            SIGNATURE_HASH AS signatureHash,
+            CREATED_AT     AS createdAt,
+            EXPIRES_AT     AS expiresAt
+        FROM MOCK_CONSENT_TOKENS
+        WHERE TOKEN_ID = #{tokenId}
+    </select>
+
+    <update id="markTokenUsed">
+        UPDATE MOCK_CONSENT_TOKENS
+        SET USED_YN = 'Y'
+        WHERE TOKEN_ID = #{tokenId}
+          AND USED_YN = 'N'
+    </update>
+
+    <select id="findTransactions"
+            resultType="com.moava.mockbank.MockBankDto$TransactionDto">
+        SELECT
+            BANK_TX_ID    AS bankTxId,
+            ACCOUNT_NO    AS accountNo,
+            TX_TYPE       AS txType,
+            AMOUNT        AS amount,
+            BALANCE_AFTER AS balanceAfter,
+            COUNTERPARTY  AS counterparty,
+            TX_AT         AS txAt
+        FROM MOCK_TRANSACTIONS
+        WHERE ACCOUNT_NO = #{accountNo}
+          AND TX_AT &gt;= #{from, jdbcType=TIMESTAMP}
+          AND TX_AT &lt;= #{to, jdbcType=TIMESTAMP}
+        ORDER BY TX_AT ASC
+    </select>
+
+</mapper>

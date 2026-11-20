@@ -49,7 +49,8 @@ public class SecurityConfig {
                     "/assets/**",
                     "/favicon.ico",
                     //test용 API
-                    "/api/test"
+                    "/api/test",
+                        "/api/mock-bank/**"
                 ).permitAll()
                 .requestMatchers(
                     "/api/auth/signup",
