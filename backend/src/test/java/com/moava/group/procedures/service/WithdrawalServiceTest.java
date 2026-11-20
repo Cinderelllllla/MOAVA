@@ -1,5 +1,6 @@
 package com.moava.group.procedures.service;
 
+import com.moava.group.procedures.dto.WithdrawalDTO;
 import com.moava.group.procedures.mapper.WithdrawalMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -78,8 +79,44 @@ class WithdrawalServiceTest {
                 eq(GROUP_ID), eq(ADMIN_ID), eq(TARGET_ID), eq("WITHDRAW_CONSENT_EXEMPT"), anyString());
     }
 
+    @Test
+    void requestWithdrawalRejectsGroupThatIsNotActive() {
+        when(withdrawalMapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo("DISSOLVED"));
+
+        assertThrows(IllegalStateException.class,
+                () -> withdrawalService.requestWithdrawal(GROUP_ID, APPLICANT_ID, validApplyForm()));
+
+        verify(withdrawalMapper, never()).insertWithdrawalRequest(
+                eq(GROUP_ID), eq(APPLICANT_ID), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void registerSettlementRejectsGroupThatIsNotActive() {
+        when(withdrawalMapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo("DISSOLVE_PENDING"));
+        WithdrawalDTO.SettlementForm form = new WithdrawalDTO.SettlementForm();
+        form.setSettlementAmount(10000L);
+        form.setSettlementMemo("정산 근거");
+
+        assertThrows(IllegalStateException.class,
+                () -> withdrawalService.registerSettlementPlan(GROUP_ID, REQUEST_ID, OWNER_ID, form));
+
+        verify(withdrawalMapper, never()).updateSettlementPlan(
+                eq(GROUP_ID), eq(REQUEST_ID), anyString(), eq(10000L), anyString(), eq(OWNER_ID));
+    }
+
     private Map<String, Object> groupInfo() {
         return Map.of("OWNER_ID", OWNER_ID);
+    }
+
+    private Map<String, Object> groupInfo(String status) {
+        return Map.of("OWNER_ID", OWNER_ID, "STATUS", status);
+    }
+
+    private WithdrawalDTO.ApplyForm validApplyForm() {
+        WithdrawalDTO.ApplyForm form = new WithdrawalDTO.ApplyForm();
+        form.setDetail("개인 사정");
+        form.setReasonType("PERSONAL");
+        return form;
     }
 
     private Map<String, Object> consentPendingRequest() {

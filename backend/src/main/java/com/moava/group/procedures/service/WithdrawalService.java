@@ -41,6 +41,7 @@ public class WithdrawalService {
             throw new IllegalArgumentException("탈퇴 신청 정보를 확인해 주세요.");
         }
         Map<String, Object> groupInfo = getGroupInfo(groupId);
+        requireActiveGroup(groupInfo);
 
         Long ownerId = getLong(groupInfo, "OWNER_ID");
         // [예외 1] 모임장 신청 차단 -> '일반 참여 회원만 신청할 수 있어요'(승계 후 가능)
@@ -117,6 +118,7 @@ public class WithdrawalService {
             throw new IllegalArgumentException("정산안 정보를 확인해 주세요.");
         }
         Map<String, Object> groupInfo = getGroupInfo(groupId);
+        requireActiveGroup(groupInfo);
 
         Long ownerId = getLong(groupInfo, "OWNER_ID");
         if (!ownerId.equals(leaderId)) {
@@ -426,6 +428,12 @@ public class WithdrawalService {
         Map<String, Object> memberInfo = withdrawalMapper.selectGyeMemberInfo(groupId, memberId);
         if (memberInfo == null || !"ACTIVE".equals(memberInfo.get("STATUS"))) {
             throw new IllegalStateException("현재 모임의 활성(ACTIVE) 참여 회원이 아닙니다.");
+        }
+    }
+
+    private void requireActiveGroup(Map<String, Object> groupInfo) {
+        if (!"ACTIVE".equals(groupInfo.get("STATUS"))) {
+            throw new IllegalStateException("운영 중인 모임에서만 탈퇴 절차를 진행할 수 있습니다.");
         }
     }
 
