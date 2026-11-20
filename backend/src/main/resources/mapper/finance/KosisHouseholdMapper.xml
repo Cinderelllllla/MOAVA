@@ -4,7 +4,7 @@
 
     <resultMap id="kosisMap" type="com.moava.finance.dto.KosisHouseholdRow">
         <constructor>
-            <arg column="DECILE"             javaType="int"/>
+            <arg column="DECILE"             javaType="_int"/>
             <arg column="INCOME_LOW"         javaType="_long"/>
             <arg column="INCOME_HIGH"        javaType="java.lang.Long"/>
             <arg column="AVG_CONSUMPTION"    javaType="_long"/>
@@ -18,4 +18,20 @@
           FROM KOSIS_HOUSEHOLD
          ORDER BY DECILE
     </select>
+    <!-- PK(DECILE) 기준 Upsert. 수집 시각은 DB 시각 -->
+    <update id="upsert">
+        MERGE INTO KOSIS_HOUSEHOLD t
+        USING (SELECT #{decile} AS DECILE FROM DUAL) s
+           ON (t.DECILE = s.DECILE)
+         WHEN MATCHED THEN
+              UPDATE SET t.INCOME_LOW = #{incomeLow},
+                         t.INCOME_HIGH = #{incomeHigh, jdbcType=NUMERIC},
+                         t.AVG_CONSUMPTION = #{avgConsumption},
+                         t.AVG_NONCONSUMPTION = #{avgNonconsumption},
+                         t.BASE_YM = #{baseYm},
+                         t.FETCHED_AT = SYSDATE
+         WHEN NOT MATCHED THEN
+              INSERT (DECILE, INCOME_LOW, INCOME_HIGH, AVG_CONSUMPTION, AVG_NONCONSUMPTION, BASE_YM, FETCHED_AT)
+              VALUES (#{decile}, #{incomeLow}, #{incomeHigh, jdbcType=NUMERIC}, #{avgConsumption}, #{avgNonconsumption}, #{baseYm}, SYSDATE)
+    </update>
 </mapper>
