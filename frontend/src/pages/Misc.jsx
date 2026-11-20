@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
 import { auth, admin, groups, memberName, fetchNotifications, fetchUnreadNotificationCount, markNotificationRead, markAllNotificationsRead, hideNotifications } from '../api';
-import { PageHead, Card, Input, Empty } from '../components/ui';
+import { PageHead, Card, Input, Empty, ComingSoon } from '../components/ui';
 import { ThemeSwitcher } from '../components/Shell';
 import { notifyNotificationsChanged, isInternalLink } from '../common/notificationEvents';
 
@@ -62,7 +62,7 @@ export function Notifications() {
 /** 관리자 알림함: 관리자 JWT 로그인(관리자 전용 claim)이 생기기 전까지 안내만 표시 */
 function AdminNotificationsPending() {
   return <><PageHead kicker="NOTIFICATION CENTER" title="관리자 알림" sub="관리자 알림함은 준비 중입니다." />
-    <Card><Empty>관리자 알림은 관리자 로그인(서버 인증)이 연결된 뒤 제공됩니다.</Empty></Card></>;
+    <Card><Empty>관리자 알림은 아직 준비 중이에요.</Empty></Card></>;
 }
 
 function MemberNotifications() {
@@ -140,7 +140,7 @@ function MemberNotifications() {
       <button className="btn danger" onClick={hide} disabled={!sel.length}>선택 삭제{sel.length ? ` (${sel.length})` : ''}</button>
     </PageHead>
     <Card>
-      {error && <p className="muted" role="alert">{error} <button className="btn small soft" onClick={reload}>다시 시도</button></p>}
+      {error && <p className="warning" role="alert">{error} <button className="btn small soft" onClick={reload}>다시 시도</button></p>}
       {loading && empty ? <Empty>알림을 불러오는 중이에요…</Empty> : <>
         <h2>읽지 않은 알림 <small className="muted">{unreadTotal}건</small></h2>
         <div className="list">{unread.items.length ? unread.items.map(row) : <Empty>아직 읽을 알림이 없습니다.</Empty>}</div>
@@ -150,20 +150,20 @@ function MemberNotifications() {
         <div className="list">{read.items.length ? read.items.map(row) : <Empty>읽은 알림이 없습니다.</Empty>}</div>
         {moreBtn('Y', read)}
       </>}
-      <p className="muted mini">선택 삭제는 현재 계정의 알림함에서만 숨기며(DELETED_YN) 운영 감사 이력은 유지됩니다.</p>
+      <p className="muted mini">선택 삭제한 알림은 내 알림함에서만 사라지고, 모임 운영 기록은 그대로 남아요.</p>
     </Card></>;
 }
 
 /* ---- 내 정보 (F03 F04) ---- */
 export function Account() {
-  const { user, run } = useApp(); const nav = useNavigate();
-  const [f, setF] = useState({ name: user.name, email: user.email, phone: user.phone || '', regionSido: user.regionSido || '', regionSigungu: user.regionSigungu || '' });
-  const on = k => e => setF({ ...f, [k]: e.target.value });
-  return <><PageHead kicker="MY ACCOUNT" title="내 정보 · 개인정보" sub="연락처와 활동 지역 등 계정 정보를 관리합니다." />
-    <Card><form className="form-grid" onSubmit={e => { e.preventDefault(); run(() => auth.updateAccount(f), '내 정보를 저장했어요.'); }}><Input label="이름" name="name" required value={f.name} onChange={on('name')} /><Input label="이메일" name="email" type="email" required value={f.email} onChange={on('email')} /><Input label="연락처 (암호화 저장)" name="phone" type="tel" required value={f.phone} onChange={on('phone')} /><Input label="활동 지역 · 시/도" name="regionSido" required value={f.regionSido} onChange={on('regionSido')} /><Input label="활동 지역 · 시/군/구" name="regionSigungu" required value={f.regionSigungu} onChange={on('regionSigungu')} /><div className="field"><label>계정 유형</label><div className="info">일반 회원 (모임 생성 시 해당 모임장 권한 부여) · 개인정보 동의 {user.privacyAgreedAt || '-'}</div></div><div className="field"><label>변경사항 저장</label><button className="btn primary">내 정보 저장</button></div></form>
-      <div className="theme-settings"><h2>🎨 화면 테마 설정</h2><p className="muted">밝은 스카이 브리즈 또는 어두운 네이비·민트 테마를 선택할 수 있어요. 설정은 새로고침 후에도 유지됩니다.</p><ThemeSwitcher /></div>
-      <div className="divider" /><p className="warning mini">이 화면은 브라우저 데모로 비밀번호·개인정보를 안전하게 저장하지 않습니다. 실제 서비스에서는 서버 인증, 비밀번호 해시(PASSWORD_HASH), 연락처 AES 암호화(PHONE_ENC)가 적용됩니다.</p>
-      <div className="actions"><button className="btn danger" onClick={() => confirm('회원 탈퇴 시 개인정보는 익명화되고 복구할 수 없습니다. 진행할까요?') && run(() => auth.withdrawAccount(), '탈퇴 처리되었습니다.').then(r => r.ok && nav('/'))}>회원 탈퇴 (익명화)</button><button className="btn soft" onClick={() => confirm('모든 데모 데이터를 초기화할까요?') && run(() => auth.resetDemo()).then(() => { sessionStorage.removeItem('moava-ui'); nav('/'); })}>데모 데이터 초기화</button></div></Card></>;
+  const { user } = useApp();
+  // 서버(/api/auth/me)에서 받은 정보를 보여 준다. 연락처는 이 기기에 저장하지 않으므로 표시하지 않는다.
+  // TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거 — 회원정보 수정·회원 탈퇴 (auth.updateAccount / withdrawAccount 목업 참고)
+  return <><PageHead kicker="MY ACCOUNT" title="내 정보 · 개인정보" sub="활동 지역 등 계정 정보를 확인합니다." />
+    <Card><div className="form-grid"><Input label="이름" name="name" value={user.name || ''} readOnly /><Input label="이메일" name="email" type="email" value={user.email || ''} readOnly /><Input label="활동 지역 · 시/도" name="regionSido" value={user.regionSido || ''} readOnly /><Input label="활동 지역 · 시/군/구" name="regionSigungu" value={user.regionSigungu || ''} readOnly /><div className="field"><label>계정 유형</label><div className="info">일반 회원 (모임 생성 시 해당 모임장 권한 부여)</div></div></div>
+      <p className="info mini" style={{ marginTop: 12 }}>회원정보 수정과 회원 탈퇴는 아직 준비 중이에요.</p>
+      <div className="actions"><button className="btn primary" disabled>내 정보 저장</button><button className="btn danger" disabled>회원 탈퇴 (익명화)</button></div>
+      <div className="theme-settings"><h2>🎨 화면 테마 설정</h2><p className="muted">밝은 스카이 브리즈 또는 어두운 네이비·민트 테마를 선택할 수 있어요. 설정은 새로고침 후에도 유지됩니다.</p><ThemeSwitcher /></div></Card></>;
 }
 
 /* ---- 고객센터 (F38 회원 / F40 관리자) ---- */
@@ -177,13 +177,15 @@ export function Support() {
       <Card><div className="field" style={{ maxWidth: 300 }}><label>처리 상태 필터</label><select value={ui.reportFilter} onChange={e => setUi({ reportFilter: e.target.value })}><option value="all">전체</option>{REPORT_STATUS.map(v => <option key={v}>{v}</option>)}</select></div><div className="divider" /><h2>신고 접수 내역 · {list.length}건</h2>
         {list.length ? list.map(r => <div className="list-item" key={r.id} style={{ marginTop: 12 }}><div className="item-head"><b>{r.category}</b><span className="pill">{r.status}</span></div><p className="muted mini">신고자: {memberName(r.memberId)} · 대상 모임: {groups.getGroup(r.groupId)?.title || '미지정'} · 접수: {r.created}</p><p>{r.detail}</p><div className="field" style={{ maxWidth: 300 }}><label>처리 상태 변경 (사유 필수)</label><select value={r.status} onChange={e => change(r, e.target.value)}>{REPORT_STATUS.map(v => <option key={v}>{v}</option>)}</select></div>{r.history?.length > 0 && <details style={{ marginTop: 10 }}><summary>처리 이력 {r.history.length}건</summary>{r.history.map((h, i) => <p className="muted mini" key={i}>{h.date} · {h.from} → {h.to} · {h.reason}</p>)}</details>}</div>) : <p className="muted">접수된 신고가 없습니다.</p>}</Card></>;
   }
-  return <MemberSupport run={run} />;
+  // TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거 — 회원 신고 접수·내역 (아래 MemberSupport 목업 참고)
+  return <ComingSoon kicker="CUSTOMER CENTER" title="고객센터 · 자금 안전 신고" text="신고 접수 기능은 아직 준비 중이에요. 사기 피해가 의심되면 해당 은행과 경찰 등 공식 기관에 바로 연락해 주세요." />;
 }
+// eslint-disable-next-line no-unused-vars -- 서버 API 연결 시 참고용 목업 화면 (현재 화면에서 사용하지 않음)
 function MemberSupport({ run }) {
   const mine = groups.myGroups(); const [f, setF] = useState({ group: mine[0]?.id || '', category: '계좌 변경 의심', detail: '' });
   const reports = admin.reports().filter(r => r.memberId === auth.currentUser()?.id).slice().reverse();
   return <><PageHead kicker="CUSTOMER CENTER" title="고객센터 · 자금 안전 신고" sub="의심 거래 및 계좌 변경 관련 신고를 접수합니다." />
     <Card><h2>신고 접수</h2><p className="muted mini">실제 계좌 동결·피해 구제는 MOAVA가 수행할 수 없습니다. 사기 피해가 의심되면 해당 은행 및 경찰 등 공식 기관에 즉시 연락하세요.</p>
-      <form onSubmit={e => { e.preventDefault(); run(() => admin.submitReport(Number(f.group), f.category, f.detail), '신고가 접수되었습니다. 실제 금융기관 신고는 별도로 진행해야 합니다.').then(r => r.ok && setF({ ...f, detail: '' })); }}><div className="form-grid"><div className="field"><label>대상 모임</label><select value={f.group} onChange={e => setF({ ...f, group: e.target.value })}>{mine.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}{!mine.length && <option value="">참여 모임 없음</option>}</select></div><div className="field"><label>신고 유형</label><select value={f.category} onChange={e => setF({ ...f, category: e.target.value })}>{['계좌 변경 의심', '자금 유용 의심', '거래 증빙 불일치', '제재 이의 신청', '기타 문의'].map(v => <option key={v}>{v}</option>)}</select></div></div><div className="field"><label>상세 내용 (암호화 저장)</label><textarea required value={f.detail} onChange={e => setF({ ...f, detail: e.target.value })} placeholder="상황, 날짜, 관련 내역을 작성하세요." /></div><button className="btn primary">신고 접수</button></form></Card>
+      <form onSubmit={e => { e.preventDefault(); run(() => admin.submitReport(Number(f.group), f.category, f.detail), '신고가 접수되었습니다. 실제 금융기관 신고는 별도로 진행해야 합니다.').then(r => r.ok && setF({ ...f, detail: '' })); }}><div className="form-grid"><div className="field"><label>대상 모임</label><select value={f.group} onChange={e => setF({ ...f, group: e.target.value })}>{mine.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}{!mine.length && <option value="">참여 모임 없음</option>}</select></div><div className="field"><label>신고 유형</label><select value={f.category} onChange={e => setF({ ...f, category: e.target.value })}>{['계좌 변경 의심', '자금 유용 의심', '거래 증빙 불일치', '제재 이의 신청', '기타 문의'].map(v => <option key={v}>{v}</option>)}</select></div></div><div className="field"><label>상세 내용</label><textarea required value={f.detail} onChange={e => setF({ ...f, detail: e.target.value })} placeholder="상황, 날짜, 관련 내역을 작성하세요." /></div><button className="btn primary">신고 접수</button></form></Card>
     <div className="section"><Card><h2>나의 신고 내역</h2>{reports.length ? reports.map(r => <div className="list-item" key={r.id}><b>{groups.getGroup(r.groupId)?.title || '모임'} · {r.category}</b> <span className="pill">{r.status}</span><p className="muted mini">{r.created} · {r.detail}</p></div>) : <p className="muted">신고 내역이 없습니다.</p>}</Card></div></>;
 }
