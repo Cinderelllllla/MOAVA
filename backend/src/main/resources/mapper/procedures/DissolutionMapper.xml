@@ -11,6 +11,14 @@
         WHERE GROUP_ID = #{groupId}
     </select>
 
+    <!-- 해산 신청·승인·반려의 상태 전이를 직렬화 -->
+    <select id="lockGroupForDissolution" resultType="map">
+        SELECT GROUP_ID, OWNER_ID, TITLE, STATUS, AMOUNT, MAX_MEMBERS
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        FOR UPDATE
+    </select>
+
     <!-- 해당 모임의 진행 중(PENDING) 해산 신청 단건 조회 -->
     <select id="selectPendingDissolutionByGroup" resultType="map">
         SELECT DISSOLUTION_REQUEST_ID, GROUP_ID, REQUESTED_BY, REASON, STATUS, CREATED_AT

@@ -39,6 +39,7 @@ public class PayoutOrderService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 정보를 확인해 주세요.");
         }
         Map<String, Object> groupInfo = getGroupInfo(groupId);
+        requireActiveGroup(groupInfo);
         requireActiveMember(groupId, memberId);
 
         // [예외 1] 사유 미입력 -> 차단
@@ -95,6 +96,7 @@ public class PayoutOrderService {
     @Transactional
     public void requestConsentByLeader(Long groupId, Long payoutRequestId, Long leaderId) {
         Map<String, Object> groupInfo = getGroupInfo(groupId);
+        requireActiveGroup(groupInfo);
         requireLeader(groupInfo, leaderId);
 
         Map<String, Object> req = payoutOrderMapper.selectPayoutRequestById(groupId, payoutRequestId);
@@ -138,6 +140,7 @@ public class PayoutOrderService {
     @Transactional
     public String submitMemberConsent(Long groupId, Long payoutRequestId, Long memberId,
                                       PayoutOrderDTO.ConsentForm form) {
+        requireActiveGroup(getGroupInfo(groupId));
         requireActiveMember(groupId, memberId);
 
         Map<String, Object> req = payoutOrderMapper.selectPayoutRequestForUpdate(groupId, payoutRequestId);
@@ -177,6 +180,7 @@ public class PayoutOrderService {
     @Transactional
     public void confirmPayoutOrder(Long groupId, Long payoutRequestId, Long leaderId) {
         Map<String, Object> groupInfo = getGroupInfo(groupId);
+        requireActiveGroup(groupInfo);
         requireLeader(groupInfo, leaderId);
 
         if (payoutOrderMapper.lockGroupForOrderUpdate(groupId) == null) {
@@ -248,6 +252,13 @@ public class PayoutOrderService {
     private void requireActiveMember(Long groupId, Long memberId) {
         if (memberId == null || payoutOrderMapper.countActiveMember(groupId, memberId) == 0) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 모임의 ACTIVE 회원만 이용할 수 있습니다.");
+        }
+    }
+
+    private void requireActiveGroup(Map<String, Object> groupInfo) {
+        if (!"ACTIVE".equals(groupInfo.get("STATUS"))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "운영 중인 모임에서만 수령 순서 절차를 처리할 수 있습니다.");
         }
     }
 
