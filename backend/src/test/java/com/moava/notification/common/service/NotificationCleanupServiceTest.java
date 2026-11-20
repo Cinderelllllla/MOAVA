@@ -15,7 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.moava.notification.common.mapper.NotificationCleanupMapper;
 
-/** NotificationCleanupService — 보관 기간(읽음 30일·안 읽음 90일)으로 숨김 쿼리를 부르는지 확인 */
+/** NotificationCleanupService — 보관 기간(읽음 14일·안 읽음 30일)으로 숨김 쿼리를 부르는지 확인 */
 @ExtendWith(MockitoExtension.class)
 class NotificationCleanupServiceTest {
 
@@ -30,10 +30,10 @@ class NotificationCleanupServiceTest {
     }
 
     @Test
-    @DisplayName("읽음 30일, 안 읽음 90일 기준으로 숨기고 건수를 돌려준다")
+    @DisplayName("읽음 14일, 안 읽음 30일 기준으로 숨기고 건수를 돌려준다")
     void cleanup_uses_retention_days() {
-        when(mapper.hideOldRead(30)).thenReturn(3);
-        when(mapper.hideOldUnread(90)).thenReturn(1);
+        when(mapper.hideOldRead(14)).thenReturn(3);
+        when(mapper.hideOldUnread(30)).thenReturn(1);
 
         NotificationCleanupService.CleanupResult r = service.cleanup();
 
@@ -41,8 +41,8 @@ class NotificationCleanupServiceTest {
         assertThat(r.hiddenUnread()).isEqualTo(1);
         assertThat(r.total()).isEqualTo(4);
         InOrder order = inOrder(mapper);
-        order.verify(mapper).hideOldRead(30);
-        order.verify(mapper).hideOldUnread(90);
+        order.verify(mapper).hideOldRead(14);
+        order.verify(mapper).hideOldUnread(30);
     }
 
     @Test

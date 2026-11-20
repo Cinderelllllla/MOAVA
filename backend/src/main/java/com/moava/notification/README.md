@@ -210,6 +210,6 @@ backend/src/main/resources/mapper/notification/common/
 - [x] JWT 연동 후 임시 헤더 방식 제거 (PR #33)
 - [ ] 관리자 JWT 로그인(관리자 전용 claim) 후 관리자 알림함 연결
 - [ ] SMS 규칙 v0.5 반영 — 자동 미납 안내 SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 시 SMS (코드표 v3.1)
-- [x] 배치: 오래된 알림 정리(읽음 30일·안 읽음 90일)
+- [x] 배치: 오래된 알림 정리(읽음 14일·안 읽음 30일)
 - [ ] 배치: 납입 3일 전·미납 안내
 - [ ] 2차: SOLAPI SMS 발송 (`PHONE_ENC`가 NULL인 탈퇴 회원은 건너뜀)
