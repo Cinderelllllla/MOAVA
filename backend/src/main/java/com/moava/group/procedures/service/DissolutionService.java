@@ -278,7 +278,7 @@ public class DissolutionService {
 
     private void populateRefundEstimate(DissolutionDTO.StatusResponse item) {
         long total = item.getTotalConfirmedAmount() != null ? item.getTotalConfirmedAmount() : 0L;
-        int count = (item.getMemberCount() != null && item.getMemberCount() > 0) ? item.getMemberCount() : 1;
-        item.setPerMemberRefundAmount(total / count);
+        int count = item.getMemberCount() != null ? item.getMemberCount() : 0;
+        item.setPerMemberRefundAmount(count > 0 ? (total / count) : 0L);
     }
 }

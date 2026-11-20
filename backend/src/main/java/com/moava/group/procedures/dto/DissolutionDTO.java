@@ -71,7 +71,9 @@ public class DissolutionDTO {
             return createdAt != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm").format(createdAt) : null;
         }
         public String getApprovedAt() {
-            return decidedAt != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm").format(decidedAt) : null;
+            return ("APPROVED".equals(status) && decidedAt != null)
+                    ? new SimpleDateFormat("yyyy-MM-dd HH:mm").format(decidedAt)
+                    : null;
         }
 
     }
