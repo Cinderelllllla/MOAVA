@@ -13,10 +13,15 @@ import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class DissolutionService {
+
+    private static final Set<String> VALID_STATUS_FILTERS = Set.of("PENDING", "APPROVED", "REJECTED");
+    private static final String SETTLEMENT_REFERENCE_NOTICE =
+            "확인된 납입액 합계를 활성 회원 수로 단순 나눈 참고치이며, 이미 지급된 곗돈과 중도 탈퇴 정산 내역은 반영되지 않아 실제 환급·정산 금액과 다를 수 있습니다.";
 
     private final DissolutionMapper dissolutionMapper;
 
@@ -25,16 +30,19 @@ public class DissolutionService {
      */
     @Transactional(readOnly = true)
     public DissolutionDTO.StatusResponse getGroupDissolutionStatus(Long groupId, Long memberId) {
-        if (dissolutionMapper.selectGroupInfo(groupId) == null) {
+        Map<String, Object> groupInfo = dissolutionMapper.selectGroupInfo(groupId);
+        if (groupInfo == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
         }
-        if (memberId == null || dissolutionMapper.countActiveMember(groupId, memberId) == 0) {
+        if (!isLeader(groupInfo, memberId)
+                && (memberId == null || dissolutionMapper.countActiveMember(groupId, memberId) == 0)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 모임의 활성 회원만 조회할 수 있습니다.");
         }
         DissolutionDTO.StatusResponse status = dissolutionMapper.selectLatestDissolutionByGroup(groupId);
-        if (status != null) {
-            populateRefundEstimate(status);
+        if (status == null) {
+            return emptyStatusResponse(groupId, groupInfo);
         }
+        populateRefundEstimate(status);
         return status;
     }
 
@@ -42,8 +50,10 @@ public class DissolutionService {
      * 관리자 해산 목록 및 종료된 모임 기록 조회 (A04 화면용)
      */
     @Transactional(readOnly = true)
-    public List<DissolutionDTO.StatusResponse> getAdminDissolutionList(String statusFilter) {
-        List<DissolutionDTO.StatusResponse> list = dissolutionMapper.selectAdminDissolutionList(statusFilter);
+    public List<DissolutionDTO.StatusResponse> getAdminDissolutionList(Long adminId, String statusFilter) {
+        requireActiveAdmin(adminId);
+        String normalizedStatus = normalizeStatusFilter(statusFilter);
+        List<DissolutionDTO.StatusResponse> list = dissolutionMapper.selectAdminDissolutionList(normalizedStatus);
         for (DissolutionDTO.StatusResponse item : list) {
             populateRefundEstimate(item);
         }
@@ -127,7 +137,7 @@ public class DissolutionService {
 
     /**
      * 2. [승인] ADMIN: 해당 모임 PAYMENT_PROOF STATUS != CONFIRMED 0건 검증 -> APPROVED,
-     *    GYE_GROUP.STATUS=DISSOLVED, 전 회원 '해산 완료·1/N 정산 안내' 알림,
+     *    GYE_GROUP.STATUS=DISSOLVED, 전 회원 '해산 완료 · 정산 안내' 알림,
      *    ES 문서 삭제(TODO), DISSOLUTION_REQUEST.DECIDED_BY & AUDIT_LOG.ACTOR_ADMIN_ID 기록
      */
     @Transactional
@@ -172,25 +182,22 @@ public class DissolutionService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "모임 상태가 변경되어 해산을 승인할 수 없습니다.");
         }
 
-        // 3) 1/N 정산 금액 계산 및 전 회원 '해산 완료·1/N 정산 안내' 인앱 알림 발송
+        // 3) 전 회원 해산 완료 및 정산 안내 인앱 알림 발송
+        //    (이미 지급된 곗돈과 중도 탈퇴 정산 내역이 반영되지 않은 단순 1/N 금액을 환급액처럼 노출하지 않는다.)
         List<Long> activeMembers = dissolutionMapper.selectActiveMemberIds(groupId);
         Long totalConfirmed = dissolutionMapper.selectTotalConfirmedProofAmount(groupId);
         long safeTotal = totalConfirmed != null ? totalConfirmed : 0L;
         int memberCount = activeMembers.size();
-        long perMemberAmount = memberCount > 0 ? (safeTotal / memberCount) : 0L;
-
-        String formattedPerMember = NumberFormat.getNumberInstance(Locale.KOREA).format(perMemberAmount);
         String formattedTotal = NumberFormat.getNumberInstance(Locale.KOREA).format(safeTotal);
 
         for (Long memberId : activeMembers) {
             dissolutionMapper.insertNotification(
                     memberId,
                     "DISSOLVED",
-                    "해산 완료 · 1/N 정산 안내",
-                    "[" + groupTitle + "] 모임 해산이 최종 승인되었습니다. 총 확인 납입액 "
-                            + formattedTotal + "원 기준 1/N 정산 예상 금액은 1인당 "
-                            + formattedPerMember + "원입니다.",
-                    "/operations?groupId=" + groupId,
+                    "모임 해산 완료 · 정산 안내",
+                    "[" + groupTitle + "] 모임 해산이 최종 승인되었습니다. "
+                            + "실제 환급·정산 금액은 이미 지급된 곗돈과 중도 탈퇴 정산 내역을 반영해 모임 정산 안내에서 최종 확인해 주세요.",
+                    "/my-groups",
                     dissolutionRequestId
             );
         }
@@ -204,7 +211,8 @@ public class DissolutionService {
                 groupId,
                 adminId,
                 "DISSOLVE_APPROVE",
-                "계모임 해산 최종 승인 완료 (1/N 정산 안내: 1인당 " + formattedPerMember + "원)"
+                "계모임 해산 최종 승인 완료 (확인 납입 총액 참고치: " + formattedTotal
+                        + "원, 활성 회원 " + memberCount + "명 — 실제 정산액 별도 확인)"
         );
 
         return "해산을 승인했어요.";
@@ -276,9 +284,39 @@ public class DissolutionService {
         }
     }
 
+    private String normalizeStatusFilter(String statusFilter) {
+        if (statusFilter == null || statusFilter.isBlank()) {
+            return null;
+        }
+        String normalized = statusFilter.trim().toUpperCase(Locale.ROOT);
+        if (!VALID_STATUS_FILTERS.contains(normalized)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "해산 상태 필터는 PENDING, APPROVED, REJECTED 중 하나여야 합니다.");
+        }
+        return normalized;
+    }
+
+    private boolean isLeader(Map<String, Object> groupInfo, Long memberId) {
+        Object ownerId = groupInfo.get("OWNER_ID");
+        return ownerId instanceof Number && memberId != null
+                && ((Number) ownerId).longValue() == memberId.longValue();
+    }
+
+    private DissolutionDTO.StatusResponse emptyStatusResponse(Long groupId, Map<String, Object> groupInfo) {
+        DissolutionDTO.StatusResponse empty = new DissolutionDTO.StatusResponse();
+        empty.setGroupId(groupId);
+        empty.setGroupTitle((String) groupInfo.get("TITLE"));
+        empty.setGroupStatus((String) groupInfo.get("STATUS"));
+        empty.setStatus("NONE");
+        empty.setPerMemberRefundAmount(0L);
+        empty.setSettlementNotice(SETTLEMENT_REFERENCE_NOTICE);
+        return empty;
+    }
+
     private void populateRefundEstimate(DissolutionDTO.StatusResponse item) {
         long total = item.getTotalConfirmedAmount() != null ? item.getTotalConfirmedAmount() : 0L;
         int count = item.getMemberCount() != null ? item.getMemberCount() : 0;
         item.setPerMemberRefundAmount(count > 0 ? (total / count) : 0L);
+        item.setSettlementNotice(SETTLEMENT_REFERENCE_NOTICE);
     }
 }

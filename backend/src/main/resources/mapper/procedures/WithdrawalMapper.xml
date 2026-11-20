@@ -268,6 +268,25 @@
           AND STATUS = 'ACTIVE'
     </update>
 
+    <!-- 신청자의 미종결 납입 증빙(STATUS != 'CONFIRMED') 건수 조회 -->
+    <select id="countUnconfirmedProofsByMember" resultType="int">
+        SELECT COUNT(*)
+        FROM PAYMENT_PROOF
+        WHERE GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+          AND STATUS != 'CONFIRMED'
+    </select>
+
+    <!-- 탈퇴 완료 시 신청자의 미확정 수령 순서 신청을 자동 REJECTED 처리 -->
+    <update id="rejectOpenPayoutRequestsByMember">
+        UPDATE PAYOUT_REQUEST
+        SET STATUS = 'REJECTED',
+            DECIDED_AT = SYSDATE
+        WHERE GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+          AND STATUS IN ('REQUESTED', 'CONSENT_PENDING')
+    </update>
+
     <!-- 신청자 제외 나머지 ACTIVE 회원 ID 목록 조회 -->
     <select id="selectOtherActiveMemberIds" resultType="long">
         SELECT MEMBER_ID
