@@ -46,6 +46,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -97,6 +98,8 @@ class PaymentProofServiceTest {
         group.setMonths(10);
         group.setStatus("ACTIVE");
 
+        lenient().when(paymentProofMapper.lockGroupForProofUpdate(GROUP_ID)).thenReturn(GROUP_ID);
+
         // @Value("${moava.upload.dir}") 대신 임시 폴더를 업로드 경로로 지정
         ReflectionTestUtils.setField(paymentProofService, "uploadDir", tempDir.toString());
     }
@@ -117,6 +120,37 @@ class PaymentProofServiceTest {
 
         assertEquals(400, e.getStatusCode().value());
         verify(paymentProofMapper, never()).insertProof(any());
+    }
+
+    @Test
+    @DisplayName("등록: 해산 완료 상태는 잠금 후 재확인하여 차단")
+    void register_dissolvedGroupAfterLock_400() {
+        group.setStatus("DISSOLVED");
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> paymentProofService.registerProof(MEMBER_ID, validRequest(), List.of()));
+
+        assertEquals(400, e.getStatusCode().value());
+        verify(paymentProofMapper).lockGroupForProofUpdate(GROUP_ID);
+        verify(paymentProofMapper, never()).insertProof(any());
+    }
+
+    @Test
+    @DisplayName("심사: 해산 완료 모임에서는 잠금 후 증빙 상태를 변경하지 않음")
+    void review_dissolvedGroup_409() {
+        group.setStatus("DISSOLVED");
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+
+        PaymentProofReviewRequest req = new PaymentProofReviewRequest();
+        req.setDecision("CONFIRMED");
+
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> paymentProofService.reviewProof(OWNER_ID, GROUP_ID, PROOF_ID, req));
+
+        assertEquals(409, e.getStatusCode().value());
+        verify(paymentProofMapper).lockGroupForProofUpdate(GROUP_ID);
+        verify(paymentProofMapper, never()).updateProofReview(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -171,6 +205,7 @@ class PaymentProofServiceTest {
     @Test
     @DisplayName("심사: 모임장이 승인하면 CONFIRMED, 미납 해소 + 감사 로그 기록")
     void review_confirm_success() {
+        group.setStatus("DISSOLVE_PENDING");
         when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
         when(paymentProofMapper.findProofForReview(GROUP_ID, PROOF_ID)).thenReturn(pendingProof());
         when(paymentProofMapper.updateProofReview(any(), any(), any(), any(), any())).thenReturn(1);
@@ -181,6 +216,7 @@ class PaymentProofServiceTest {
         ProofReviewResponse res = paymentProofService.reviewProof(OWNER_ID, GROUP_ID, PROOF_ID, req);
 
         assertEquals("CONFIRMED", res.getStatus());
+        verify(paymentProofMapper).lockGroupForProofUpdate(GROUP_ID);
         verify(paymentProofMapper).resolveOverdueCase(GROUP_ID, MEMBER_ID, "202611");
         verify(paymentProofMapper).insertAuditLog(eq(GROUP_ID), eq(OWNER_ID), eq(MEMBER_ID),
                 eq("PROOF_CONFIRM"), any());
@@ -301,9 +337,11 @@ class PaymentProofServiceTest {
         int count = paymentProofService.resubmitProof(MEMBER_ID, GROUP_ID, PROOF_ID, resubmitRequest(), files);
 
         assertEquals(2, count);                                        // 1회 → 2회
+        verify(paymentProofMapper).lockGroupForProofUpdate(GROUP_ID);
         verify(paymentProofMapper).deleteProofFiles(PROOF_ID);         // 기존 파일 메타 삭제
         verify(paymentProofMapper, times(1)).insertProofFile(any());   // 새 파일 메타 1건
         assertEquals(1, countSavedFiles());                            // 디스크에 새 파일 1개
+        verify(paymentProofMapper).lockGroupForProofUpdate(GROUP_ID);
         verify(paymentProofMapper).insertAuditLog(eq(GROUP_ID), eq(MEMBER_ID), eq(null),
                 eq("PROOF_RESUBMIT"), any());
     }

@@ -35,7 +35,7 @@ ROUND_UNIT = int(os.getenv("MOAVA_ROUND_UNIT", 50_000))
 if ROUND_UNIT <= 0:
     raise ValueError("MOAVA_ROUND_UNIT 은 1 이상이어야 합니다.")
 
-# 추천 납입액 상한: 월소득의 12% (프론트 finance.js 의 계산식과 동일)
+# 추천 납입액 상한: 월소득의 12%. 이 값이 기준이며, 프론트는 GET /risk/model 로 받아 쓴다.
 INCOME_CAP_RATIO = _f("MOAVA_INCOME_CAP_RATIO", 0.12)
 if not 0 < INCOME_CAP_RATIO <= 1:
     raise ValueError("0 < MOAVA_INCOME_CAP_RATIO <= 1 이어야 합니다.")

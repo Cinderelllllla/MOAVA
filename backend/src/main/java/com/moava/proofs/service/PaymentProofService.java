@@ -88,7 +88,7 @@ public class PaymentProofService {
         }
 
         // 2. 모임 존재 + 해산 완료 모임 차단
-        ProofGroupDto group = getGroupOrThrow(req.getGroupId());
+        ProofGroupDto group = getGroupForUpdate(req.getGroupId());
         if ("DISSOLVED".equals(group.getStatus())) {
             throw badRequest("해산된 모임에는 증빙을 등록할 수 없습니다.");
         }
@@ -238,6 +238,13 @@ public class PaymentProofService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
         }
         return group;
+    }
+
+    private ProofGroupDto getGroupForUpdate(Long groupId) {
+        if (paymentProofMapper.lockGroupForProofUpdate(groupId) == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        return getGroupOrThrow(groupId);
     }
 
     // 증빙 조회 (경로의 groupId 소속인 것만) — 없으면 404 (심사·재제출 공통)
@@ -460,9 +467,12 @@ public class PaymentProofService {
         }
 
         // 2. 모임 존재 + 모임장 확인 (REQ-SEC-04 서버 재검증)
-        ProofGroupDto group = getGroupOrThrow(groupId);
+        ProofGroupDto group = getGroupForUpdate(groupId);
         if (!group.getOwnerId().equals(memberId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 모임장만 승인할 수 있어요.");
+        }
+        if ("DISSOLVED".equals(group.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "해산된 모임의 증빙은 심사할 수 없습니다.");
         }
 
         // 3. 증빙 존재 (이 모임의 증빙인지까지 확인)
@@ -531,7 +541,7 @@ public class PaymentProofService {
         }
 
         // 1-2. 모임 존재 + 해산 완료 모임 차단 + ACTIVE 구성원만 (등록과 같은 기준, REQ-SEC-04)
-        ProofGroupDto group = getGroupOrThrow(groupId);
+        ProofGroupDto group = getGroupForUpdate(groupId);
         if ("DISSOLVED".equals(group.getStatus())) {
             throw badRequest("해산된 모임에는 증빙을 재제출할 수 없습니다.");
         }
