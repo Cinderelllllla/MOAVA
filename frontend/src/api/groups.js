@@ -908,3 +908,90 @@ export async function requestDissolve(id, reason) {
   D.audit('해산 신청', id, reason);
   save();
 }
+
+/* ==================================================
+   F18 — 비공개 모임 인증코드 발급 및 검증 (Spring Boot)
+   ================================================== */
+
+/**
+ * 모임장 전용
+ * POST /api/groups/{groupId}/join-code
+ *
+ * 호출할 때마다 새 인증코드가 발급되므로
+ * 사용자가 버튼을 클릭했을 때만 호출한다.
+ */
+export async function issueJoinCode(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  if (!Number.isSafeInteger(Number(groupId)) || Number(groupId) <= 0) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  return apiFetch(`/api/groups/${groupId}/join-code`, {
+    method: 'POST'
+  });
+}
+
+/**
+ * 참여 회원 전용
+ * POST /api/groups/{groupId}/join-code/verify
+ *
+ * 인증 성공: VERIFIED / ALREADY_VERIFIED
+ * 인증 실패: INVALID_CODE / LOCKED 등
+ */
+export async function verifyJoinCode(groupId, joinCode) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  if (!Number.isSafeInteger(Number(groupId)) || Number(groupId) <= 0) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  const code = String(joinCode ?? '').trim();
+
+  if (!/^\d{6}$/.test(code)) {
+    throw new Error('6자리 숫자 인증코드를 입력해 주세요.');
+  }
+
+  return apiFetch(`/api/groups/${groupId}/join-code/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ joinCode: code })
+  });
+}
+
+/* ==================================================
+   F16 — 모임 가입 신청 (Spring Boot)
+   ================================================== */
+
+/**
+ * POST /api/groups/{groupId}/join-requests
+ *
+ * 비공개 초대 가입: INVITE
+ * 공개 모임 검색 가입: SEARCH
+ *
+ * 가입 신청 성공 시 PENDING 반환
+ */
+export async function requestJoinGroup(groupId, via = 'INVITE') {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  if (
+    !Number.isSafeInteger(Number(groupId)) ||
+    Number(groupId) <= 0
+  ) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  if (!['INVITE', 'SEARCH'].includes(via)) {
+    throw new Error('올바르지 않은 가입 경로입니다.');
+  }
+
+  return apiFetch(`/api/groups/${groupId}/join-requests`, {
+    method: 'POST',
+    body: JSON.stringify({ via })
+  });
+}
