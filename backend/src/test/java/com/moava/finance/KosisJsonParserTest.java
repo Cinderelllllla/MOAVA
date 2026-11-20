@@ -16,6 +16,13 @@ class KosisJsonParserTest {
     }
 
     @Test
+    void 응답_맨_앞에_BOM이_있어도_읽는다() {
+        var rows = KosisJsonParser.parseRows("﻿[{\"C1_NM\":\"1분위\",\"DT\":\"7\"}]");
+        assertEquals(1, rows.size());
+        assertEquals("7", rows.get(0).get("DT"));
+    }
+
+    @Test
     void 키에_따옴표가_없어도_읽는다() {
         var rows = KosisJsonParser.parseRows("[{C1_NM:\"3분위\",DT:\"10\",LST:null}]");
         assertEquals("3분위", rows.get(0).get("C1_NM"));
