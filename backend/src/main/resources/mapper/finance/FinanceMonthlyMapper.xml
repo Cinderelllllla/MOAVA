@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.finance.mapper.FinanceMonthlyMapper">
+
+    <resultMap id="monthlyMap" type="com.moava.finance.dto.MonthlyRecord">
+        <constructor>
+            <arg column="YEAR_MONTH" javaType="java.lang.String"/>
+            <arg column="INCOME"     javaType="_long"/>
+            <arg column="EXPENSE"    javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectRecent" resultMap="monthlyMap">
+        SELECT YEAR_MONTH, INCOME, EXPENSE
+          FROM FINANCE_MONTHLY
+         WHERE MEMBER_ID = #{memberId}
+         ORDER BY YEAR_MONTH DESC
+         FETCH FIRST #{limit} ROWS ONLY
+    </select>
+
+    <!-- UK_FINANCE_MONTHLY_1 (MEMBER_ID, YEAR_MONTH) 기준 Upsert -->
+    <update id="upsert">
+        MERGE INTO FINANCE_MONTHLY t
+        USING (SELECT #{memberId} AS MEMBER_ID, #{yearMonth} AS YEAR_MONTH FROM DUAL) s
+           ON (t.MEMBER_ID = s.MEMBER_ID AND t.YEAR_MONTH = s.YEAR_MONTH)
+         WHEN MATCHED THEN
+              UPDATE SET t.INCOME = #{income}, t.EXPENSE = #{expense}
+         WHEN NOT MATCHED THEN
+              INSERT (FINANCE_MONTHLY_ID, MEMBER_ID, YEAR_MONTH, INCOME, EXPENSE)
+              VALUES (SEQ_FINANCE_MONTHLY.NEXTVAL, #{memberId}, #{yearMonth}, #{income}, #{expense})
+    </update>
+
+    <delete id="delete">
+        DELETE FROM FINANCE_MONTHLY
+         WHERE MEMBER_ID = #{memberId} AND YEAR_MONTH = #{yearMonth}
+    </delete>
+</mapper>
