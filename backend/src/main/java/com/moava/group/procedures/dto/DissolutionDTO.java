@@ -55,8 +55,9 @@ public class DissolutionDTO {
         private Integer memberCount;
         private Integer unconfirmedProofCount; // 미처리 증빙 건수 (STATUS != 'CONFIRMED')
         private Integer activeWithdrawalCount; // 진행 중 탈퇴 건수
-        private Long totalConfirmedAmount;     // 총 납입 확인 금액
-        private Long perMemberRefundAmount;    // 1/N 정산 예상 금액
+        private Long totalConfirmedAmount;     // 총 납입 확인 금액 (참고치)
+        private Long perMemberRefundAmount;    // 단순 1/N 참고 금액 (지급 완료 곗돈·탈퇴 정산 미반영)
+        private String settlementNotice;       // 실제 정산 금액과 다를 수 있다는 안내 문구
 
         // AdminPages.jsx 호환용 별칭 Getter
         public Long getId() { return groupId; }

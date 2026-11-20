@@ -124,6 +124,137 @@ class WithdrawalServiceTest {
                 eq(GROUP_ID), eq(APPLICANT_ID), anyString(), anyString(), anyString());
     }
 
+    @Test
+    void registerSettlementRejectsReactivatingRejectedRequestWhenAnotherActiveRequestExists() {
+        Map<String, Object> rejectedReq = consentPendingRequest();
+        rejectedReq.put("STATUS", "REJECTED");
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo());
+        when(withdrawalMapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID)).thenReturn(rejectedReq);
+        when(withdrawalMapper.selectGyeMemberInfoForUpdate(GROUP_ID, APPLICANT_ID))
+                .thenReturn(memberInfo("ACTIVE"));
+        when(withdrawalMapper.countActiveWithdrawalByMember(GROUP_ID, APPLICANT_ID)).thenReturn(1);
+
+        WithdrawalDTO.SettlementForm form = new WithdrawalDTO.SettlementForm();
+        form.setSettlementAmount(50_000L);
+        form.setSettlementMemo("재정산 근거");
+
+        ProcedureException error = assertThrows(ProcedureException.class,
+                () -> withdrawalService.registerSettlementPlan(GROUP_ID, REQUEST_ID, OWNER_ID, form));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                org.springframework.http.HttpStatus.CONFLICT, error.getStatus());
+        verify(withdrawalMapper, never()).updateSettlementPlan(
+                eq(GROUP_ID), eq(REQUEST_ID), anyString(), eq(50_000L), anyString(), eq(OWNER_ID));
+    }
+
+    @Test
+    void registerSettlementRejectsInactiveApplicantAndOutOfRangeAmount() {
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo());
+
+        WithdrawalDTO.SettlementForm overflowForm = new WithdrawalDTO.SettlementForm();
+        overflowForm.setSettlementAmount(1_000_000_000_000L);
+        overflowForm.setSettlementMemo("범위 초과");
+
+        ProcedureException badRequest = assertThrows(ProcedureException.class,
+                () -> withdrawalService.registerSettlementPlan(GROUP_ID, REQUEST_ID, OWNER_ID, overflowForm));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                org.springframework.http.HttpStatus.BAD_REQUEST, badRequest.getStatus());
+
+        when(withdrawalMapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID))
+                .thenReturn(consentPendingRequest());
+        when(withdrawalMapper.selectGyeMemberInfoForUpdate(GROUP_ID, APPLICANT_ID))
+                .thenReturn(memberInfo("WITHDRAWN"));
+
+        WithdrawalDTO.SettlementForm validForm = new WithdrawalDTO.SettlementForm();
+        validForm.setSettlementAmount(10_000L);
+        validForm.setSettlementMemo("정산 근거");
+
+        ProcedureException conflict = assertThrows(ProcedureException.class,
+                () -> withdrawalService.registerSettlementPlan(GROUP_ID, REQUEST_ID, OWNER_ID, validForm));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                org.springframework.http.HttpStatus.CONFLICT, conflict.getStatus());
+    }
+
+    @Test
+    void approveRejectsWhenApplicantHasUnconfirmedProofs() {
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo());
+        when(withdrawalMapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID))
+                .thenReturn(consentPendingRequest());
+        when(withdrawalMapper.selectGyeMemberInfoForUpdate(GROUP_ID, APPLICANT_ID))
+                .thenReturn(memberInfo("ACTIVE"));
+        when(withdrawalMapper.countUnconfirmedProofsByMember(GROUP_ID, APPLICANT_ID)).thenReturn(1);
+
+        ProcedureException error = assertThrows(ProcedureException.class,
+                () -> withdrawalService.approveWithdrawal(GROUP_ID, REQUEST_ID, OWNER_ID));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                org.springframework.http.HttpStatus.CONFLICT, error.getStatus());
+        verify(withdrawalMapper, never()).updateWithdrawalStatus(
+                eq(GROUP_ID), eq(REQUEST_ID), eq("CONSENT_PENDING"), eq("APPROVED"));
+    }
+
+    @Test
+    void approveRejectsOpenPayoutRequestsAndSendsWithdrawDoneNotification() {
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo());
+        when(withdrawalMapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID))
+                .thenReturn(consentPendingRequest());
+        when(withdrawalMapper.selectGyeMemberInfoForUpdate(GROUP_ID, APPLICANT_ID))
+                .thenReturn(memberInfo("ACTIVE"));
+        when(withdrawalMapper.countUnconfirmedProofsByMember(GROUP_ID, APPLICANT_ID)).thenReturn(0);
+        when(withdrawalMapper.countSettlementConsentTargets(REQUEST_ID)).thenReturn(2);
+        when(withdrawalMapper.countUnresolvedActiveSettlementConsentTargets(GROUP_ID, REQUEST_ID)).thenReturn(0);
+        when(withdrawalMapper.updateWithdrawalStatus(GROUP_ID, REQUEST_ID, "CONSENT_PENDING", "APPROVED"))
+                .thenReturn(1);
+        when(withdrawalMapper.updateGyeMemberWithdrawn(GROUP_ID, APPLICANT_ID)).thenReturn(1);
+
+        withdrawalService.approveWithdrawal(GROUP_ID, REQUEST_ID, OWNER_ID);
+
+        verify(withdrawalMapper).rejectOpenPayoutRequestsByMember(GROUP_ID, APPLICANT_ID);
+        verify(withdrawalMapper).insertNotification(
+                APPLICANT_ID,
+                "WITHDRAW_DONE",
+                "중도 탈퇴 최종 승인 안내",
+                "전원 정산안 동의가 완료되어 모임 중도 탈퇴가 최종 승인되었습니다.",
+                "/my-groups",
+                REQUEST_ID
+        );
+    }
+
+    @Test
+    void submitConsentRejectionNotifiesApplicantAndLeaderWithConsentResult() {
+        when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo());
+        when(withdrawalMapper.selectWithdrawalByIdForUpdate(GROUP_ID, REQUEST_ID))
+                .thenReturn(consentPendingRequest());
+        when(withdrawalMapper.selectGyeMemberInfoForUpdate(GROUP_ID, TARGET_ID))
+                .thenReturn(memberInfo("ACTIVE"));
+        when(withdrawalMapper.updateSettlementConsentTarget(GROUP_ID, REQUEST_ID, TARGET_ID, "REJECTED"))
+                .thenReturn(1);
+        when(withdrawalMapper.updateWithdrawalStatus(GROUP_ID, REQUEST_ID, "CONSENT_PENDING", "REJECTED"))
+                .thenReturn(1);
+
+        WithdrawalDTO.ConsentForm form = new WithdrawalDTO.ConsentForm();
+        form.setAgreedYn("N");
+
+        withdrawalService.submitSettlementConsent(GROUP_ID, REQUEST_ID, TARGET_ID, form);
+
+        verify(withdrawalMapper).insertNotification(
+                APPLICANT_ID,
+                "CONSENT_RESULT",
+                "탈퇴 정산안 결과 안내",
+                "탈퇴 정산안에 반대가 발생하여 정산안 재조정이 필요합니다.",
+                "/procedures?groupId=" + GROUP_ID,
+                REQUEST_ID
+        );
+        verify(withdrawalMapper).insertNotification(
+                OWNER_ID,
+                "CONSENT_RESULT",
+                "탈퇴 정산안 반대 발생",
+                "중도 탈퇴 정산안에 반대가 발생했습니다. 정산안을 재조정해 주세요.",
+                "/procedures?groupId=" + GROUP_ID,
+                REQUEST_ID
+        );
+    }
+
     private Map<String, Object> groupInfo() {
         return Map.of("OWNER_ID", OWNER_ID, "STATUS", "ACTIVE");
     }
