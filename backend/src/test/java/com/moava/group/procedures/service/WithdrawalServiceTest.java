@@ -1,6 +1,7 @@
 package com.moava.group.procedures.service;
 
 import com.moava.group.procedures.dto.WithdrawalDTO;
+import com.moava.group.procedures.exception.ProcedureException;
 import com.moava.group.procedures.mapper.WithdrawalMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,7 +45,7 @@ class WithdrawalServiceTest {
         when(withdrawalMapper.countSettlementConsentTargets(REQUEST_ID)).thenReturn(2);
         when(withdrawalMapper.countUnresolvedActiveSettlementConsentTargets(GROUP_ID, REQUEST_ID)).thenReturn(1);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(ProcedureException.class,
                 () -> withdrawalService.approveWithdrawal(GROUP_ID, REQUEST_ID, OWNER_ID));
 
         verify(withdrawalMapper, never()).updateWithdrawalStatus(
@@ -59,7 +60,7 @@ class WithdrawalServiceTest {
                 .thenReturn(memberInfo("ACTIVE"));
         when(withdrawalMapper.countSettlementConsentTargets(REQUEST_ID)).thenReturn(0);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(ProcedureException.class,
                 () -> withdrawalService.approveWithdrawal(GROUP_ID, REQUEST_ID, OWNER_ID));
 
         verify(withdrawalMapper, never()).updateWithdrawalStatus(
@@ -85,7 +86,7 @@ class WithdrawalServiceTest {
     void requestWithdrawalRejectsGroupThatIsNotActive() {
         when(withdrawalMapper.selectGroupInfoForUpdate(GROUP_ID)).thenReturn(groupInfo("DISSOLVED"));
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(ProcedureException.class,
                 () -> withdrawalService.requestWithdrawal(GROUP_ID, APPLICANT_ID, validApplyForm()));
 
         verify(withdrawalMapper, never()).insertWithdrawalRequest(
@@ -99,7 +100,7 @@ class WithdrawalServiceTest {
         form.setSettlementAmount(10000L);
         form.setSettlementMemo("정산 근거");
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(ProcedureException.class,
                 () -> withdrawalService.registerSettlementPlan(GROUP_ID, REQUEST_ID, OWNER_ID, form));
 
         verify(withdrawalMapper, never()).updateSettlementPlan(
@@ -113,7 +114,7 @@ class WithdrawalServiceTest {
                 .thenReturn(Map.of("STATUS", "ACTIVE", "PAYOUT_RECEIVED_YN", "N"));
         when(withdrawalMapper.countActiveWithdrawalByMember(GROUP_ID, APPLICANT_ID)).thenReturn(1);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(ProcedureException.class,
                 () -> withdrawalService.requestWithdrawal(GROUP_ID, APPLICANT_ID, validApplyForm()));
 
         var calls = inOrder(withdrawalMapper);
