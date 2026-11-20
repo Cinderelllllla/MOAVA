@@ -49,18 +49,17 @@ public class DissolutionService {
      *    알림 발송, 건강도 12점 차감(DISSOLVE_PENDING 상태로 자동 반영), AUDIT_LOG(DISSOLVE_REQUEST)
      */
     @Transactional
-    public String requestDissolution(Long groupId, DissolutionDTO.RequestForm form) {
+    public String requestDissolution(Long groupId, Long authenticatedLeaderId, DissolutionDTO.RequestForm form) {
         if (form == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "해산 신청 정보를 입력해 주세요.");
         }
-        Map<String, Object> groupInfo = dissolutionMapper.selectGroupInfo(groupId);
+        Map<String, Object> groupInfo = dissolutionMapper.lockGroupForDissolution(groupId);
         if (groupInfo == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
         }
 
         Long ownerId = ((Number) groupInfo.get("OWNER_ID")).longValue();
-        Long leaderId = form.getEffectiveLeaderId();
-        if (leaderId == null || !ownerId.equals(leaderId)) {
+        if (authenticatedLeaderId == null || !ownerId.equals(authenticatedLeaderId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "모임장만 해산을 신청할 수 있습니다.");
         }
 
@@ -71,6 +70,9 @@ public class DissolutionService {
         }
         if (dissolutionMapper.countActiveWithdrawals(groupId) > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "진행 중인 탈퇴 정산을 먼저 완료해 주세요.");
+        }
+        if (dissolutionMapper.countActivePayoutRequests(groupId) > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "진행 중인 수령 순서 신청을 먼저 처리해 주세요.");
         }
 
         if (form.getReason() == null || form.getReason().isBlank()) {
@@ -84,7 +86,7 @@ public class DissolutionService {
         String groupTitle = (String) groupInfo.get("TITLE");
 
         // 1) DISSOLUTION_REQUEST(PENDING) 생성
-        dissolutionMapper.insertDissolutionRequest(groupId, leaderId, cleanReason);
+        dissolutionMapper.insertDissolutionRequest(groupId, authenticatedLeaderId, cleanReason);
 
         // 2) GYE_GROUP.STATUS = 'DISSOLVE_PENDING' 전환 (건강도 산출 시 -12점 차감 조건 활성화)
         if (dissolutionMapper.updateGroupStatus(groupId, "ACTIVE", "DISSOLVE_PENDING") == 0) {
@@ -109,7 +111,7 @@ public class DissolutionService {
         // 4) AUDIT_LOG (DISSOLVE_REQUEST) 기록 (관리자 대시보드 및 해산 검토 알림 연동)
         dissolutionMapper.insertMemberAuditLog(
                 groupId,
-                leaderId,
+                authenticatedLeaderId,
                 "DISSOLVE_REQUEST",
                 "계모임 해산 신청 접수 (사유: " + cleanReason + ")"
         );
@@ -125,9 +127,12 @@ public class DissolutionService {
     @Transactional
     public String approveDissolutionByAdmin(Long groupId, Long adminId) {
         requireActiveAdmin(adminId);
-        Map<String, Object> groupInfo = dissolutionMapper.selectGroupInfo(groupId);
+        Map<String, Object> groupInfo = dissolutionMapper.lockGroupForDissolution(groupId);
         if (groupInfo == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        if (!"DISSOLVE_PENDING".equals(groupInfo.get("STATUS"))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "해산 검토 대기 상태의 모임만 승인할 수 있습니다.");
         }
 
         Map<String, Object> pendingReq = dissolutionMapper.selectPendingDissolutionByGroup(groupId);
@@ -205,9 +210,12 @@ public class DissolutionService {
     @Transactional
     public String rejectDissolutionByAdmin(Long groupId, Long adminId, String rejectReason) {
         requireActiveAdmin(adminId);
-        Map<String, Object> groupInfo = dissolutionMapper.selectGroupInfo(groupId);
+        Map<String, Object> groupInfo = dissolutionMapper.lockGroupForDissolution(groupId);
         if (groupInfo == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        if (!"DISSOLVE_PENDING".equals(groupInfo.get("STATUS"))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "해산 검토 대기 상태의 모임만 반려할 수 있습니다.");
         }
 
         Map<String, Object> pendingReq = dissolutionMapper.selectPendingDissolutionByGroup(groupId);
