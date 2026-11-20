@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.notification.common.mapper.NotificationCleanupMapper">
+
+    <!-- 읽은 알림: 만든 지 #{days}일 지나면 숨김 (기준은 CREATED_AT, 테이블에 읽은 시각 컬럼이 없음) -->
+    <update id="hideOldRead">
+        UPDATE NOTIFICATION
+           SET DELETED_YN = 'Y'
+         WHERE DELETED_YN = 'N'
+           AND READ_YN = 'Y'
+           AND CREATED_AT &lt; SYSDATE - #{days}
+    </update>
+
+    <!-- 안 읽은 알림: 만든 지 #{days}일 지나면 숨김 -->
+    <update id="hideOldUnread">
+        UPDATE NOTIFICATION
+           SET DELETED_YN = 'Y'
+         WHERE DELETED_YN = 'N'
+           AND READ_YN = 'N'
+           AND CREATED_AT &lt; SYSDATE - #{days}
+    </update>
+</mapper>

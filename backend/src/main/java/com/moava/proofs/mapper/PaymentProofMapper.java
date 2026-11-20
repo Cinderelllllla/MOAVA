@@ -17,6 +17,7 @@ public interface PaymentProofMapper {
 
     // 모임 기본 정보 (없으면 null)
     ProofGroupDto findGroupForProof(@Param("groupId") Long groupId);
+    Long lockGroupForProofUpdate(@Param("groupId") Long groupId);
 
     // 해당 모임의 ACTIVE 구성원인지 (1이면 구성원)
     int countActiveMember(@Param("groupId") Long groupId,
