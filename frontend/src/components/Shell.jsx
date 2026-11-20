@@ -51,6 +51,9 @@ export default function Shell({ role }) {
   const { pathname } = useLocation(); const nav = useNavigate();
   const [mobile, setMobile] = useState(false);
   useEffect(() => { if (isAdmin) proofs.detectOverdue(); }, [isAdmin, pathname]);
+  // 로그인 회원 정보(이름 등)를 서버(/api/auth/me)에서 다시 받아 온다. 실패하면 로그인 때 받은 정보를 그대로 쓴다.
+  const sessionId = session?.id;
+  useEffect(() => { if (sessionId != null && !isAdmin) auth.refreshMe().catch(() => {}); }, [sessionId, isAdmin]);
   // 상단 알림 배지: 서버의 안 읽은 개수 (회원만. 관리자 알림함은 관리자 로그인 연결 전까지 미지원)
   const [unread, setUnread] = useState(0);
   const canNotify = Boolean(session) && !isAdmin;
@@ -92,7 +95,7 @@ export default function Shell({ role }) {
         </div>
       </header>
       <main className="content"><Outlet /></main>
-      <footer className="footer">© 2026 MOAVA · KDT 팀 프로젝트 · 브라우저 시연용 · 실제 금융 거래 및 인증 없음</footer>
+      <footer className="footer">© 2026 MOAVA · KDT 팀 프로젝트 · 실제 금융 거래는 일어나지 않아요</footer>
     </div>
   </div>;
 }

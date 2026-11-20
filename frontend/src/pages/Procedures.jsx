@@ -3,11 +3,24 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
 import { groups, procedures as P, proofs, leader, me, memberName } from '../api';
-import { PageHead, Card, Flow, Select, Input } from '../components/ui';
+import { Link } from 'react-router-dom';
+import { PageHead, Card, Flow, Select, Input, ComingSoon } from '../components/ui';
 import { useOpGroup, GroupSelect } from '../components/shared';
 import { won, maskName } from '../common/format';
 
+/* TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거
+   - 수령 순서: /api/v1/groups/{groupId}/payout-requests (+ ML /ml-api/risk/payout-order) — 백엔드 있음, 프론트 연결은 MOA-52 담당
+   - 중도 탈퇴·정산: /api/v1/groups/{groupId}/withdrawals — 백엔드 있음, 프론트 연결 필요
+   - 규칙·경고·승계·해산: 백엔드 없음
+   아래 ProceduresMock 과 각 탭(OrderTab 등)이 목업 동작 참고용이다. */
 export default function Procedures() {
+  return <ComingSoon kicker="GROUP PROCEDURES" title="모임 절차" text="수령 순서·중도 탈퇴 정산·규칙 변경·해산 절차는 아직 준비 중이에요.">
+    <Link className="btn soft" to="/operations">← 운영 홈</Link>
+  </ComingSoon>;
+}
+
+// eslint-disable-next-line no-unused-vars -- 서버 API 연결 시 참고용 목업 화면 (현재 화면에서 사용하지 않음)
+function ProceduresMock() {
   const { ui, setUi } = useApp(); const nav = useNavigate(); const [g, setGroup] = useOpGroup();
   if (!g) return <><PageHead kicker="PROCEDURES" title="모임 절차" sub="참여 중인 모임이 없습니다." /><button className="btn primary" onClick={() => nav('/groups')}>모임 찾기</button></>;
   const t = groups.opsTodos(g), m = me();
