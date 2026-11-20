@@ -95,10 +95,10 @@ public class WithdrawalService {
         // 모임장에게 탈퇴 신청 알림 발송
         withdrawalMapper.insertNotification(
                 ownerId,
-                "CONSENT_REQUEST",
+                "WITHDRAW_REQUEST",
                 "회원 중도 탈퇴 신청 접수",
                 "모임원의 중도 탈퇴 신청이 접수되었습니다. 정산안을 등록해 주세요.",
-                "/operations?groupId=" + groupId,
+                "/procedures?groupId=" + groupId,
                 null
         );
 
@@ -133,9 +133,12 @@ public class WithdrawalService {
 
         Long settlementAmount = form.getEffectiveAmount();
         String settlementMemo = form.getEffectiveMemo();
-        // [제약조건] 정산 금액 없이 동의 요청 불가
+        // [제약조건] 정산 금액 없이 동의 요청 불가 + Oracle NUMBER(12) 범위 검증
         if (settlementAmount == null) {
             throw ProcedureException.badRequest("정산 금액을 반드시 입력해야 정산안 동의 요청이 가능합니다.");
+        }
+        if (settlementAmount < -999_999_999_999L || settlementAmount > 999_999_999_999L) {
+            throw ProcedureException.badRequest("정산 금액 입력 범위를 초과했습니다.");
         }
         if (settlementMemo == null || settlementMemo.trim().isEmpty()) {
             throw ProcedureException.badRequest("정산 산출 근거(메모)를 입력해 주세요.");
@@ -150,6 +153,15 @@ public class WithdrawalService {
 
         Long applicantId = getLong(req, "MEMBER_ID");
         String expectedStatus = String.valueOf(req.get("STATUS"));
+
+        Map<String, Object> applicantInfo = withdrawalMapper.selectGyeMemberInfoForUpdate(groupId, applicantId);
+        if (applicantInfo == null || !"ACTIVE".equals(applicantInfo.get("STATUS"))) {
+            throw ProcedureException.conflict("탈퇴 신청자가 현재 모임의 활성 회원이 아닙니다.");
+        }
+        if ("REJECTED".equals(expectedStatus)
+                && withdrawalMapper.countActiveWithdrawalByMember(groupId, applicantId) > 0) {
+            throw ProcedureException.conflict("이미 진행 중인 다른 중도 탈퇴 신청 건이 있습니다.");
+        }
 
         // 정산안 금액·근거 업데이트 및 CONSENT_PENDING 전환
         if (withdrawalMapper.updateSettlementPlan(
@@ -174,10 +186,10 @@ public class WithdrawalService {
         for (WithdrawalDTO.ConsentTargetResponse target : targets) {
             withdrawalMapper.insertNotification(
                     target.getMemberId(),
-                    "CONSENT_REQUEST",
+                    "CONSENT_REQ",
                     "중도 탈퇴 정산안 동의 요청",
                     "중도 탈퇴 정산안(" + amountDesc + ")이 등록되었습니다. 확인 후 동의 여부를 선택해 주세요.",
-                    "/operations?groupId=" + groupId,
+                    "/procedures?groupId=" + groupId,
                     withdrawalRequestId
             );
         }
@@ -201,7 +213,8 @@ public class WithdrawalService {
         if (memberId == null || form == null) {
             throw ProcedureException.badRequest("동의 정보를 확인해 주세요.");
         }
-        requireActiveGroup(getActiveGroupForUpdate(groupId));
+        Map<String, Object> groupInfo = getActiveGroupForUpdate(groupId);
+        requireActiveGroup(groupInfo);
         Map<String, Object> req = getWithdrawalRequestForUpdate(groupId, withdrawalRequestId);
         requireStatus(req, "CONSENT_PENDING");
 
@@ -239,6 +252,26 @@ public class WithdrawalService {
             if (withdrawalMapper.updateWithdrawalStatus(
                     groupId, withdrawalRequestId, "CONSENT_PENDING", "REJECTED") == 0) {
                 throw ProcedureException.conflict("신청 상태가 변경되어 반대 처리를 완료할 수 없습니다.");
+            }
+            String linkPage = "/procedures?groupId=" + groupId;
+            withdrawalMapper.insertNotification(
+                    applicantId,
+                    "CONSENT_RESULT",
+                    "탈퇴 정산안 결과 안내",
+                    "탈퇴 정산안에 반대가 발생하여 정산안 재조정이 필요합니다.",
+                    linkPage,
+                    withdrawalRequestId
+            );
+            Long ownerId = getLong(groupInfo, "OWNER_ID");
+            if (!ownerId.equals(memberId)) {
+                withdrawalMapper.insertNotification(
+                        ownerId,
+                        "CONSENT_RESULT",
+                        "탈퇴 정산안 반대 발생",
+                        "중도 탈퇴 정산안에 반대가 발생했습니다. 정산안을 재조정해 주세요.",
+                        linkPage,
+                        withdrawalRequestId
+                );
             }
             return "정산안에 반대(N) 처리되어 재조정 상태가 되었습니다.";
         }
@@ -326,10 +359,10 @@ public class WithdrawalService {
 
         withdrawalMapper.insertNotification(
                 ownerId,
-                "CONSENT_REQUEST",
+                "WITHDRAW_REQUEST",
                 "중도 탈퇴 재확인 요청",
                 "탈퇴 신청 회원이 정산 및 탈퇴 처리 재확인을 요청했습니다.",
-                "/operations?groupId=" + groupId,
+                "/procedures?groupId=" + groupId,
                 withdrawalRequestId
         );
     }
@@ -363,6 +396,10 @@ public class WithdrawalService {
         if (applicantInfo == null || !"ACTIVE".equals(applicantInfo.get("STATUS"))) {
             throw ProcedureException.conflict("탈퇴 신청자가 현재 모임의 활성 회원이 아닙니다.");
         }
+        // 탈퇴 후 재제출·심사 불가로 남아 해산 승인까지 영구 차단되는 미종결 증빙을 사전에 차단
+        if (withdrawalMapper.countUnconfirmedProofsByMember(groupId, applicantId) > 0) {
+            throw ProcedureException.conflict("신청자의 확인 대기 또는 보완 요청 증빙을 먼저 처리해 주세요.");
+        }
 
         // 고정 대상 중 현재 ACTIVE인 회원만 확인하며, 이미 탈퇴한 회원은 동의 의무에서 제외
         withdrawalMapper.lockActiveSettlementConsentTargets(groupId, withdrawalRequestId);
@@ -384,13 +421,16 @@ public class WithdrawalService {
             throw ProcedureException.conflict("탈퇴 신청자의 회원 상태가 변경되어 승인할 수 없습니다.");
         }
 
-        // 3) 신청자 및 모임원들에게 탈퇴 승인 알림 발송
+        // 2-1) 탈퇴 회원의 미확정 수령 순서 신청 정리
+        withdrawalMapper.rejectOpenPayoutRequestsByMember(groupId, applicantId);
+
+        // 3) 신청자에게 탈퇴 최종 승인 알림 발송
         withdrawalMapper.insertNotification(
                 applicantId,
-                "CONSENT_REQUEST",
+                "WITHDRAW_DONE",
                 "중도 탈퇴 최종 승인 안내",
                 "전원 정산안 동의가 완료되어 모임 중도 탈퇴가 최종 승인되었습니다.",
-                "/operations?groupId=" + groupId,
+                "/my-groups",
                 withdrawalRequestId
         );
 

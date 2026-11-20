@@ -60,6 +60,10 @@
                         (SELECT COUNT(*) FROM PAYMENT_PROOF pp
                          WHERE pp.GROUP_ID = dr.GROUP_ID AND pp.STATUS != 'CONFIRMED') AS unconfirmedProofCount,
                         (SELECT COUNT(*) FROM WITHDRAWAL_REQUEST wr
+                         JOIN GYE_MEMBER gm
+                           ON gm.GROUP_ID = wr.GROUP_ID
+                          AND gm.MEMBER_ID = wr.MEMBER_ID
+                          AND gm.STATUS = 'ACTIVE'
                          WHERE wr.GROUP_ID = dr.GROUP_ID AND wr.STATUS IN ('SETTLEMENT_PENDING', 'CONSENT_PENDING')) AS activeWithdrawalCount,
                         (SELECT NVL(SUM(pp2.AMOUNT), 0) FROM PAYMENT_PROOF pp2
                          WHERE pp2.GROUP_ID = dr.GROUP_ID AND pp2.STATUS = 'CONFIRMED') AS totalConfirmedAmount
@@ -90,6 +94,10 @@
         (SELECT COUNT(*) FROM PAYMENT_PROOF pp
         WHERE pp.GROUP_ID = dr.GROUP_ID AND pp.STATUS != 'CONFIRMED') AS unconfirmedProofCount,
         (SELECT COUNT(*) FROM WITHDRAWAL_REQUEST wr
+        JOIN GYE_MEMBER gm
+          ON gm.GROUP_ID = wr.GROUP_ID
+         AND gm.MEMBER_ID = wr.MEMBER_ID
+         AND gm.STATUS = 'ACTIVE'
         WHERE wr.GROUP_ID = dr.GROUP_ID AND wr.STATUS IN ('SETTLEMENT_PENDING', 'CONSENT_PENDING')) AS activeWithdrawalCount,
         (SELECT NVL(SUM(pp2.AMOUNT), 0) FROM PAYMENT_PROOF pp2
         WHERE pp2.GROUP_ID = dr.GROUP_ID AND pp2.STATUS = 'CONFIRMED') AS totalConfirmedAmount
@@ -149,9 +157,13 @@
 
     <select id="countActiveWithdrawals" resultType="int">
         SELECT COUNT(*)
-        FROM WITHDRAWAL_REQUEST
-        WHERE GROUP_ID = #{groupId}
-          AND STATUS IN ('SETTLEMENT_PENDING', 'CONSENT_PENDING')
+        FROM WITHDRAWAL_REQUEST wr
+        JOIN GYE_MEMBER gm
+          ON gm.GROUP_ID = wr.GROUP_ID
+         AND gm.MEMBER_ID = wr.MEMBER_ID
+         AND gm.STATUS = 'ACTIVE'
+        WHERE wr.GROUP_ID = #{groupId}
+          AND wr.STATUS IN ('SETTLEMENT_PENDING', 'CONSENT_PENDING')
     </select>
 
     <select id="countActivePayoutRequests" resultType="int">

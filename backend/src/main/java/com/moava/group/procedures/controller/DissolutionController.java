@@ -24,8 +24,12 @@ public class DissolutionController {
     @GetMapping("/api/v1/groups/{groupId}/dissolution")
     public ResponseEntity<DissolutionDTO.StatusResponse> getGroupDissolution(
             @PathVariable Long groupId, Authentication authentication) {
-        return ResponseEntity.ok(
-                dissolutionService.getGroupDissolutionStatus(groupId, loginMemberId(authentication)));
+        DissolutionDTO.StatusResponse status =
+                dissolutionService.getGroupDissolutionStatus(groupId, loginMemberId(authentication));
+        if (status == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(status);
     }
 
     // [S10 ⑤ - 신청] 모임장의 계모임 해산 신청
@@ -38,13 +42,14 @@ public class DissolutionController {
         return ResponseEntity.ok(Map.of("message", message));
     }
 
-    // [A04] 관리자용 해산 신청 목록 및 종료된 모임 기록 조회 (status=PENDING 또는 APPROVED, 미전달 시 전체)
+    // [A04] 관리자용 해산 신청 목록 및 종료된 모임 기록 조회 (status=PENDING, APPROVED, REJECTED, 미전달 시 전체)
     @GetMapping("/api/v1/admin/dissolutions")
     public ResponseEntity<List<DissolutionDTO.StatusResponse>> getAdminDissolutionList(
             Authentication authentication,
             @RequestParam(required = false) String status) {
         requireAdmin(authentication);
-        return ResponseEntity.ok(dissolutionService.getAdminDissolutionList(status));
+        Long adminId = loginMemberId(authentication);
+        return ResponseEntity.ok(dissolutionService.getAdminDissolutionList(adminId, status));
     }
 
     // [A04 - 승인] ADMIN의 미종결 증빙 검증 후 해산 최종 승인 (admin.approveDissolve(groupId) 매핑)
