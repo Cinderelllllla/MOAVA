@@ -40,7 +40,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
             String id = jwtTokenProvider.getId(token);
-            var authentication = new UsernamePasswordAuthenticationToken(id, null, List.of(new SimpleGrantedAuthority("ROLE_MEMBER")));
+            // JWT role claim을 Spring Security 권한으로 연결한다. 기존 role 없는 회원 토큰은 MEMBER로 처리한다.
+            String role = jwtTokenProvider.getRole(token);
+            String authority = "ADMIN".equals(role) ? "ROLE_ADMIN" : "ROLE_MEMBER";
+            var authentication = new UsernamePasswordAuthenticationToken(
+                    id, null, List.of(new SimpleGrantedAuthority(authority)));
             SecurityContextHolder.getContext().setAuthentication(authentication);
         } catch (Exception e) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

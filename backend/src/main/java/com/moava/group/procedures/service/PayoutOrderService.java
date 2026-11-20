@@ -35,6 +35,9 @@ public class PayoutOrderService {
      */
     @Transactional
     public String requestOrUpdatePayoutOrder(Long groupId, Long memberId, PayoutOrderDTO.RequestForm form) {
+        if (form == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 정보를 확인해 주세요.");
+        }
         Map<String, Object> groupInfo = getGroupInfo(groupId);
         requireActiveMember(groupId, memberId);
 
@@ -49,6 +52,9 @@ public class PayoutOrderService {
         if (roundNo == null || roundNo < 1 || roundNo > maxMembers) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "희망 회차는 1회차부터 " + maxMembers + "회차 사이로 신청해야 합니다.");
+        }
+        if (payoutOrderMapper.countConfirmedRequestByMember(groupId, memberId) > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 수령 회차가 확정된 회원은 추가 신청할 수 없습니다.");
         }
 
         // 2. [AI 제안] 모임원 연체 확률 내림차순 추천 회차 조회 (AI_SUGGESTED_ROUND)
@@ -134,9 +140,13 @@ public class PayoutOrderService {
                                       PayoutOrderDTO.ConsentForm form) {
         requireActiveMember(groupId, memberId);
 
-        Map<String, Object> req = payoutOrderMapper.selectPayoutRequestById(groupId, payoutRequestId);
+        Map<String, Object> req = payoutOrderMapper.selectPayoutRequestForUpdate(groupId, payoutRequestId);
         if (req == null || !"CONSENT_PENDING".equals(req.get("STATUS"))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "현재 동의 진행 중인 신청 건이 아닙니다.");
+        }
+        if (form == null || !("Y".equalsIgnoreCase(form.getAgreedYn())
+                || "N".equalsIgnoreCase(form.getAgreedYn()))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "동의 여부는 Y 또는 N으로 입력해야 합니다.");
         }
 
         String yn = "Y".equalsIgnoreCase(form.getAgreedYn()) ? "Y" : "N";
@@ -169,7 +179,10 @@ public class PayoutOrderService {
         Map<String, Object> groupInfo = getGroupInfo(groupId);
         requireLeader(groupInfo, leaderId);
 
-        Map<String, Object> req = payoutOrderMapper.selectPayoutRequestById(groupId, payoutRequestId);
+        if (payoutOrderMapper.lockGroupForOrderUpdate(groupId) == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        Map<String, Object> req = payoutOrderMapper.selectPayoutRequestForUpdate(groupId, payoutRequestId);
         if (req == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "신청 내역을 찾을 수 없습니다.");
         }
@@ -185,12 +198,16 @@ public class PayoutOrderService {
         if (duplicateCount > 0) {
             throw new IllegalStateException("이미 다른 회원에게 확정된 회차입니다. 회차 중복 확정은 불가합니다.");
         }
+        if (payoutOrderMapper.countConfirmedRequestByMember(groupId, applicantId) > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 수령 회차가 확정된 회원입니다.");
+        }
 
         // [검증 2] 신청자 제외 ACTIVE 회원 전원 'Y' 동의 검증
-        int totalTargetMembers = payoutOrderMapper.countTotalActiveOtherMembers(groupId, applicantId);
-        int agreedMembers = payoutOrderMapper.countAgreedConsents(payoutRequestId);
+        List<Long> activeTargetMembers =
+                payoutOrderMapper.lockActiveConsentTargets(groupId, payoutRequestId, applicantId);
+        int agreedMembers = payoutOrderMapper.countAgreedConsents(groupId, payoutRequestId, applicantId);
 
-        if (agreedMembers < totalTargetMembers) {
+        if (agreedMembers < activeTargetMembers.size()) {
             throw new IllegalStateException("영향받는 회원 전원의 동의가 필요해요.");
         }
 
