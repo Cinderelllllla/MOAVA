@@ -3,6 +3,7 @@
 
 import * as D from './mock/db';
 import { getAccessToken } from './auth';
+import { apiFetch } from './client';
 
 const { db, save, fail } = D;
 
@@ -53,35 +54,36 @@ export const getGroup = id => D.group(id);
 export const myGroups = () => db.groups.filter(D.activeJoined);
 // Oracle DB에서 로그인한 회원이 모임장인 계모임 조회
 export async function fetchMyGroups() {
-  const token = getAccessToken();
-
-  if (!token) {
-    throw new Error('로그인이 필요합니다.');
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
   }
 
-  const response = await fetch('/api/groups/my', {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('로그인 인증이 만료되었거나 접근 권한이 없습니다.');
-    }
-
-    throw new Error(`내 계모임 조회 실패 (${response.status})`);
-  }
-
-  const data = await response.json();
+  const data = await apiFetch('/api/groups/my');
 
   if (!Array.isArray(data)) {
-    throw new Error('계모임 목록 응답 형식이 올바르지 않습니다.');
+    throw new Error('내 계모임을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.');
   }
 
   return data;
 }
+
+/** 초대 링크 토큰으로 모임 조회 (GET /api/v1/invites/{token}, 로그인 필요) */
+export async function fetchInvite(token) {
+  if (!token) throw new Error('초대 주소가 올바르지 않아요.');
+  try {
+    return await apiFetch(`/api/v1/invites/${encodeURIComponent(token)}`);
+  } catch (e) {
+    if (e.status === 404) throw new Error('유효하지 않거나 만료된 초대 링크예요.');
+    throw e;
+  }
+}
+
+/** 서버 모임 상태 코드(GYE_GROUP.STATUS) → 화면 문구 */
+export const GROUP_STATUS_LABEL = { RECRUITING: '모집 중', ACTIVE: '운영 중', DISSOLVE_PENDING: '해산 검토 중', DISSOLVED: '해산 완료' };
+export const groupStatusLabel = s => GROUP_STATUS_LABEL[s] || '확인 중';
+/** 서버 모임 목적 코드(GYE_GROUP.PURPOSE) → 화면 문구 */
+export const PURPOSE_LABEL = { SAVINGS: '목돈 마련', INVEST: '재테크', SOCIAL: '친목', STARTUP: '창업', TRAVEL: '여행' };
+export const purposeLabel = p => PURPOSE_LABEL[p] || p || '-';
 
 export const endedGroups = () =>
     db.groups.filter(g => D.joined(g) && D.isEnded(g));
@@ -271,46 +273,20 @@ export async function createGroup(f) {
     fail('지역을 시·도와 시·군·구까지 입력해 주세요.');
   }
 
-// 8. 모임 생성 함수 내부
-  const token = getAccessToken();
-
-  if (!token) {
-    throw new Error('로그인이 필요합니다.');
+  // 8. 서버에 생성 요청 (오류는 apiFetch 가 사용자용 문장으로 바꿔 준다)
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
   }
 
-  const response = await fetch('/api/groups', {
+  const result = await apiFetch('/api/groups', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
-    },
     body: JSON.stringify(payload)
   });
 
-  // 9. 서버 응답 처리
-  const result = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error(
-          '로그인 인증이 필요합니다. 백엔드 인증 연결을 확인해 주세요.'
-      );
-    }
-
-    if (response.status === 403) {
-      throw new Error('모임 생성 권한이 없습니다.');
-    }
-
-    throw new Error(
-        result?.message ||
-        `모임 생성 요청에 실패했습니다. (${response.status})`
-    );
-  }
-
-  // 10. 서버 응답을 프론트엔드 형식으로 변환
+  // 9. 서버 응답을 프론트엔드 형식으로 변환
   if (result?.groupId == null) {
     throw new Error(
-        '모임 생성 응답에 groupId가 없습니다. 서버 저장 결과를 확인해 주세요.'
+        '모임이 만들어졌는지 확인하지 못했어요. 내 계모임에서 확인해 주세요.'
     );
   }
 
