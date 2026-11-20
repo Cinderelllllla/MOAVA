@@ -31,10 +31,23 @@ public class JwtTokenProvider {
     }
 
     public String createToken(Long memberId) {
-        // JWT 토큰 생성 로직 구현
+        return createToken(memberId, "MEMBER");
+    }
+
+    // 회원·관리자 주체 구분을 토큰 role claim에 담으며, 허용된 역할만 토큰화한다.
+    public String createToken(Long subjectId, String role) {
+        if (subjectId == null || !("MEMBER".equals(role) || "ADMIN".equals(role))) {
+            throw new IllegalArgumentException("토큰 주체 정보를 확인해 주세요.");
+        }
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expireMinutes * 60_000L);
-        return Jwts.builder().subject(String.valueOf(memberId)).issuedAt(now).expiration(expiry).signWith(key()).compact();
+        return Jwts.builder()
+                .subject(String.valueOf(subjectId))
+                .claim("role", role)
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(key())
+                .compact();
     }
 
     public String getId(String token) {
@@ -44,10 +57,17 @@ public class JwtTokenProvider {
 
     public boolean isValid(String token) {
         try {
-            getId(token); // 토큰에서 이메일을 추출하여 유효성을 확인
-            return true;
+            getId(token);
+            String role = getRole(token);
+            return "MEMBER".equals(role) || "ADMIN".equals(role);
         } catch (Exception e) {
             return false;
         }
+    }
+
+    public String getRole(String token) {
+        Claims claims = Jwts.parser().verifyWith(key()).build().parseSignedClaims(token).getPayload();
+        String role = claims.get("role", String.class);
+        return role == null ? "MEMBER" : role;
     }
 }
