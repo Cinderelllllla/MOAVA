@@ -5,7 +5,6 @@ import { useApp } from '../common/store';
 import { finance, groups, joined, leader, memberName, activeJoined, db } from '../api';
 import { won, krw, signed } from '../common/format';
 import { Empty } from './ui';
-import { INCOME_CAP_RATIO, AMOUNT_UNIT_MANWON } from '../common/policy';
 
 export function BarChart({ data, limit }) {
   if (!data?.length) return <Empty>아직 월별 기록이 없어요. 월별 금융 데이터에서 수입·지출을 저장해 보세요.</Empty>;
@@ -65,7 +64,7 @@ export function InlineSimulator({ g, onClose }) {
 export function RiskPanel({ compact }) {
   const nav = useNavigate();
   const assessment = finance.getMlAssessment(), a = finance.affordability();
-  const unit = AMOUNT_UNIT_MANWON, cap = Math.round(INCOME_CAP_RATIO * 100);
+  const p = finance.getPolicy(), unit = p.amountUnitManwon, cap = Math.round(p.incomeCapRatio * 100);
   return <div className="policy-panel" style={{ marginTop: 0 }}><h3>연체 위험 등급 {assessment && <span className="policy-tag">AI 분석</span>}</h3>
     {assessment ? <p className="muted mini">위험 등급 <b>{assessment.risk.risk_label}</b> · 연체 확률 {(assessment.risk.default_probability * 100).toFixed(1)}% · 안전계수 {assessment.risk.safety_factor}</p>
       : <><p className="muted mini">아직 분석 결과가 없어요. 맞춤 추천에서 금융정보를 입력하고 이용에 동의하면 AI가 위험 등급과 추천 납입액을 계산해 드려요.</p><div className="actions"><button type="button" className="btn small soft" onClick={() => nav('/journey')}>맞춤 추천 시작 →</button></div></>}
