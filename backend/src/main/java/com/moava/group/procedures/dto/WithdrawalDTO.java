@@ -53,13 +53,7 @@ public class WithdrawalDTO {
         }
 
         public Long getEffectiveAmount() {
-            Long raw = settlementAmount != null ? settlementAmount : amount;
-            if (raw == null) return null;
-            // 프론트에서 '50'(50만 원)처럼 만 원 단위로 보낸 경우 DB(KRW 원 단위)에 맞게 * 10000 변환
-            if (raw > -10000 && raw < 10000 && raw != 0) {
-                return Math.multiplyExact(raw, 10000L);
-            }
-            return raw;
+            return settlementAmount != null ? settlementAmount : amount;
         }
 
         public String getEffectiveMemo() {
