@@ -1,89 +1,53 @@
 
 /* S02 마이 홈 — /dashboard · F08 F17 F35
-   기존 대시보드 + Oracle 계모임 조회
+   로그인 회원의 서버 데이터(내 계모임 · 안 읽은 알림 · 월별 기록)를 보여 준다.
 */
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
 import useMlFinanceAssessment from '../common/useMlFinanceAssessment';
-import { finance, groups, admin, leader } from '../api';
-import { getAccessToken } from '../api/auth';
+import useMyGroups from '../common/useMyGroups';
+import { finance, groups, fetchUnreadNotificationCount } from '../api';
+import { NOTIFICATIONS_CHANGED } from '../common/notificationEvents';
 import { PageHead, Card } from '../components/ui';
-import { BarChart, FinanceAssessmentStatus, RiskLabel } from '../components/shared';
+import { FinanceAssessmentStatus, LoadState, MonthlyChart, RiskLabel } from '../components/shared';
 import { won, wonFromKrw } from '../common/format';
 
+/** 서버의 안 읽은 알림 개수. 실패하면 null(화면에는 '-' 표시) */
+function useUnreadCount() {
+  const [count, setCount] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetchUnreadNotificationCount()
+      .then(c => { if (alive) setCount(c); })
+      .catch(() => { if (alive) setCount(null); });
+    load();
+    window.addEventListener(NOTIFICATIONS_CHANGED, load);
+    return () => { alive = false; window.removeEventListener(NOTIFICATIONS_CHANGED, load); };
+  }, []);
+  return count;
+}
+
 export default function Dashboard() {
-  const { user, setUi } = useApp();
+  const { user } = useApp();
   const mlAssessment = useMlFinanceAssessment();
   const nav = useNavigate();
 
-  // 기존 금융·알림 기능 유지
   const a = finance.affordability();
-  const pending = admin.myNotices().filter(n => !n.read).length;
-
-  // 서버 로그인 여부
-  const token = getAccessToken();
-  const isServerUser = Boolean(token);
-
-  // 기존 Mock 계모임
-  const mockMine = groups.myGroups();
-
-  // Oracle 계모임 조회 상태
-  const [serverGroups, setServerGroups] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!isServerUser) {
-      setServerGroups([]);
-      setLoading(false);
-      setError('');
-      return;
-    }
-
-    let cancelled = false;
-
-    setLoading(true);
-    setError('');
-
-    groups.fetchMyGroups()
-      .then(data => {
-        if (!cancelled) {
-          setServerGroups(data);
-        }
-      })
-      .catch(err => {
-        if (!cancelled) {
-          setError(
-            err.message || '계모임 조회에 실패했습니다.'
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isServerUser, token]);
-
-  // 서버 로그인 시 Oracle, Mock 로그인 시 기존 데이터
-  const mine = isServerUser ? serverGroups : mockMine;
-
+  const unread = useUnreadCount();
+  const myGroups = useMyGroups();
+  const mine = myGroups.items;
   const shown = mine.slice(0, 3);
 
   // 계모임 개수 표시
-  const groupCount = loading
+  const groupCount = myGroups.status === 'loading'
     ? '조회 중'
-    : error
-      ? '조회 실패'
+    : myGroups.status === 'error'
+      ? '-'
       : `${mine.length}개`;
 
-  // 기존 통계 카드
+  // 통계 카드
   const Stat = ({ label, val, ico, to }) => (
     <button
       type="button"
@@ -116,11 +80,19 @@ export default function Dashboard() {
           ✦ MOAVA SMART RECOMMENDATION
         </span>
 
-        <h2>
-          나에게 맞는 월 납입액
-          <br />
-          {won(a.rec)}부터 시작해 보세요.
-        </h2>
+        {a ? (
+          <h2>
+            나에게 맞는 월 납입액
+            <br />
+            {won(a.rec)}부터 시작해 보세요.
+          </h2>
+        ) : (
+          <h2>
+            금융정보를 입력하면
+            <br />
+            나에게 맞는 월 납입액을 추천해 드려요.
+          </h2>
+        )}
 
         <p
           style={{
@@ -145,24 +117,20 @@ export default function Dashboard() {
       <div className="grid cols4 section">
         <Stat
           label="추천 월 납입액"
-          val={won(a.rec)}
+          val={a ? won(a.rec) : '-'}
           ico="✧"
           to="/journey"
         />
 
         <Stat
           label="월 가용 금액"
-          val={won(a.free)}
+          val={a ? won(a.free) : '-'}
           ico="◉"
           to="/finance"
         />
 
         <Stat
-          label={
-            isServerUser
-              ? '내가 만든 계모임'
-              : '참여 계모임'
-          }
+          label="내가 만든 계모임"
           val={groupCount}
           ico="☁"
           to="/my-groups"
@@ -170,7 +138,7 @@ export default function Dashboard() {
 
         <Stat
           label="읽지 않은 알림"
-          val={`${pending}건`}
+          val={unread == null ? '-' : `${unread}건`}
           ico="♧"
           to="/notifications"
         />
@@ -178,7 +146,6 @@ export default function Dashboard() {
 
       {/* 하단 그래프 + 내 계모임 */}
       <div className="grid cols2 section">
-        {/* 기존 금융 그래프 */}
         <Card>
           <div className="section-title">
             <h2 style={{ margin: 0 }}>
@@ -193,22 +160,15 @@ export default function Dashboard() {
             </button>
           </div>
 
-          <BarChart
-            data={finance.getMonthly()}
-            limit={6}
-          />
+          <MonthlyChart limit={6} />
         </Card>
 
         {/* 내 계모임 목록 */}
         <Card>
           <div className="section-title">
             <h2 style={{ margin: 0 }}>
-              {isServerUser
-                ? '내가 만든 계모임'
-                : '나의 계모임'}
-
+              내가 만든 계모임
               {' '}
-
               <small className="muted">
                 {groupCount}
               </small>
@@ -223,114 +183,56 @@ export default function Dashboard() {
           </div>
 
           <div className="list">
-            {loading && (
-              <div className="empty">
-                내 계모임을 불러오는 중입니다.
-              </div>
-            )}
-
-            {!loading && error && (
-              <div className="empty" role="alert">
-                {error}
-                {' '}
-                <button type="button" className="btn small soft" onClick={() => window.location.reload()}>
-                  다시 시도
-                </button>
-              </div>
-            )}
-
-            {!loading && !error && (
-              shown.length ? (
-                shown.map(g => {
-                  // 서버 계모임과 Mock 계모임의
-                  // 필드 구조가 다르므로 구분
-                  const id = isServerUser
-                    ? g.groupId
-                    : g.id;
-
-                  const region = isServerUser
-                    ? [
-                        g.regionSido,
-                        g.regionSigungu
-                      ].filter(Boolean).join(' ')
-                    : g.region;
-
-                  const maxMembers = isServerUser
-                    ? g.maxMembers
-                    : g.max;
-
-                  return (
-                    <button
-                      type="button"
-                      key={id}
-                      className="list-item group-choice"
-                      style={{
-                        width: '100%',
-                        textAlign: 'left',
-                        font: 'inherit',
-                        cursor: 'pointer'
-                      }}
-                      onClick={() => {
-                        if (isServerUser) {
-                          // 서버 계모임의 운영 홈은
-                          // 아직 백엔드 연동 전
-                          nav('/my-groups');
-                          return;
-                        }
-
-                        setUi({ selected: id });
-                        nav('/operations');
-                      }}
+            <LoadState
+              status={myGroups.status}
+              error={myGroups.error}
+              onRetry={myGroups.reload}
+              loadingText="내 계모임을 불러오는 중이에요."
+            >
+              {shown.length ? (
+                shown.map(g => (
+                  <button
+                    type="button"
+                    key={g.groupId}
+                    className="list-item group-choice"
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      font: 'inherit',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => nav('/my-groups')}
+                  >
+                    <div
+                      className="item-head"
+                      style={{ margin: 0 }}
                     >
-                      <div
-                        className="item-head"
-                        style={{ margin: 0 }}
-                      >
-                        <b>{g.title}</b>
+                      <b>{g.title}</b>
+                      <span className="pill">모임장 · {groups.groupStatusLabel(g.status)}</span>
+                    </div>
 
-                        <span className="pill">
-                          {isServerUser
-                            ? 'Leader'
-                            : leader(g)
-                              ? 'Leader'
-                              : 'Member'}
-                        </span>
-                      </div>
-
-                      <p
-                        className="muted mini"
-                        style={{ margin: '6px 0 0' }}
-                      >
-                        월 {isServerUser ? wonFromKrw(g.amount) : won(g.amount)}
-
-                        {' · '}매월 {g.payDay}일
-
-                        {' · '}{region}
-
-                        {isServerUser
-                          ? ` · 최대 ${maxMembers}명`
-                          : ` · ${g.members.length}/${maxMembers}명`}
-
-                        {' · '}
-
-                        {isServerUser
-                          ? '내 계모임 보기 →'
-                          : '운영 홈 →'}
-                      </p>
-                    </button>
-                  );
-                })
+                    <p
+                      className="muted mini"
+                      style={{ margin: '6px 0 0' }}
+                    >
+                      월 {wonFromKrw(g.amount)}
+                      {' · '}매월 {g.payDay}일
+                      {' · '}{[g.regionSido, g.regionSigungu].filter(Boolean).join(' ')}
+                      {` · 최대 ${g.maxMembers}명`}
+                      {' · '}내 계모임 보기 →
+                    </p>
+                  </button>
+                ))
               ) : (
                 <div className="empty">
-                  {isServerUser
-                    ? '모임장으로 생성한 계모임이 없어요.'
-                    : '참여 중인 모임이 없어요.'}
+                  아직 만든 계모임이 없어요.{' '}
+                  <button type="button" className="btn small soft" onClick={() => nav('/groups/new')}>계모임 만들기</button>
                 </div>
-              )
-            )}
+              )}
+            </LoadState>
           </div>
 
-          {mine.length > 3 && !loading && !error && (
+          {mine.length > 3 && myGroups.status === 'ready' && (
             <p className="muted mini mt-3 mb-0">
               외 {mine.length - 3}개 모임은
               더보기에서 확인하세요.

@@ -2,6 +2,8 @@
    MOAVA · api/mock/db.js — 브라우저(localStorage) 가짜 DB
    기준: 테이블 정의서 v1.5. 서버 연동 후에는 이 폴더 전체가 필요 없어집니다.
    ============================================================ */
+import { tokenMemberId, getServerMember } from '../client';
+
 const KEY = 'moava-react-v1';
 
 export function groupDefaults(o) {
@@ -17,6 +19,11 @@ export function groupDefaults(o) {
   }, o);
 }
 
+/** 비어 있는 금융 프로필 (값이 null 이면 "아직 입력 안 함") */
+export function emptyFinance() {
+  return { income: null, fixed: null, variable: null, saving: null, reserve: null, goal: null, months: 6, risk: null, consentAt: null, mlAssessment: null };
+}
+
 export const SEED = {
   members: [
     { id: 1, name: '이모아', email: 'moa@example.com', password: 'demo1234', phone: '010-1234-5678', regionSido: '서울', regionSigungu: '마포구', status: 'ACTIVE', privacyAgreedAt: '2026-10-01' },
@@ -24,11 +31,12 @@ export const SEED = {
   ],
   admins: [{ id: 1, name: '관리자', email: 'admin@moava.test', password: 'admin1234' }],
   session: null,
-  finance: { income: 320, fixed: 125, variable: 83, saving: 35, reserve: 25, goal: 20, months: 6, risk: '주의', consentAt: null },
-  financeMonthly: [
-    { month: '5월', income: 310, expense: 231 }, { month: '6월', income: 320, expense: 224 }, { month: '7월', income: 305, expense: 243 },
-    { month: '8월', income: 320, expense: 211 }, { month: '9월', income: 315, expense: 239 }, { month: '10월', income: 320, expense: 208 },
-  ],
+  // 금융 프로필(F05)은 서버 API가 없어 사용자가 입력한 값을 로그인해 있는 동안만 이 브라우저에 보관한다.
+  // 처음엔 비어 있고, 로그아웃·토큰 만료·비로그인 상태가 되면 clearFinance() 로 지운다.
+  // TODO(MOA-69): F05 서버 API(/finance/profile) 연결 시 서버 값으로 교체
+  finance: emptyFinance(),
+  financeMonthly: [],   // 월별 기록은 서버(/api/v1/finance/monthly)만 사용
+
   groups: [
     groupDefaults({ id: 101, title: '마포 직장인 목돈 모으기', region: '서울 마포구', purpose: '목돈 마련', amount: 20, max: 6, months: 6, payDay: 5, ownerId: 2, members: [1, 2], rulesTitle: '안전한 납입과 정산', rules: '매월 5일 납입 · 탈퇴 시 정산안 공식 동의', rate: 3, description: '지역 직장인을 위한 부담 없는 목돈 마련 모임', inviteToken: 'inv-mapo-101', account: { bank: '카카오뱅크', holder: '김하늘', accountNo: '3333012345678', verifyStatus: 'PENDING', keyVer: 1 } }),
     groupDefaults({ id: 102, title: '서대문 우리동네 재테크', region: '서울 서대문구', purpose: '재테크', amount: 15, max: 6, months: 6, payDay: 10, ownerId: 2, members: [2], rulesTitle: '모임 운영 규칙', rules: '납입일 준수, 규칙 변경 시 합의', rate: 2, description: '꾸준한 소액 재테크 모임', inviteToken: 'inv-sdm-102' }),
@@ -48,14 +56,22 @@ export const SEED = {
 
 export let db = load();
 
-// 서버 로그인 세션은 JWT가 없으면 유지하지 않음
-if (
-  db.session?.type === 'MEMBER' &&
-  String(db.session.id).startsWith('server:') &&
-  !sessionStorage.getItem('moava_access_token')
-) {
-  db.session = null;
-  localStorage.setItem('moava-react-v1', JSON.stringify(db));
+/* 로그인은 서버(JWT)만 인정한다.
+   - 토큰이 없거나, 토큰의 회원 번호와 세션이 다르면 세션을 지운다 (예전 목업 로그인 흔적 포함).
+   - 예전 버전이 브라우저에 복사해 둔 서버 회원 정보('server:이메일', 전화번호 포함)도 지운다. */
+{
+  const tokenId = tokenMemberId();
+  const validServerSession = db.session?.type === 'MEMBER' && db.session.source === 'SERVER' && db.session.id === tokenId;
+  const legacyMembers = (db.members || []).some(m => String(m.id).startsWith('server:'));
+  const ownerBefore = db.financeOwner;
+  if (validServerSession) ensureFinanceOwner();   // 예전 버전이 넣어 둔 SEED 금융값 비우기
+  else clearFinance();                            // 로그인 상태가 아니면(탭을 닫았다 연 경우 등) 금융 프로필을 남기지 않는다
+  // 로그인 상태가 아니면 비운 금융 프로필을 항상 저장소에 반영한다
+  if (!validServerSession || legacyMembers || ownerBefore !== db.financeOwner) {
+    if (!validServerSession) db.session = null;
+    db.members = (db.members || []).filter(m => !String(m.id).startsWith('server:'));
+    localStorage.setItem(KEY, JSON.stringify(db));
+  }
 }
 
 function load() {
@@ -72,14 +88,23 @@ export const getVersion = () => version;   // useSyncExternalStore 스냅샷: �
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 export function save() { localStorage.setItem(KEY, JSON.stringify(db)); version++; listeners.forEach(fn => fn()); }
 export function reset() { db = structuredClone(SEED); save(); }
+/** 금융 프로필(소득·지출 등)과 AI 분석 결과를 비운다. 로그아웃·토큰 만료·비로그인 상태에서 호출 → 브라우저에 남기지 않음 */
+export function clearFinance() {
+  db.finance = emptyFinance();
+  db.financeMonthly = [];
+  db.journey = { step: 1 };
+  db.financeOwner = null;
+}
+
+/** 로그인한 회원이 바뀌면 이 기기에 보관된 금융 프로필을 비운다 (가짜 SEED 값을 넣지 않음).
+ *  owner 앞의 'm:' 은 예전 버전이 SEED 값을 복사해 둔 기록과 구분하기 위한 표시 → 예전 기록은 한 번 비워진다. */
 export function ensureFinanceOwner() {
   if (db.session?.type !== 'MEMBER') return;      // 관리자 로그인은 무시
-  const owner = String(db.session.id);
+  const owner = `m:${db.session.id}`;
   if (db.financeOwner === owner) return;          // 같은 사람이면 그대로 유지
-  const seed = structuredClone(SEED);
-  db.finance = seed.finance;
-  db.financeMonthly = seed.financeMonthly;
-  db.journey = seed.journey;
+  db.finance = emptyFinance();
+  db.financeMonthly = [];
+  db.journey = { step: 1 };
   db.financeOwner = owner;
 }
 
@@ -91,7 +116,14 @@ export const nowText = () => new Date().toLocaleString('ko-KR');
 export const fail = msg => { throw new Error(msg); };
 export const isAdmin = () => db.session?.type === 'ADMIN';
 export const me = () => (db.session && !isAdmin()) ? db.session.id : null;
-export const currentUser = () => !db.session ? null : isAdmin() ? db.admins.find(a => a.id === db.session.id) : db.members.find(m => m.id === db.session.id);
+export const currentUser = () => {
+  if (!db.session) return null;
+  if (db.session.source === 'SERVER') {   // 서버 로그인 회원: 번호는 JWT, 이름 등은 /api/auth/me 결과
+    const m = getServerMember();
+    return m ? { id: db.session.id, ...m, source: 'SERVER' } : null;
+  }
+  return isAdmin() ? db.admins.find(a => a.id === db.session.id) : db.members.find(m => m.id === db.session.id);
+};
 export const memberName = id => db.members.find(m => m.id === id)?.name || '회원';
 export const group = id => db.groups.find(g => g.id === Number(id)) || null;
 export const isEnded = g => g?.status === '해산 완료';
