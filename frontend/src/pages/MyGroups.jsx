@@ -9,7 +9,6 @@ import { groups, finance } from '../api';
 import { PageHead, Card } from '../components/ui';
 import { LoadState } from '../components/shared';
 import { wonFromKrw } from '../common/format';
-import { INCOME_CAP_RATIO } from '../common/policy';
 
 export default function MyGroups() {
   const nav = useNavigate();
@@ -20,6 +19,7 @@ export default function MyGroups() {
   const income = Number(finance.getFinance().income) || 0;
   const monthlyTotal = list.reduce((sum, g) => sum + Number(g.amount || 0) / 10000, 0);
   const burden = income > 0 ? Math.round(monthlyTotal / income * 100) : null;
+  const capPercent = Math.round(finance.getPolicy().incomeCapRatio * 100);   // 추천액 상한(%) — ML 서버 값 기준
 
   return (
     <>
@@ -56,8 +56,8 @@ export default function MyGroups() {
           <small>개인 납입 부담률 (참고)</small>
           <div className="metric">
             {myGroups.status !== 'ready' || burden == null ? '-' : `${burden}%`}
-            {myGroups.status === 'ready' && burden != null && burden > INCOME_CAP_RATIO * 100 && (
-              <span className="pill warn">{INCOME_CAP_RATIO * 100}% 초과</span>
+            {myGroups.status === 'ready' && burden != null && burden > capPercent && (
+              <span className="pill warn">{capPercent}% 초과</span>
             )}
           </div>
           {burden == null && <small>맞춤 추천에서 월수입을 입력하면 계산돼요.</small>}

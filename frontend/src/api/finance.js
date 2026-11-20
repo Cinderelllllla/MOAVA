@@ -5,6 +5,38 @@ import { apiFetch, getToken } from './client';
 
 import { RISK, INCOME_CAP_RATIO, AMOUNT_UNIT_MANWON } from '../common/policy';
 export { RISK };
+
+/* ---- 정책 값: ML 서버(/ml-api/risk/model)가 기준. 받지 못하면 common/policy.js 기본값을 쓴다 ---- */
+let policy = {
+  incomeCapRatio: INCOME_CAP_RATIO,       // 추천액 상한 (월수입 대비 비율)
+  amountUnitManwon: AMOUNT_UNIT_MANWON,   // 추천액 절사 단위 (만 원)
+  source: 'default',                      // 'default' | 'ml'
+};
+let policyRequested = false;
+async function loadPolicy() {
+  try {
+    const res = await fetch('/ml-api/risk/model');
+    if (!res.ok) return;
+    const m = await res.json();
+    const cap = Number(m?.income_cap_ratio), unit = Number(m?.round_unit) / 10000;   // round_unit 은 원 단위
+    policy = {
+      incomeCapRatio: cap > 0 && cap <= 1 ? cap : policy.incomeCapRatio,
+      amountUnitManwon: unit > 0 ? unit : policy.amountUnitManwon,
+      source: 'ml',
+    };
+    save();   // 정책 값을 쓰는 화면 다시 그리기
+  } catch {
+    // 분석 서버가 꺼져 있으면 기본값 유지
+  }
+}
+/** 화면용 정책 값 { incomeCapRatio, amountUnitManwon, source }. 처음 부를 때 한 번 ML 서버에서 받아 온다. */
+export function getPolicy() {
+  if (!policyRequested) {
+    policyRequested = true;
+    Promise.resolve().then(loadPolicy);   // 화면을 그리는 도중에 상태를 바꾸지 않도록 다음 차례에 호출
+  }
+  return policy;
+}
 export const riskCoef = () => (RISK[db.finance.risk] || RISK['주의']).coef;
 const financeProfileKey = f => ['income', 'fixed', 'variable', 'saving', 'reserve'].map(k => Number(f[k])).join(':');
 export const getMlAssessment = () => {
@@ -156,8 +188,9 @@ export async function assessWithMl(memberId) {
     const detail = typeof result?.detail === 'string' && /[가-힣]/.test(result.detail) ? result.detail : null;
     throw new Error(detail || (response.status >= 500 ? '분석 서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.' : '입력한 금융정보를 확인해 주세요.'));
   }
+  // 위험 등급 이름은 ML 서버가 기준이라 프론트 목록(RISK)과 비교하지 않는다
   if (!result?.risk?.risk_label || !Number.isFinite(Number(result.recommended_amount))
-      || !Number.isFinite(Number(result.available_amount)) || !RISK[result.risk.risk_label]) {
+      || !Number.isFinite(Number(result.available_amount))) {
     throw new Error('분석 결과를 읽지 못했어요. 잠시 후 다시 시도해 주세요.');
   }
   if (financeProfileKey(db.finance) !== profileKey) {
