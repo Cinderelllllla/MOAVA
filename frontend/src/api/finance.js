@@ -74,6 +74,20 @@ export const getMonthly = () => {
   }
   return db.financeMonthly;
 };
+/** F07 지출 기본값 제안. income 은 화면 단위(만 원).
+ *  로그인 상태이고 서버가 available=true 를 줄 때만 { decile, consumption, nonconsumption(만 원), baseYm }, 아니면 null. */
+export async function getSpendingDefaults(income) {
+  const v = Number(income);
+  if (!getToken() || !Number.isFinite(v) || v <= 0) return null;
+  const d = await apiFetch(`/api/v1/finance/spending-defaults?income=${Math.round(v * 10000)}`);
+  if (!d?.available) return null;
+  return {
+    decile: d.decile,
+    consumption: Math.round(Number(d.avgConsumption) / 10000),
+    nonconsumption: Math.round(Number(d.avgNonconsumption) / 10000),
+    baseYm: d.baseYm,
+  };
+}
 export const getJourneyStep = () => db.journey.step;
 
 export async function setRisk(v) { if (!RISK[v]) fail('알 수 없는 등급'); db.finance.risk = v; save(); }
