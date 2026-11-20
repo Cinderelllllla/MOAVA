@@ -18,7 +18,8 @@ import {
   leader,
   isEnded,
   reset,
-  ensureFinanceOwner
+  ensureFinanceOwner,
+  clearFinance
 } from './mock/db';
 import {
   TOKEN_KEY,
@@ -112,6 +113,7 @@ export async function refreshMe() {
 onUnauthorized(() => {
   clearAccessToken();
   db.session = null;
+  clearFinance();   // 금융 프로필을 브라우저에 남기지 않음
   save();
 });
 
@@ -159,6 +161,7 @@ export async function logout() {
   clearAccessToken();
 
   db.session = null;
+  clearFinance();   // 소득·지출 같은 금융 프로필은 로그아웃하면 지운다 (다시 로그인하면 새로 입력)
 
   save();
 }

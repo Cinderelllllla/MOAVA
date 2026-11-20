@@ -31,7 +31,8 @@ export const SEED = {
   ],
   admins: [{ id: 1, name: '관리자', email: 'admin@moava.test', password: 'admin1234' }],
   session: null,
-  // 금융 프로필(F05)은 서버 API가 없어 사용자가 입력한 값만 이 기기에 임시 보관한다. 처음엔 비어 있음.
+  // 금융 프로필(F05)은 서버 API가 없어 사용자가 입력한 값을 로그인해 있는 동안만 이 브라우저에 보관한다.
+  // 처음엔 비어 있고, 로그아웃·토큰 만료·비로그인 상태가 되면 clearFinance() 로 지운다.
   // TODO(MOA-69): F05 서버 API(/finance/profile) 연결 시 서버 값으로 교체
   finance: emptyFinance(),
   financeMonthly: [],   // 월별 기록은 서버(/api/v1/finance/monthly)만 사용
@@ -64,7 +65,9 @@ export let db = load();
   const legacyMembers = (db.members || []).some(m => String(m.id).startsWith('server:'));
   const ownerBefore = db.financeOwner;
   if (validServerSession) ensureFinanceOwner();   // 예전 버전이 넣어 둔 SEED 금융값 비우기
-  if ((db.session && !validServerSession) || legacyMembers || ownerBefore !== db.financeOwner) {
+  else clearFinance();                            // 로그인 상태가 아니면(탭을 닫았다 연 경우 등) 금융 프로필을 남기지 않는다
+  // 로그인 상태가 아니면 비운 금융 프로필을 항상 저장소에 반영한다
+  if (!validServerSession || legacyMembers || ownerBefore !== db.financeOwner) {
     if (!validServerSession) db.session = null;
     db.members = (db.members || []).filter(m => !String(m.id).startsWith('server:'));
     localStorage.setItem(KEY, JSON.stringify(db));
@@ -85,6 +88,14 @@ export const getVersion = () => version;   // useSyncExternalStore 스냅샷: �
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 export function save() { localStorage.setItem(KEY, JSON.stringify(db)); version++; listeners.forEach(fn => fn()); }
 export function reset() { db = structuredClone(SEED); save(); }
+/** 금융 프로필(소득·지출 등)과 AI 분석 결과를 비운다. 로그아웃·토큰 만료·비로그인 상태에서 호출 → 브라우저에 남기지 않음 */
+export function clearFinance() {
+  db.finance = emptyFinance();
+  db.financeMonthly = [];
+  db.journey = { step: 1 };
+  db.financeOwner = null;
+}
+
 /** 로그인한 회원이 바뀌면 이 기기에 보관된 금융 프로필을 비운다 (가짜 SEED 값을 넣지 않음).
  *  owner 앞의 'm:' 은 예전 버전이 SEED 값을 복사해 둔 기록과 구분하기 위한 표시 → 예전 기록은 한 번 비워진다. */
 export function ensureFinanceOwner() {
