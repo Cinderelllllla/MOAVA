@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.create.mapper.GroupJoinRequestMapper">
+
+    <!-- 모임 잠금: 동시 가입 신청 직렬화 -->
+    <select id="lockGroup" resultType="map">
+        SELECT
+            GROUP_ID,
+            OWNER_ID,
+            STATUS,
+            VISIBILITY,
+            MAX_MEMBERS
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        FOR UPDATE
+    </select>
+
+    <!-- 기존 참여 이력 확인: 탈퇴 후 재가입 정책 확정 전 중복 차단 -->
+    <select id="countExistingMembership" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_MEMBER
+        WHERE GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+    </select>
+
+    <!-- 중복 대기 신청 확인 -->
+    <select id="countPendingRequest" resultType="int">
+        SELECT COUNT(*)
+        FROM JOIN_REQUEST
+        WHERE GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+          AND STATUS = 'PENDING'
+    </select>
+
+    <!-- 현재 참여 인원: 모임장 포함, 중복 제외 -->
+    <select id="countCurrentMembers" resultType="int">
+        SELECT COUNT(*)
+        FROM (
+            SELECT OWNER_ID AS MEMBER_ID
+            FROM GYE_GROUP
+            WHERE GROUP_ID = #{groupId}
+
+            UNION
+
+            SELECT MEMBER_ID
+            FROM GYE_MEMBER
+            WHERE GROUP_ID = #{groupId}
+              AND STATUS = 'ACTIVE'
+        )
+    </select>
+
+    <!-- F18 현재 버전 인증 성공 확인 -->
+    <select id="countValidVerification" resultType="int">
+        SELECT COUNT(*)
+        FROM JOIN_CODE_ATTEMPT A
+        JOIN GYE_GROUP G
+          ON G.GROUP_ID = A.GROUP_ID
+        WHERE A.GROUP_ID = #{groupId}
+          AND A.MEMBER_ID = #{memberId}
+          AND A.VERIFIED_YN = 'Y'
+          AND A.CODE_VERSION = G.JOIN_CODE_VERSION
+          AND G.VISIBILITY = 'PRIVATE'
+    </select>
+
+    <!-- 가입 신청 PK 생성 -->
+    <select id="nextJoinRequestId" resultType="java.lang.Long">
+        SELECT SEQ_JOIN_REQUEST.NEXTVAL
+        FROM DUAL
+    </select>
+
+    <!-- 가입 신청 저장 -->
+    <insert id="insertJoinRequest">
+        INSERT INTO JOIN_REQUEST (
+            JOIN_REQUEST_ID,
+            GROUP_ID,
+            MEMBER_ID,
+            VIA,
+            CODE_VERIFIED_YN,
+            STATUS,
+            CREATED_AT
+        )
+        VALUES (
+            #{joinRequestId},
+            #{groupId},
+            #{memberId},
+            #{via},
+            #{codeVerifiedYn},
+            'PENDING',
+            SYSDATE
+        )
+    </insert>
+
+    <!-- F16 - 모임 정보 조회 -->
+    <select id="findGroup" resultType="map">
+        SELECT
+            GROUP_ID,
+            OWNER_ID
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+    </select>
+
+    <!-- F16 - 모임장 가입 신청 목록 조회 -->
+    <select id="findPendingRequests"
+            resultType="com.moava.group.create.dto.GroupPendingJoinRequestResponse">
+        SELECT
+            JOIN_REQUEST_ID AS "joinRequestId",
+            GROUP_ID AS "groupId",
+            MEMBER_ID AS "memberId",
+            VIA AS "via",
+            STATUS AS "status",
+            CREATED_AT AS "createdAt"
+        FROM JOIN_REQUEST
+        WHERE GROUP_ID = #{groupId}
+        AND STATUS = 'PENDING'
+        ORDER BY CREATED_AT ASC, JOIN_REQUEST_ID ASC
+    </select>
+
+
+    <!-- ==================================================
+         F16 - 가입 신청 승인
+         ================================================== -->
+
+    <!-- 승인 대상 가입 신청 조회 -->
+    <select id="findJoinRequestForDecision" resultType="map">
+        SELECT
+            JOIN_REQUEST_ID,
+            GROUP_ID,
+            MEMBER_ID,
+            STATUS,
+            VIA,
+            CODE_VERIFIED_YN
+        FROM JOIN_REQUEST
+        WHERE JOIN_REQUEST_ID = #{requestId}
+          AND GROUP_ID = #{groupId}
+    </select>
+
+    <!-- 가입 신청 승인 상태 변경 -->
+    <update id="approveJoinRequest">
+        UPDATE JOIN_REQUEST
+        SET
+            STATUS = 'APPROVED',
+            DECIDED_BY = #{ownerId},
+            DECIDED_AT = SYSDATE
+        WHERE JOIN_REQUEST_ID = #{requestId}
+          AND GROUP_ID = #{groupId}
+          AND STATUS = 'PENDING'
+    </update>
+
+    <!-- 승인된 회원을 실제 모임원으로 등록 -->
+    <insert id="insertApprovedMember">
+        INSERT INTO GYE_MEMBER (
+            GYE_MEMBER_ID,
+            GROUP_ID,
+            MEMBER_ID,
+            STATUS
+        )
+        VALUES (
+            SEQ_GYE_MEMBER.NEXTVAL,
+            #{groupId},
+            #{memberId},
+            'ACTIVE'
+        )
+    </insert>
+
+
+    <!-- F16 - 모임장 가입 신청 거절 -->
+    <update id="rejectJoinRequest">
+        UPDATE JOIN_REQUEST
+        SET
+            STATUS = 'REJECTED',
+            DECIDED_BY = #{ownerId},
+            DECIDED_AT = SYSDATE
+        WHERE JOIN_REQUEST_ID = #{requestId}
+          AND GROUP_ID = #{groupId}
+          AND STATUS = 'PENDING'
+    </update>
+
+
+</mapper>
