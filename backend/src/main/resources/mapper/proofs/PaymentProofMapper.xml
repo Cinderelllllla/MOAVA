@@ -12,6 +12,13 @@
         WHERE GROUP_ID = #{groupId}
     </select>
 
+    <select id="lockGroupForProofUpdate" resultType="long">
+        SELECT GROUP_ID
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        FOR UPDATE
+    </select>
+
     <!-- ACTIVE 구성원 여부 -->
     <select id="countActiveMember" resultType="int">
         SELECT COUNT(*)

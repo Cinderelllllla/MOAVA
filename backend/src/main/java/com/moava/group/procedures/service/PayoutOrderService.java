@@ -38,8 +38,7 @@ public class PayoutOrderService {
         if (form == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 정보를 확인해 주세요.");
         }
-        Map<String, Object> groupInfo = getGroupInfo(groupId);
-        requireActiveGroup(groupInfo);
+        Map<String, Object> groupInfo = getActiveGroupForUpdate(groupId);
         requireActiveMember(groupId, memberId);
 
         // [예외 1] 사유 미입력 -> 차단
@@ -95,8 +94,7 @@ public class PayoutOrderService {
      */
     @Transactional
     public void requestConsentByLeader(Long groupId, Long payoutRequestId, Long leaderId) {
-        Map<String, Object> groupInfo = getGroupInfo(groupId);
-        requireActiveGroup(groupInfo);
+        Map<String, Object> groupInfo = getActiveGroupForUpdate(groupId);
         requireLeader(groupInfo, leaderId);
 
         Map<String, Object> req = payoutOrderMapper.selectPayoutRequestById(groupId, payoutRequestId);
@@ -140,7 +138,7 @@ public class PayoutOrderService {
     @Transactional
     public String submitMemberConsent(Long groupId, Long payoutRequestId, Long memberId,
                                       PayoutOrderDTO.ConsentForm form) {
-        requireActiveGroup(getGroupInfo(groupId));
+        getActiveGroupForUpdate(groupId);
         requireActiveMember(groupId, memberId);
 
         Map<String, Object> req = payoutOrderMapper.selectPayoutRequestForUpdate(groupId, payoutRequestId);
@@ -179,13 +177,8 @@ public class PayoutOrderService {
      */
     @Transactional
     public void confirmPayoutOrder(Long groupId, Long payoutRequestId, Long leaderId) {
-        Map<String, Object> groupInfo = getGroupInfo(groupId);
-        requireActiveGroup(groupInfo);
+        Map<String, Object> groupInfo = getActiveGroupForUpdate(groupId);
         requireLeader(groupInfo, leaderId);
-
-        if (payoutOrderMapper.lockGroupForOrderUpdate(groupId) == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
-        }
         Map<String, Object> req = payoutOrderMapper.selectPayoutRequestForUpdate(groupId, payoutRequestId);
         if (req == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "신청 내역을 찾을 수 없습니다.");
@@ -246,6 +239,15 @@ public class PayoutOrderService {
         if (groupInfo == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
         }
+        return groupInfo;
+    }
+
+    private Map<String, Object> getActiveGroupForUpdate(Long groupId) {
+        if (payoutOrderMapper.lockGroupForOrderUpdate(groupId) == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        Map<String, Object> groupInfo = getGroupInfo(groupId);
+        requireActiveGroup(groupInfo);
         return groupInfo;
     }
 
