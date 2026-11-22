@@ -25,6 +25,15 @@ export default function MyGroups() {
   // [F18 추가] 초대 링크 조회 중인 모임 ID
   const [copyingGroupId, setCopyingGroupId] = useState(null);
 
+
+  // F16: 모임장 가입 신청 관리
+  const [openJoinGroupId, setOpenJoinGroupId] = useState(null);
+  const [joinRequests, setJoinRequests] = useState({});
+  const [joinLoadingGroupId, setJoinLoadingGroupId] = useState(null);
+  const [joinProcessingId, setJoinProcessingId] = useState(null);
+  const [joinErrors, setJoinErrors] = useState({});
+
+
   const income = Number(finance.getFinance().income) || 0;
 
   const monthlyTotal = list.reduce(
@@ -160,12 +169,107 @@ export default function MyGroups() {
     }
   };
 
+
+// F16: 가입 신청 목록 불러오기
+const loadJoinRequests = async (groupId) => {
+  setJoinLoadingGroupId(groupId);
+  setJoinErrors(prev => ({ ...prev, [groupId]: '' }));
+
+  try {
+    const data = await groups.fetchJoinRequests(groupId);
+
+    setJoinRequests(prev => ({
+      ...prev,
+      [groupId]: data.filter(r => r.status === 'PENDING')
+    }));
+
+    return true;
+  } catch (error) {
+    setJoinErrors(prev => ({
+      ...prev,
+      [groupId]:
+        error?.message || '가입 신청 목록을 불러오지 못했어요.'
+    }));
+
+    return false;
+  } finally {
+    setJoinLoadingGroupId(null);
+  }
+};
+
+// F16: 가입 신청 관리 영역 열기/닫기
+const handleToggleJoinRequests = async (groupId) => {
+  if (joinLoadingGroupId !== null || joinProcessingId !== null) {
+    return;
+  }
+
+  if (openJoinGroupId === groupId) {
+    setOpenJoinGroupId(null);
+    return;
+  }
+
+  setOpenJoinGroupId(groupId);
+  await loadJoinRequests(groupId);
+};
+
+// F16: 가입 승인/거절
+const handleJoinDecision = async (
+  groupId, requestId, memberId, memberName, action
+) => {
+  if (joinProcessingId !== null || joinLoadingGroupId !== null) {
+    return;
+  }
+
+  const isApprove = action === 'approve';
+  const actionLabel = isApprove ? '승인' : '거절';
+
+  const displayName = memberName || `회원 #${memberId}`;
+
+  if (!window.confirm(
+    `${displayName}님의 가입 신청을 ${actionLabel}하시겠어요?`
+  )) {
+    return;
+  }
+
+  setJoinProcessingId(requestId);
+  setJoinErrors(prev => ({ ...prev, [groupId]: '' }));
+
+  try {
+    if (isApprove) {
+      await groups.approveJoinRequest(groupId, requestId);
+    } else {
+      await groups.rejectJoinRequest(groupId, requestId);
+    }
+
+    // 서버 처리가 성공한 뒤 최신 대기 목록 갱신
+    const refreshed = await loadJoinRequests(groupId);
+
+    if (refreshed) {
+      window.alert(`가입 신청 ${actionLabel} 처리가 완료됐어요.`);
+    } else {
+      window.alert(
+        `가입 신청 ${actionLabel}은 완료됐지만, ` +
+        '목록을 새로고침하지 못했어요.'
+      );
+    }
+  } catch (error) {
+    setJoinErrors(prev => ({
+      ...prev,
+      [groupId]:
+        error?.message || `가입 신청 ${actionLabel}에 실패했어요.`
+    }));
+  } finally {
+    setJoinProcessingId(null);
+  }
+};
+
+
   return (
     <>
       <PageHead
         kicker="MY GROUPS"
         title="내 계모임"
-        sub="내가 모임장으로 만든 계모임 목록입니다."
+        sub="내가 만든 계모임과 참여 중인 계모임을 확인할 수 있어요."
       >
         <button
           className="btn primary"
@@ -178,7 +282,7 @@ export default function MyGroups() {
       {/* 상단 통계 */}
       <div className="grid cols3">
         <Card>
-          <small>내가 만든 계모임</small>
+          <small>내 계모임</small>
 
           <div className="metric">
             {myGroups.status === 'loading'
@@ -239,9 +343,9 @@ export default function MyGroups() {
                     {g.title}
                   </h2>
 
-                  <span className="pill">
-                    모임장
-                  </span>
+                <span className="pill">
+                  {g.role === 'OWNER' ? '모임장' : '일반 멤버'}
+                </span>
                 </div>
 
                 <p className="muted">
@@ -262,6 +366,7 @@ export default function MyGroups() {
                     {groups.groupStatusLabel(g.status)}
                   </span>
 
+
                   {g.visibility === 'PRIVATE' && (
                     <>
                       {' '}
@@ -270,6 +375,7 @@ export default function MyGroups() {
                       </span>
                     </>
                   )}
+
                 </p>
 
                 <div className="actions">
@@ -292,7 +398,7 @@ export default function MyGroups() {
                   </button>
 
                   {/* F18: 비공개 모임장 전용 인증코드 발급 */}
-                  {g.visibility === 'PRIVATE' && (
+                  {g.role === 'OWNER' && g.visibility === 'PRIVATE' && (
                     <button
                       type="button"
                       className="btn soft"
@@ -308,7 +414,7 @@ export default function MyGroups() {
                   )}
 
                   {/* [F18 수정] 비공개 모임 초대 링크 복사 */}
-                  {g.visibility === 'PRIVATE' && (
+                  {g.role === 'OWNER' && g.visibility === 'PRIVATE' && (
                     <button
                       type="button"
                       className="btn soft"
@@ -322,10 +428,135 @@ export default function MyGroups() {
                         : '🔗 초대 링크 복사'}
                     </button>
                   )}
+
+                    
+                  {/* F16: 모임장 전용 가입 신청 관리 */}
+                  {g.role === 'OWNER' && (
+                    <button
+                      type="button"
+                      className="btn soft"
+                      disabled={
+                        joinLoadingGroupId !== null ||
+                        joinProcessingId !== null
+                      }
+                      onClick={() => handleToggleJoinRequests(g.groupId)}
+                    >
+                      {openJoinGroupId === g.groupId
+                        ? '👥 가입 신청 관리 닫기'
+                        : '👥 가입 신청 관리'}
+                    </button>
+                  )}
+
+
                 </div>
 
+
+                {/* F16: 가입 신청 목록 */}
+                {g.role === 'OWNER' && openJoinGroupId === g.groupId && (
+                  <div className="policy-lock" style={{ marginTop: 12 }}>
+                    <div className="item-head">
+                      <h3>가입 신청 관리</h3>
+                      <span className="pill">
+                        대기 {joinRequests[g.groupId]?.length ?? 0}명
+                      </span>
+                    </div>
+
+                    {joinLoadingGroupId === g.groupId ? (
+                      <p className="muted">가입 신청 조회 중...</p>
+                    ) : (
+                      <>
+                        {joinRequests[g.groupId]?.length > 0 ? (
+                          joinRequests[g.groupId].map(request => (
+                            <div
+                              key={request.joinRequestId}
+                              style={{
+                                padding: '14px 0',
+                                borderBottom: '1px solid #e5e7eb'
+                              }}
+                            >
+                              <div className="item-head">
+                                <strong>{request.memberName || `회원 #${request.memberId}`}</strong>
+                                <span className="pill">승인 대기</span>
+                              </div>
+
+                              <p className="muted">
+                                가입 경로: {request.via === 'INVITE'
+                                  ? '초대 링크'
+                                  : '공개 모임 검색'}
+                              </p>
+
+                              <p className="muted">
+                                신청 일시: {request.createdAt
+                                  ? request.createdAt.replace('T', ' ').slice(0, 16)
+                                  : '-'}
+                              </p>
+
+                              <div className="actions">
+                                <button
+                                  type="button"
+                                  className="btn soft"
+                                  disabled={joinProcessingId !== null}
+                                  onClick={() => handleJoinDecision(
+                                    g.groupId,
+                                    request.joinRequestId,
+                                    request.memberId,
+                                    request.memberName,
+                                    'reject'
+                                  )}
+                                >
+                                  거절
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="btn primary"
+                                  disabled={joinProcessingId !== null}
+                                  onClick={() => handleJoinDecision(
+                                    g.groupId,
+                                    request.joinRequestId,
+                                    request.memberId,
+                                    request.memberName,
+                                    'approve'
+                                  )}
+                                >
+                                  승인
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        ) : !joinErrors[g.groupId] ? (
+                          <p className="muted">
+                            대기 중인 가입 신청이 없어요.
+                          </p>
+                        ) : null}
+                      </>
+                    )}
+
+                    {joinErrors[g.groupId] && (
+                      <p role="alert" style={{ color: '#c0392b' }}>
+                        {joinErrors[g.groupId]}
+                      </p>
+                    )}
+
+                    <button
+                      type="button"
+                      className="btn small soft"
+                      disabled={
+                        joinLoadingGroupId !== null ||
+                        joinProcessingId !== null
+                      }
+                      onClick={() => loadJoinRequests(g.groupId)}
+                      style={{ marginTop: 12 }}
+                    >
+                      새로고침
+                    </button>
+                  </div>
+                )}
+
+
                 {/* F18: 발급된 인증코드 표시 */}
-                {g.visibility === 'PRIVATE' &&
+                {g.role === 'OWNER' &&
+                  g.visibility === 'PRIVATE' &&
                   issuedCodes[g.groupId] && (
                     <div
                       className="policy-lock"
@@ -383,7 +614,7 @@ export default function MyGroups() {
             ))
           ) : (
             <div className="empty">
-              아직 만든 계모임이 없어요.{' '}
+              아직 만들거나 참여한 계모임이 없어요.{' '}
 
               <button
                 type="button"

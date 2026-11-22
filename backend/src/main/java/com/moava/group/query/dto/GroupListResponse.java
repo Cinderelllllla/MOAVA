@@ -16,5 +16,6 @@ public record GroupListResponse(
         Integer payDay,
         BigDecimal assumedRate,
         String visibility,
-        String description
+        String description,
+        String role
 ) {}

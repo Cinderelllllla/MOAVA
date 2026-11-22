@@ -1007,10 +1007,9 @@ export async function requestJoinGroup(groupId, via = 'INVITE') {
     throw new Error('로그인이 필요해요.');
   }
 
-  if (
-    !Number.isSafeInteger(Number(groupId)) ||
-    Number(groupId) <= 0
-  ) {
+  const id = Number(groupId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
     throw new Error('올바르지 않은 모임 ID입니다.');
   }
 
@@ -1018,8 +1017,130 @@ export async function requestJoinGroup(groupId, via = 'INVITE') {
     throw new Error('올바르지 않은 가입 경로입니다.');
   }
 
-  return apiFetch(`/api/groups/${groupId}/join-requests`, {
+  return apiFetch(`/api/groups/${id}/join-requests`, {
     method: 'POST',
     body: JSON.stringify({ via })
   });
+}
+
+
+/* ==================================================
+   F16 — 모임장 가입 신청 관리 (Spring Boot)
+   ================================================== */
+
+// 모임 ID 유효성 검사
+function validateGroupId(groupId) {
+  const id = Number(groupId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  return id;
+}
+
+// 가입 신청 ID 유효성 검사
+function validateRequestId(requestId) {
+  const id = Number(requestId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error('올바르지 않은 가입 신청 ID입니다.');
+  }
+
+  return id;
+}
+
+/**
+ * 모임장 전용: 가입 신청 목록 조회
+ *
+ * GET /api/groups/{groupId}/join-requests
+ *
+ * 반환:
+ * [
+ *   {
+ *     joinRequestId: 4,
+ *     groupId: 13,
+ *     memberId: 12,
+ *     via: 'INVITE',
+ *     status: 'PENDING',
+ *     createdAt: '2026-11-23T00:29:15'
+ *   }
+ * ]
+ */
+export async function fetchJoinRequests(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = validateGroupId(groupId);
+
+  const result = await apiFetch(
+    `/api/groups/${id}/join-requests`
+  );
+
+  // 서버에서 배열로 반환
+  if (Array.isArray(result)) {
+    return result;
+  }
+
+  // 신청이 한 건이고 객체로 반환된 경우
+  if (
+    result &&
+    typeof result === 'object' &&
+    Number.isSafeInteger(Number(result.joinRequestId)) &&
+    Number(result.joinRequestId) > 0
+  ) {
+    return [result];
+  }
+
+  // 빈 응답
+  if (result == null) {
+    return [];
+  }
+
+  throw new Error(
+    '가입 신청 목록 응답 형식이 올바르지 않아요.'
+  );
+}
+
+/**
+ * 모임장 전용: 가입 신청 승인
+ *
+ * PATCH /api/groups/{groupId}/join-requests/{requestId}/approve
+ */
+export async function approveJoinRequest(groupId, requestId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = validateGroupId(groupId);
+  const rid = validateRequestId(requestId);
+
+  return apiFetch(
+    `/api/groups/${id}/join-requests/${rid}/approve`,
+    {
+      method: 'PATCH'
+    }
+  );
+}
+
+/**
+ * 모임장 전용: 가입 신청 거절
+ *
+ * PATCH /api/groups/{groupId}/join-requests/{requestId}/reject
+ */
+export async function rejectJoinRequest(groupId, requestId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = validateGroupId(groupId);
+  const rid = validateRequestId(requestId);
+
+  return apiFetch(
+    `/api/groups/${id}/join-requests/${rid}/reject`,
+    {
+      method: 'PATCH'
+    }
+  );
 }

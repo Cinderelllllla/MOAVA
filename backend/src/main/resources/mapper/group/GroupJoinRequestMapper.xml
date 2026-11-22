@@ -102,21 +102,42 @@
         WHERE GROUP_ID = #{groupId}
     </select>
 
+
+
+    <!-- F16 - 가입 신청 목록 DTO 생성자 매핑 -->
+    <resultMap id="pendingJoinRequestResultMap"
+            type="com.moava.group.create.dto.GroupPendingJoinRequestResponse">
+        <constructor>
+            <arg column="joinRequestId" javaType="java.lang.Long"/>
+            <arg column="groupId" javaType="java.lang.Long"/>
+            <arg column="memberId" javaType="java.lang.Long"/>
+            <arg column="memberName" javaType="java.lang.String"/>
+            <arg column="via" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="createdAt" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
     <!-- F16 - 모임장 가입 신청 목록 조회 -->
     <select id="findPendingRequests"
-            resultType="com.moava.group.create.dto.GroupPendingJoinRequestResponse">
+            resultMap="pendingJoinRequestResultMap">
         SELECT
-            JOIN_REQUEST_ID AS "joinRequestId",
-            GROUP_ID AS "groupId",
-            MEMBER_ID AS "memberId",
-            VIA AS "via",
-            STATUS AS "status",
-            CREATED_AT AS "createdAt"
-        FROM JOIN_REQUEST
-        WHERE GROUP_ID = #{groupId}
-        AND STATUS = 'PENDING'
-        ORDER BY CREATED_AT ASC, JOIN_REQUEST_ID ASC
+            JR.JOIN_REQUEST_ID AS "joinRequestId",
+            JR.GROUP_ID AS "groupId",
+            JR.MEMBER_ID AS "memberId",
+            M.NAME AS "memberName",
+            JR.VIA AS "via",
+            JR.STATUS AS "status",
+            JR.CREATED_AT AS "createdAt"
+        FROM JOIN_REQUEST JR
+        LEFT JOIN MEMBER M
+        ON M.MEMBER_ID = JR.MEMBER_ID
+        WHERE JR.GROUP_ID = #{groupId}
+        AND JR.STATUS = 'PENDING'
+        ORDER BY JR.CREATED_AT ASC, JR.JOIN_REQUEST_ID ASC
     </select>
+
+
 
 
     <!-- ==================================================
