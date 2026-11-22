@@ -10,4 +10,10 @@ public interface GroupInviteMapper {
     GroupInviteResponse findByInviteCode(
             @Param("inviteCode") String inviteCode
     );
+
+    // [F18 추가] 모임장 권한 확인 후 초대 토큰 조회
+    String findInviteCodeForOwner(
+            @Param("groupId") Long groupId,
+            @Param("ownerId") Long ownerId
+    );
 }

@@ -934,6 +934,34 @@ export async function issueJoinCode(groupId) {
   });
 }
 
+
+/**
+ * [F18 추가] 비공개 모임 초대 링크 토큰 조회
+ *
+ * 모임장 전용
+ * GET /api/groups/{groupId}/invite
+ *
+ * 서버에서 기존 초대 토큰을 조회한다.
+ * 인증코드를 새로 발급하거나 변경하지 않는다.
+ */
+export async function fetchInviteLink(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  if (
+    !Number.isSafeInteger(Number(groupId)) ||
+    Number(groupId) <= 0
+  ) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  return apiFetch(`/api/groups/${groupId}/invite`, {
+    method: 'GET'
+  });
+}
+
+
 /**
  * 참여 회원 전용
  * POST /api/groups/{groupId}/join-code/verify
