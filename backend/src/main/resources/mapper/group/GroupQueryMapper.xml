@@ -22,11 +22,49 @@
             PAY_DAY AS "payDay",
             ASSUMED_RATE AS "assumedRate",
             VISIBILITY AS "visibility",
-            DESCRIPTION AS "description"
+            DESCRIPTION AS "description",
+            'OWNER' AS "role"
         FROM GYE_GROUP
         WHERE OWNER_ID = #{memberId}
         ORDER BY GROUP_ID DESC
 
     </select>
+
+
+    <!-- 내가 일반 회원으로 참여 중인 모임 조회 -->
+    <select id="findMyJoinedGroups"
+            resultType="com.moava.group.query.dto.GroupListResponse">
+
+        SELECT
+            G.GROUP_ID AS "groupId",
+            G.TITLE AS "title",
+            G.OWNER_ID AS "ownerId",
+            G.STATUS AS "status",
+            G.PURPOSE AS "purpose",
+            G.REGION_SIDO AS "regionSido",
+            G.REGION_SIGUNGU AS "regionSigungu",
+            G.AMOUNT AS "amount",
+            G.MAX_MEMBERS AS "maxMembers",
+            G.MONTHS AS "months",
+            G.PAY_DAY AS "payDay",
+            G.ASSUMED_RATE AS "assumedRate",
+            G.VISIBILITY AS "visibility",
+            G.DESCRIPTION AS "description",
+            'MEMBER' AS "role"
+        FROM GYE_GROUP G
+        WHERE EXISTS (
+            SELECT 1
+            FROM GYE_MEMBER GM
+            WHERE GM.GROUP_ID = G.GROUP_ID
+            AND GM.MEMBER_ID = #{memberId}
+            AND GM.STATUS = 'ACTIVE'
+        )
+        AND G.OWNER_ID != #{memberId}
+        ORDER BY G.GROUP_ID DESC
+
+    </select>
+
+
+    
 
 </mapper>
