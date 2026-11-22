@@ -25,10 +25,6 @@ export default function Groups() {
         내 계모임
       </Link>
 
-      {/* F18: 비공개 모임 초대 진입 */}
-      <Link className="btn soft" to="/invite">
-        🔑 초대코드로 가입하기
-      </Link>
     </ComingSoon>
   );
 }

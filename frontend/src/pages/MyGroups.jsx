@@ -1,7 +1,7 @@
 
 /* S08 내 계모임 — /my-groups
    서버(GET /api/groups/my)의 "내가 만든 계모임" 목록.
-   F18: 비공개 모임 인증코드 발급·재발급
+   F18: 비공개 모임 인증코드 발급·재발급 및 초대 링크 복사
 */
 
 import { useState } from 'react';
@@ -17,19 +17,25 @@ export default function MyGroups() {
   const myGroups = useMyGroups();
   const list = myGroups.items;
 
-  // F18: 모임별 발급 상태
+  // F18: 모임별 인증코드 발급 상태
   const [issuingGroupId, setIssuingGroupId] = useState(null);
   const [issuedCodes, setIssuedCodes] = useState({});
   const [issueErrors, setIssueErrors] = useState({});
 
+  // [F18 추가] 초대 링크 조회 중인 모임 ID
+  const [copyingGroupId, setCopyingGroupId] = useState(null);
+
   const income = Number(finance.getFinance().income) || 0;
+
   const monthlyTotal = list.reduce(
     (sum, g) => sum + Number(g.amount || 0) / 10000,
     0
   );
+
   const burden = income > 0
     ? Math.round(monthlyTotal / income * 100)
     : null;
+
   const capPercent = Math.round(
     finance.getPolicy().incomeCapRatio * 100
   );
@@ -82,12 +88,76 @@ export default function MyGroups() {
     }
   };
 
+  // F18: 발급된 인증코드 숨기기
   const handleHideJoinCode = (groupId) => {
     setIssuedCodes(prev => {
       const next = { ...prev };
       delete next[groupId];
       return next;
     });
+  };
+
+  // [F18 수정] 비공개 모임 초대 토큰 조회 후 링크 복사
+  const handleCopyInviteLink = async (groupId) => {
+    if (copyingGroupId !== null) return;
+
+    if (
+      !Number.isSafeInteger(Number(groupId)) ||
+      Number(groupId) <= 0
+    ) {
+      window.alert('올바르지 않은 모임 ID입니다.');
+      return;
+    }
+
+    setCopyingGroupId(groupId);
+
+    try {
+      // [F18] 모임장 인증 후 서버에서 초대 토큰 조회
+      const result = await groups.fetchInviteLink(groupId);
+
+      const inviteToken = result?.inviteToken;
+
+      // [F18] 초대 토큰 형식 확인
+      if (
+        typeof inviteToken !== 'string' ||
+        !/^[0-9a-fA-F]{32}$/.test(inviteToken)
+      ) {
+        throw new Error(
+          '초대 토큰을 확인하지 못했어요.'
+        );
+      }
+
+      // [F18] 모임 ID가 아닌 초대 토큰으로 URL 생성
+      const inviteUrl = new URL(
+        '/invite',
+        window.location.origin
+      );
+
+      inviteUrl.searchParams.set('t', inviteToken);
+
+      try {
+        await navigator.clipboard.writeText(
+          inviteUrl.toString()
+        );
+
+        window.alert(
+          '초대 링크를 복사했어요!\n' +
+          '인증코드는 별도로 전달해 주세요.'
+        );
+      } catch {
+        window.prompt(
+          '아래 초대 링크를 직접 복사해 주세요.',
+          inviteUrl.toString()
+        );
+      }
+    } catch (error) {
+      window.alert(
+        error?.message ||
+        '초대 링크를 가져오지 못했어요.'
+      );
+    } finally {
+      setCopyingGroupId(null);
+    }
   };
 
   return (
@@ -109,6 +179,7 @@ export default function MyGroups() {
       <div className="grid cols3">
         <Card>
           <small>내가 만든 계모임</small>
+
           <div className="metric">
             {myGroups.status === 'loading'
               ? '조회 중'
@@ -120,6 +191,7 @@ export default function MyGroups() {
 
         <Card>
           <small>월 납입 합계</small>
+
           <div className="metric">
             {myGroups.status === 'ready'
               ? wonFromKrw(monthlyTotal * 10000)
@@ -129,6 +201,7 @@ export default function MyGroups() {
 
         <Card>
           <small>개인 납입 부담률 (참고)</small>
+
           <div className="metric">
             {myGroups.status !== 'ready' || burden == null
               ? '-'
@@ -165,18 +238,25 @@ export default function MyGroups() {
                   <h2 style={{ margin: 0 }}>
                     {g.title}
                   </h2>
-                  <span className="pill">모임장</span>
+
+                  <span className="pill">
+                    모임장
+                  </span>
                 </div>
 
                 <p className="muted">
                   {[g.regionSido, g.regionSigungu]
                     .filter(Boolean)
                     .join(' ')}
-                  {' · '}{groups.purposeLabel(g.purpose)}
+
+                  {' · '}
+                  {groups.purposeLabel(g.purpose)}
+
                   {' · '}월 {wonFromKrw(g.amount)}
                   {' · '}매월 {g.payDay}일
                   {' · '}{g.months}개월
                   {' · '}최대 {g.maxMembers}명
+
                   {' · '}
                   <span className="pill">
                     {groups.groupStatusLabel(g.status)}
@@ -211,7 +291,7 @@ export default function MyGroups() {
                     납입 증빙
                   </button>
 
-                  {/* F18: 비공개 모임장 전용 */}
+                  {/* F18: 비공개 모임장 전용 인증코드 발급 */}
                   {g.visibility === 'PRIVATE' && (
                     <button
                       type="button"
@@ -224,6 +304,22 @@ export default function MyGroups() {
                       {issuingGroupId === g.groupId
                         ? '발급 중...'
                         : '🔑 인증코드 발급·재발급'}
+                    </button>
+                  )}
+
+                  {/* [F18 수정] 비공개 모임 초대 링크 복사 */}
+                  {g.visibility === 'PRIVATE' && (
+                    <button
+                      type="button"
+                      className="btn soft"
+                      disabled={copyingGroupId !== null}
+                      onClick={() =>
+                        handleCopyInviteLink(g.groupId)
+                      }
+                    >
+                      {copyingGroupId === g.groupId
+                        ? '링크 가져오는 중...'
+                        : '🔗 초대 링크 복사'}
                     </button>
                   )}
                 </div>
@@ -288,6 +384,7 @@ export default function MyGroups() {
           ) : (
             <div className="empty">
               아직 만든 계모임이 없어요.{' '}
+
               <button
                 type="button"
                 className="btn small soft"
