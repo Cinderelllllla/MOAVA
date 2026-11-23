@@ -100,6 +100,14 @@ class PaymentProofServiceTest {
         group.setMonths(10);
         group.setStatus("ACTIVE");
 
+        // 부품 → 서비스 순서로 조립 (생성자 매개변수 순서 = 각 클래스의 필드 선언 순서)
+        ProofFileStorage proofFileStorage = new ProofFileStorage(paymentProofMapper, cryptoKeyService);
+        ProofAccessChecker proofAccessChecker = new ProofAccessChecker(paymentProofMapper);
+        paymentProofService = new PaymentProofService(
+                paymentProofMapper, notificationService, proofFileStorage, proofAccessChecker);
+        proofQueryService = new ProofQueryService(paymentProofMapper, proofFileStorage, proofAccessChecker);
+        proofReviewService = new ProofReviewService(paymentProofMapper, notificationService, proofAccessChecker);
+        lenient().when(paymentProofMapper.lockGroupForProofUpdate(GROUP_ID)).thenReturn(GROUP_ID);
         lenient().when(paymentProofMapper.lockGroupForProofUpdate(GROUP_ID)).thenReturn(GROUP_ID);
 
         // @Value("${moava.upload.dir}") 대신 임시 폴더를 업로드 경로로 지정
@@ -148,7 +156,7 @@ class PaymentProofServiceTest {
         req.setDecision("CONFIRMED");
 
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> paymentProofService.reviewProof(OWNER_ID, GROUP_ID, PROOF_ID, req));
+                () -> proofReviewService.reviewProof(OWNER_ID, GROUP_ID, PROOF_ID, req));
 
         assertEquals(409, e.getStatusCode().value());
         verify(paymentProofMapper).lockGroupForProofUpdate(GROUP_ID);
