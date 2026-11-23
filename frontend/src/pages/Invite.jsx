@@ -28,7 +28,6 @@ import { LoadState } from '../components/shared';
 // F18 인증 성공 여부 확인
 function isVerificationSuccessful(result) {
   return (
-    result?.verified === true ||
     result?.status === 'VERIFIED' ||
     result?.status === 'ALREADY_VERIFIED'
   );
@@ -43,6 +42,13 @@ function isValidGroupId(value) {
     Number.isSafeInteger(Number(text))
   );
 }
+
+
+// 기존 인증 성공 기록이 있는지 확인
+function hasVerifiedRecord(result) {
+  return result?.verified === true;
+}
+
 
 export default function Invite() {
   const { session, isAdmin } = useApp();
@@ -237,7 +243,16 @@ export default function Invite() {
     const verified =
       isVerificationSuccessful(verifyResult);
 
-    if (isPrivate && !verified) {
+    const previouslyVerified =
+      hasVerifiedRecord(verifyResult);
+
+    const locked =
+      verifyResult?.status === 'LOCKED';
+
+    const canRequestJoin =
+      verified || (locked && previouslyVerified);
+
+    if (isPrivate && !canRequestJoin) {
       setJoinError(
         '먼저 비공개 모임 인증을 완료해 주세요.'
       );
@@ -672,11 +687,19 @@ export default function Invite() {
 
   const g = invite.group;
 
+
   const verified =
     isVerificationSuccessful(verifyResult);
 
+  const previouslyVerified =
+    hasVerifiedRecord(verifyResult);
+
   const locked =
     verifyResult?.status === 'LOCKED';
+
+  const canRequestJoin =
+    verified || (locked && previouslyVerified);
+
 
   return (
     <>
@@ -863,7 +886,7 @@ export default function Invite() {
                         onClick={handleJoinRequest}
                         disabled={
                           joining ||
-                          (g.visibility === 'PRIVATE' && !verified)
+                          (g.visibility === 'PRIVATE' && !canRequestJoin)
                         }
                       >
                         {joining
