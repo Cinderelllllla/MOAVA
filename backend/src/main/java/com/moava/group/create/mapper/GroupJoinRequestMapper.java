@@ -92,4 +92,9 @@ public interface GroupJoinRequestMapper {
             @Param("ownerId") Long ownerId
     );
 
+    // F16 - 알림에 표시할 신청자 이름 조회
+    String findMemberName(
+            @Param("memberId") Long memberId
+    );
+
 }

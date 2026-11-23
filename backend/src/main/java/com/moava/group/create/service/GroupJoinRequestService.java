@@ -1,4 +1,3 @@
-
 package com.moava.group.create.service;
 
 import com.moava.group.create.dto.GroupJoinRequestResponse;
@@ -8,19 +7,26 @@ import com.moava.group.create.mapper.GroupJoinRequestMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.moava.common.util.NameMasker;
+import com.moava.notification.common.domain.NotifType;
+import com.moava.notification.common.service.NotificationService;
+
 import java.util.List;
 import java.util.Map;
 
 @Service
 public class GroupJoinRequestService {
 
-    private final GroupJoinRequestMapper mapper;
+        private final GroupJoinRequestMapper mapper;
+        private final NotificationService notificationService;
 
-    public GroupJoinRequestService(
-            GroupJoinRequestMapper mapper
-    ) {
+        public GroupJoinRequestService(
+                GroupJoinRequestMapper mapper,
+                NotificationService notificationService
+        ) {
         this.mapper = mapper;
-    }
+        this.notificationService = notificationService;
+        }
 
     // ==================================================
     // F16 - 모임 가입 신청
@@ -43,6 +49,7 @@ public class GroupJoinRequestService {
                     "가입 신청 경로가 올바르지 않습니다."
             );
         }
+        
 
         // 동시 신청 처리 중 모임 단위 잠금
         Map<String, Object> group = mapper.lockGroup(groupId);
@@ -131,6 +138,20 @@ public class GroupJoinRequestService {
                     "가입 신청 저장에 실패했습니다."
             );
         }
+
+        // F16 - 가입 신청 성공 시 모임장에게 알림
+        String applicantName = mapper.findMemberName(memberId);
+
+        notificationService.notifyMember(
+                ownerId,
+                NotifType.JOIN_REQUEST,
+                requestId,
+                Map.of(
+                        "groupId", groupId,
+                        "group", String.valueOf(group.get("TITLE")),
+                        "member", NameMasker.mask(applicantName)
+                )
+        );
 
         return new GroupJoinRequestResponse(
                 requestId,
@@ -325,6 +346,17 @@ public class GroupJoinRequestService {
                     "모임원 등록에 실패했습니다."
             );
         }
+
+        // F16 - 가입 승인 성공 시 신청자에게 알림
+        notificationService.notifyMember(
+                memberId,
+                NotifType.JOIN_RESULT,
+                requestId,
+                Map.of(
+                        "group", String.valueOf(group.get("TITLE")),
+                        "result", "승인"
+                )
+        );
     }
 
 
@@ -400,6 +432,20 @@ public class GroupJoinRequestService {
                     "가입 신청 거절 처리에 실패했습니다."
             );
         }
+
+        // F16 - 가입 거절 성공 시 신청자에게 알림
+        Long applicantId =
+                ((Number) joinRequest.get("MEMBER_ID")).longValue();
+
+        notificationService.notifyMember(
+                applicantId,
+                NotifType.JOIN_RESULT,
+                requestId,
+                Map.of(
+                        "group", String.valueOf(group.get("TITLE")),
+                        "result", "거절"
+                )
+        );
     }
 
 
