@@ -227,6 +227,16 @@ class RefNoServiceTest {
         assertEquals("정정 사유를 입력해 주세요.", e.getReason());
         verify(refNoMapper, never()).findProof(any());
     }
+    @Test
+    @DisplayName("정정: 사유에 계좌번호·연락처 같은 긴 숫자가 있으면 400, 조회도 안 함")
+    void correct_reasonWithLongNumber_400() {
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> refNoService.correctRefNo(ADMIN_ID, PROOF_ID, request("MOAVA-00009", "입금 계좌 110-123-456789 확인 후 정정")));
+
+        assertEquals(400, e.getStatusCode().value());
+        assertEquals("정정 사유에 계좌번호·연락처 같은 긴 숫자는 입력할 수 없습니다.", e.getReason());
+        verify(refNoMapper, never()).findProof(any());
+    }
 
     @Test
     @DisplayName("정정: 번호가 아직 없는 증빙이면 409")
