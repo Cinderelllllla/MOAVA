@@ -1050,6 +1050,32 @@ function validateRequestId(requestId) {
   return id;
 }
 
+
+/**
+ * F16: 모임장 전용 참여 회원 목록 조회
+ * GET /api/groups/{groupId}/members
+ */
+export async function fetchGroupMembers(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = validateGroupId(groupId);
+
+  const result = await apiFetch(
+    `/api/groups/${id}/members`
+  );
+
+  if (!Array.isArray(result)) {
+    throw new Error(
+      '참여 회원 목록 응답 형식이 올바르지 않아요.'
+    );
+  }
+
+  return result;
+}
+
+
 /**
  * 모임장 전용: 가입 신청 목록 조회
  *
