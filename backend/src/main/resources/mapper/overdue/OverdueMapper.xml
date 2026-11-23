@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- F26 미납 자동 감지 (DDL 7번 참고 SQL 기반 + 억울한 감지를 막는 조건 3개 보강) -->
+<mapper namespace="com.moava.overdue.mapper.OverdueMapper">
+
+    <!-- 실제로 내야 했는데 아직 승인(CONFIRMED)된 증빙이 없는 (모임, 회원, 귀속 월)과 경과일
+         - 운영 중(ACTIVE) 모임의 ACTIVE 회원만
+         - ① 납부 기한 ≥ 모임 시작일  (시작 전 달 제외)
+         - ② 납부 기한 ≥ 회원 가입일  (중간 가입자의 가입 전 달 제외)
+         - ③ 납부 기한 < 시작일 + 운영 개월 수 (끝난 뒤 달 제외)
+         - 경과일 = 기준일(today) - 납부 기한. 테스트를 위해 SYSDATE 대신 today를 받음 -->
+    <sql id="unpaidDues">
+        SELECT d.GROUP_ID, d.GROUP_TITLE, d.MEMBER_ID, d.MEMBER_NAME,
+               d.PAY_MONTH, d.DUE_DATE, d.ELAPSED_DAYS
+          FROM (
+                SELECT g.GROUP_ID,
+                       g.TITLE                                  AS GROUP_TITLE,
+                       gm.MEMBER_ID,
+                       mb.NAME                                  AS MEMBER_NAME,
+                       TO_CHAR(mo.YM, 'YYYYMM')                 AS PAY_MONTH,
+                       mo.YM + (g.PAY_DAY - 1)                  AS DUE_DATE,
+                       TRUNC(#{today}) - (mo.YM + (g.PAY_DAY - 1)) AS ELAPSED_DAYS,
+                       g.STARTED_AT, gm.JOINED_AT, g.MONTHS
+                  FROM GYE_GROUP g
+                  JOIN GYE_MEMBER gm ON gm.GROUP_ID = g.GROUP_ID AND gm.STATUS = 'ACTIVE'
+                  JOIN MEMBER mb     ON mb.MEMBER_ID = gm.MEMBER_ID
+                  JOIN (SELECT ADD_MONTHS(TRUNC(#{today}, 'MM'), 1 - LEVEL) AS YM
+                          FROM DUAL CONNECT BY LEVEL &lt;= 37) mo          <!-- 최근 37개월 (운영 최대 36개월) -->
+                    ON mo.YM >= TRUNC(g.STARTED_AT, 'MM')
+                 WHERE g.STATUS = 'ACTIVE'
+                   AND g.STARTED_AT IS NOT NULL
+               ) d
+         WHERE d.DUE_DATE >= TRUNC(d.STARTED_AT)                         -- ①
+           AND d.DUE_DATE >= TRUNC(d.JOINED_AT)                          -- ②
+           AND d.DUE_DATE &lt; ADD_MONTHS(TRUNC(d.STARTED_AT), d.MONTHS)   -- ③
+           AND NOT EXISTS (SELECT 1 FROM PAYMENT_PROOF p
+                            WHERE p.GROUP_ID = d.GROUP_ID
+                              AND p.MEMBER_ID = d.MEMBER_ID
+                              AND p.PAY_MONTH = d.PAY_MONTH
+                              AND p.STATUS = 'CONFIRMED')
+    </sql>
+
+    <select id="findNewOverdueTargets" resultType="com.moava.overdue.dto.OverdueTargetDto">
+        SELECT u.*
+          FROM (<include refid="unpaidDues"/>) u
+         WHERE u.ELAPSED_DAYS >= #{minDays}
+           AND NOT EXISTS (SELECT 1 FROM OVERDUE_CASE o
+                            WHERE o.GROUP_ID = u.GROUP_ID
+                              AND o.MEMBER_ID = u.MEMBER_ID
+                              AND o.PAY_MONTH = u.PAY_MONTH)
+         ORDER BY u.GROUP_ID, u.MEMBER_ID, u.PAY_MONTH
+    </select>
+
+    <select id="findUnpaidOnDay" resultType="com.moava.overdue.dto.OverdueTargetDto">
+        SELECT u.*
+          FROM (<include refid="unpaidDues"/>) u
+         WHERE u.ELAPSED_DAYS = #{days}
+         ORDER BY u.GROUP_ID, u.MEMBER_ID
+    </select>
+
+    <!-- 미납 건 저장. 관리자 알림은 같은 트랜잭션에서 바로 보내므로 ADMIN_NOTIFIED_AT도 함께 기록 -->
+    <insert id="insertOverdueCase" parameterType="com.moava.overdue.dto.OverdueTargetDto">
+        <selectKey keyProperty="overdueCaseId" resultType="long" order="BEFORE">
+            SELECT SEQ_OVERDUE_CASE.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO OVERDUE_CASE (
+            OVERDUE_CASE_ID, GROUP_ID, MEMBER_ID, PAY_MONTH, DUE_DATE, STATUS, ADMIN_NOTIFIED_AT
+        ) VALUES (
+            #{overdueCaseId}, #{groupId}, #{memberId}, #{payMonth}, #{dueDate}, 'DETECTED', SYSDATE
+        )
+    </insert>
+
+    <!-- 감사 로그: 배치 실행이라 ACTOR_MEMBER_ID·ACTOR_ADMIN_ID 모두 NULL (DDL: ACTOR_* NULL = 배치) -->
+    <insert id="insertAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID, GROUP_ID, TARGET_MEMBER_ID, EVENT_TYPE, DESCRIPTION
+        ) VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{targetMemberId}, #{eventType}, #{description}
+        )
+    </insert>
+</mapper>
