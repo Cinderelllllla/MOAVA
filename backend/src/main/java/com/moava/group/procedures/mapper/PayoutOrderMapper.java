@@ -19,7 +19,14 @@ public interface PayoutOrderMapper {
     Map<String, Object> selectPayoutRequestById(@Param("groupId") Long groupId,
                                                 @Param("payoutRequestId") Long payoutRequestId);
 
+    Map<String, Object> selectPayoutRequestForUpdate(@Param("groupId") Long groupId,
+                                                     @Param("payoutRequestId") Long payoutRequestId);
+
+    Long lockGroupForOrderUpdate(@Param("groupId") Long groupId);
+
     Integer selectAiSuggestedRound(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
+
+    int countConfirmedRequestByMember(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
 
     void insertPayoutRequest(@Param("groupId") Long groupId,
                              @Param("memberId") Long memberId,
@@ -45,18 +52,34 @@ public interface PayoutOrderMapper {
                               @Param("targetId") Long payoutRequestId,
                               @Param("memberId") Long memberId);
 
+    String selectMemberConsentStatus(@Param("groupId") Long groupId,
+                                     @Param("targetId") Long payoutRequestId,
+                                     @Param("memberId") Long memberId);
+
     int updateMemberConsent(@Param("groupId") Long groupId,
                             @Param("targetId") Long payoutRequestId,
                             @Param("memberId") Long memberId,
                             @Param("agreedYn") String agreedYn);
 
-    int countTotalActiveOtherMembers(@Param("groupId") Long groupId, @Param("applicantId") Long applicantId);
+    List<Long> lockActiveConsentTargets(@Param("groupId") Long groupId,
+                                        @Param("targetId") Long payoutRequestId,
+                                        @Param("applicantId") Long applicantId);
 
-    int countAgreedConsents(@Param("targetId") Long payoutRequestId);
+    int countAgreedConsents(@Param("groupId") Long groupId,
+                            @Param("targetId") Long payoutRequestId,
+                            @Param("applicantId") Long applicantId);
 
     int countConfirmedRoundDuplicate(@Param("groupId") Long groupId,
                                      @Param("roundNo") Integer roundNo,
                                      @Param("excludeRequestId") Long excludeRequestId);
+
+    List<Map<String, Object>> selectCompetingOpenRequests(@Param("groupId") Long groupId,
+                                                          @Param("roundNo") Integer roundNo,
+                                                          @Param("excludeRequestId") Long excludeRequestId);
+
+    int rejectCompetingOpenRequests(@Param("groupId") Long groupId,
+                                    @Param("roundNo") Integer roundNo,
+                                    @Param("excludeRequestId") Long excludeRequestId);
 
     int countUnconfirmedActiveMembers(@Param("groupId") Long groupId);
 
@@ -64,11 +87,13 @@ public interface PayoutOrderMapper {
 
     List<PayoutOrderDTO.StatusResponse> selectPayoutRequestList(@Param("groupId") Long groupId);
 
-    // NOTIF_TYPE 파라미터 추가
+    // NOTIF_TYPE, LINK_PAGE, REF_ID 포함 인앱 알림 등록
     void insertNotification(@Param("memberId") Long memberId,
                             @Param("notifType") String notifType,
                             @Param("title") String title,
-                            @Param("body") String body);
+                            @Param("body") String body,
+                            @Param("linkPage") String linkPage,
+                            @Param("refId") Long refId);
 
     // EVENT_TYPE, DESCRIPTION 파라미터 매핑
     void insertAuditLog(@Param("groupId") Long groupId,

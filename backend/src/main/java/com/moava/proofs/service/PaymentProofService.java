@@ -47,13 +47,11 @@ public class PaymentProofService {
         if (!req.getPayMonth().matches("^\\d{4}(0[1-9]|1[0-2])$")) {
             throw badRequest("납입 귀속 월 형식이 올바르지 않습니다. (YYYYMM)");
         }
-
         // 2. 모임 존재 + 해산 완료 모임 차단
-        ProofGroupDto group = proofAccessChecker.getGroupOrThrow(req.getGroupId());
+        ProofGroupDto group = proofAccessChecker.getGroupForUpdate(req.getGroupId());
         if ("DISSOLVED".equals(group.getStatus())) {
             throw badRequest("해산된 모임에는 증빙을 등록할 수 없습니다.");
         }
-
         // 3. 참여 회원만 (REQ-SEC-04 서버 재검증)
         proofAccessChecker.checkActiveMember(req.getGroupId(), memberId, "참여 회원만 증빙을 등록할 수 있습니다.");
 
@@ -123,7 +121,7 @@ public class PaymentProofService {
         }
 
         // 1-2. 모임 존재 + 해산 완료 모임 차단 + ACTIVE 구성원만 (등록과 같은 기준, REQ-SEC-04)
-        ProofGroupDto group = proofAccessChecker.getGroupOrThrow(groupId);
+        ProofGroupDto group = proofAccessChecker.getGroupForUpdate(groupId);
         if ("DISSOLVED".equals(group.getStatus())) {
             throw badRequest("해산된 모임에는 증빙을 재제출할 수 없습니다.");
         }

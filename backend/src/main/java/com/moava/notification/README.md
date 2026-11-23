@@ -159,7 +159,21 @@ API 명세서 v0.5 F35 기준. **회원(S13)·관리자(A07) 공용** — 로그
 - 삭제는 실제 DELETE가 아니라 `DELETED_YN='Y'` (숨김)
 - 남의 알림 ID → 읽음은 404, 숨김은 해당 건 무시
 
-**로그인 전 임시 방식**: JWT가 붙기 전까지 `moava.dev.receiver-header-enabled=true`일 때만 `X-Member-Id` 또는 `X-Admin-Id` 헤더로 받는 사람을 정합니다. 기본값 false(401). **개인 PC 설정에서만 켜고 팀 공통 설정에 넣지 마세요.** JWT 연동 시 `NotificationController.currentReceiver()`만 교체합니다.
+**받는 사람 판별 (JWT)**: 로그인 토큰(JWT)의 subject(MEMBER_ID)로 받는 사람을 정합니다. 요청 헤더나 파라미터로 회원 ID를 받지 않으며, 로그인하지 않은 요청은 401입니다. `NotificationController.resolveReceiver()` 참고. 관리자 알림함은 관리자 전용 JWT claim이 생긴 뒤 연결합니다(현재 화면에서는 "준비 중" 안내).
+
+### 오래된 알림 정리 배치
+
+`NotificationCleanupService.cleanup()` 이 매일 03:30(한국 시간)에 실행됩니다.
+
+| 대상 | 기준 | 처리 |
+|---|---|---|
+| 읽은 알림 | 만든 지 30일 경과 | `DELETED_YN='Y'` (숨김) |
+| 안 읽은 알림 | 만든 지 90일 경과 | `DELETED_YN='Y'` (숨김) |
+
+- 실제 DELETE가 아니라 숨김이라 운영 감사 이력은 DB에 남습니다.
+- 기준 시각은 `CREATED_AT`입니다 (테이블에 읽은 시각 컬럼이 없음).
+- 실행 시각 변경: `moava.notification.cleanup.cron=0 30 3 * * *` / 끄기: `moava.notification.cleanup.enabled=false` (설정을 안 넣으면 기본값으로 동작)
+- `@EnableScheduling`은 `finance/config/FinanceSchedulingConfig`의 설정을 함께 씁니다.
 
 ---
 
@@ -171,9 +185,11 @@ backend/src/main/java/com/moava/
 │   ├── domain/NotifType.java                  알림 코드 21개 (템플릿·이동 경로·SMS 여부)
 │   ├── service/NotificationService.java       공통 함수 3개
 │   ├── service/NotificationSmsListener.java   SMS 자리 (커밋 후 @Async, 지금은 로그)
+│   ├── service/NotificationCleanupService.java 오래된 알림 정리 배치 (매일 03:30)
+│   ├── mapper/NotificationCleanupMapper.java   정리 배치 UPDATE 매퍼
 │   ├── mapper/NotificationMapper.java         INSERT 매퍼
 │   ├── dto/NotificationInsert.java · NotificationSmsEvent.java
-│   │   ── 아래는 알림함 API (다음 PR) ──
+│   │   ── 아래는 알림함 API ──
 │   ├── controller/NotificationController.java
 │   ├── service/NotificationInboxService.java · NotificationException.java
 │   ├── mapper/NotificationInboxMapper.java
@@ -184,13 +200,16 @@ backend/src/main/java/com/moava/
 
 backend/src/main/resources/mapper/notification/common/
 ├── NotificationMapper.xml
-└── NotificationInboxMapper.xml                (다음 PR)
+├── NotificationInboxMapper.xml
+└── NotificationCleanupMapper.xml
 ```
 
 ## 4. 남은 작업
 
-- [ ] 알림함 API PR
-- [ ] JWT 연동 후 임시 헤더 방식 제거
+- [x] 알림함 API PR (PR #17, #33)
+- [x] JWT 연동 후 임시 헤더 방식 제거 (PR #33)
+- [ ] 관리자 JWT 로그인(관리자 전용 claim) 후 관리자 알림함 연결
 - [ ] SMS 규칙 v0.5 반영 — 자동 미납 안내 SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 시 SMS (코드표 v3.1)
-- [ ] 배치: 오래된 알림 정리(읽음 30일·안 읽음 90일), 납입 3일 전·미납 안내
+- [x] 배치: 오래된 알림 정리(읽음 14일·안 읽음 30일)
+- [ ] 배치: 납입 3일 전·미납 안내
 - [ ] 2차: SOLAPI SMS 발송 (`PHONE_ENC`가 NULL인 탈퇴 회원은 건너뜀)
