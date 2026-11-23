@@ -15,8 +15,17 @@ const EMPTY_LIST = { items: [], page: -1, hasNext: false };
 /** 최신순(createdAt, id 내림차순) 정렬 + id 중복 제거 */
 const mergeById = (...lists) => {
   const map = new Map();
-  lists.flat().forEach(n => { if (!map.has(n.id)) map.set(n.id, n); });
-  return [...map.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id - a.id);
+
+  lists.flat(Infinity).forEach(n => {
+    if (!n || n.id == null) return;
+    if (!map.has(n.id)) map.set(n.id, n);
+  });
+
+  return [...map.values()].sort(
+    (a, b) =>
+      String(b.createdAt).localeCompare(String(a.createdAt)) ||
+      b.id - a.id
+  );
 };
 /** 서버 시각("2026-11-19T10:24:00") → "11.19 10:24" (올해가 아니면 연도 포함) */
 const fmtTime = v => {
@@ -131,6 +140,7 @@ function MemberNotifications() {
     if (r.ok) afterChange();
   };
   const toggle = useCallback(id => setSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])), []);
+  console.log('[알림 렌더링 데이터]', { unread, read });
   const row = n => <NotificationItem key={n.id} n={n} checked={sel.includes(n.id)} onToggle={toggle} onOpen={open} onRead={markRead} />;
   const moreBtn = (key, list) => list.hasNext && <div className="actions"><button className="btn soft" onClick={() => loadMore(key)} disabled={more === key}>{more === key ? '불러오는 중…' : '이전 알림 더 보기'}</button></div>;
   const empty = !unread.items.length && !read.items.length;

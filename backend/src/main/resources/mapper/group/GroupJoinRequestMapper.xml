@@ -10,6 +10,7 @@
         SELECT
             GROUP_ID,
             OWNER_ID,
+            TITLE,
             STATUS,
             VISIBILITY,
             MAX_MEMBERS
@@ -198,6 +199,13 @@
           AND GROUP_ID = #{groupId}
           AND STATUS = 'PENDING'
     </update>
+
+    <!-- F16 - 가입 신청자 이름 조회 (알림용) -->
+    <select id="findMemberName" resultType="string">
+        SELECT NAME
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+    </select>
 
 
 </mapper>
