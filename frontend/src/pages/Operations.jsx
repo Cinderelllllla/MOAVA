@@ -1,54 +1,41 @@
 /* S10 운영 홈 — /operations · F20 F28 F33 F18 */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAccessToken } from '../api/auth';
+import { useInitialGroupId } from '../common/useInitialGroupId';
+import useMyGroups from '../common/useMyGroups';
 import { useApp } from '../common/store';
-import { groups, admin, proofs, leader, me, memberName, paidAny, paidThisPeriod, currentPeriod, ensureJoinCode, db } from '../api';
+import { groups, proofs, leader, me, memberName, paidAny, paidThisPeriod, currentPeriod, ensureJoinCode, db } from '../api';
 import { PageHead, Card, Empty } from '../components/ui';
-import { useOpGroup, GroupSelect } from '../components/shared';
+import { useOpGroup, GroupSelect, LoadState } from '../components/shared';
 import { won, wonFromKrw, maskName, maskAccount, VERIFY_LABEL } from '../common/format';
 
 
-// 서버 계모임과 기존 Mock 운영 기능은 별도 컴포넌트로 분리한다.
-// 훅 호출 순서를 유지하고, 서버 모임에 Mock 변경 함수를 실행하지 않는다.
+// 화면은 서버 계모임(ServerOperations)만 보여 준다.
+// 아래 MockOperations 와 패널들은 서버 API(가입 승인·계좌·초대코드 등)를 연결할 때 참고하도록 남겨 둔 목업이다.
 export default function Operations() {
-  const token = getAccessToken();
-  return token ? <ServerOperations token={token} /> : <MockOperations />;
+  return <ServerOperations />;
 }
 
-function ServerOperations({ token }) {
+function ServerOperations() {
   const nav = useNavigate();
-  const [items, setItems] = useState([]);
+  const pickGroup = useInitialGroupId();
+  const myGroups = useMyGroups();
+  const items = myGroups.items;
   const [selectedId, setSelectedId] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
+  // 목록을 (다시) 받으면 선택 모임을 정한다. 알림에서 들어온 경우(?groupId=) 첫 로드에만 그 모임을 선택
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    groups.fetchMyGroups()
-      .then(data => {
-        if (cancelled) return;
-        setItems(data);
-        setSelectedId(prev => data.some(g => String(g.groupId) === prev)
-          ? prev : String(data[0]?.groupId ?? ''));
-      })
-      .catch(err => { if (!cancelled) setError(err.message || '모임 조회 실패'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [token]);
+    if (myGroups.status === 'ready') setSelectedId(pickGroup(items));
+  }, [myGroups.status, items, pickGroup]);
 
   const g = items.find(x => String(x.groupId) === selectedId);
-  const status = { RECRUITING: '모집 중', ACTIVE: '진행 중', COMPLETED: '완료', DISSOLVED: '해산 완료' };
   return <>
     <PageHead kicker="OPERATIONS HOME" title={g ? `운영 홈 · ${g.title}` : '운영 홈'}
-      sub="Oracle DB에 저장된 내가 만든 계모임의 운영 정보를 확인합니다.">
+      sub="내가 만든 계모임의 운영 정보를 확인합니다.">
       <button className="btn soft" onClick={() => nav('/my-groups')}>내 계모임 →</button>
     </PageHead>
-    {loading ? <Card><p>계모임을 불러오는 중입니다.</p></Card>
-      : error ? <Card><p role="alert">{error}</p><button className="btn small soft" onClick={() => window.location.reload()}>다시 시도</button></Card>
-      : !g ? <Card><Empty>모임장으로 생성한 계모임이 없습니다.</Empty>
+    {myGroups.status !== 'ready' ? <Card><LoadState status={myGroups.status} error={myGroups.error} onRetry={myGroups.reload} loadingText="계모임을 불러오는 중이에요." /></Card>
+      : !g ? <Card><Empty>아직 만든 계모임이 없어요.</Empty>
           <button className="btn primary" onClick={() => nav('/groups/new')}>새 계모임 만들기</button></Card>
       : <>
         <Card>
@@ -61,8 +48,8 @@ function ServerOperations({ token }) {
           <div className="divider" />
           <h2>모임 상태</h2>
           <div className="group-info-rows">
-            <div><span>모임장 권한</span><strong>Leader (내가 만든 모임)</strong></div>
-            <div><span>모집 상태</span><strong>{status[g.status] || g.status || '확인 필요'}</strong></div>
+            <div><span>내 역할</span><strong>모임장</strong></div>
+            <div><span>모집 상태</span><strong>{groups.groupStatusLabel(g.status)}</strong></div>
             <div><span>공개 여부</span><strong>{g.visibility === 'PRIVATE' ? '🔒 비공개' : '🌐 공개'}</strong></div>
             <div><span>지역</span><strong>{[g.regionSido, g.regionSigungu].filter(Boolean).join(' ') || '미등록'}</strong></div>
             <div><span>납입일</span><strong>매월 {g.payDay}일</strong></div>
@@ -74,13 +61,16 @@ function ServerOperations({ token }) {
         <div className="section"><Card>
           <h2>모임 정보</h2>
           <p>{g.description || '모임 소개가 등록되지 않았습니다.'}</p>
-          <p className="muted mini">모임 번호 {g.groupId} · 목적 {g.purpose || '미등록'} · 가정 이율 연 {g.assumedRate ?? '—'}%</p>
-          <div className="info">가입 승인·채팅·계좌 변경·초대 인증·납입 증빙은 아직 서버 API와 연결되지 않았습니다. 실제 운영 기능은 연결 후 사용할 수 있습니다.</div>
+          <p className="muted mini">목적 {groups.purposeLabel(g.purpose)} · 가정 이율 연 {g.assumedRate ?? '-'}%</p>
+          <div className="actions"><button className="btn primary" onClick={() => nav(`/evidence?groupId=${g.groupId}`)}>납입 증빙 확인 →</button></div>
+          {/* TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거 — 가입 승인·채팅·계좌 변경·초대코드 (아래 MockOperations 참고) */}
+          <div className="info" style={{ marginTop: 12 }}>가입 승인·채팅·계좌 변경·초대코드 관리는 아직 준비 중이에요.</div>
         </Card></div>
       </>}
   </>;
 }
 
+// eslint-disable-next-line no-unused-vars -- 서버 API 연결 시 참고용 목업 화면 (현재 라우트에서 사용하지 않음)
 function MockOperations() {
   const { run, setUi } = useApp(); const nav = useNavigate(); const [g, setGroup] = useOpGroup();
   if (!g) return <><PageHead kicker="OPERATIONS" title="운영 홈" sub="참여 중인 모임이 없습니다." /><button className="btn primary" onClick={() => nav('/groups')}>모임 찾기</button></>;

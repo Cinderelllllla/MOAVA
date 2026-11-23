@@ -1,13 +1,22 @@
 /* S06 지역 계모임 찾기 · 지도 — /groups · F11~F14 F16 (실서비스: Kakao Maps + ES moava_group) */
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../common/store';
 import { groups, groupVisible } from '../api';
-import { PageHead, Card, Select, Input } from '../components/ui';
+import { PageHead, Card, Select, Input, ComingSoon } from '../components/ui';
 import { GroupCard, GroupInfo, InlineSimulator } from '../components/shared';
 
 const PIN_POS = { 101: [22, 26], 102: [48, 48], 103: [33, 75], 104: [78, 29], 105: [79, 75] };
 
+// TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거 — 모임 검색·지도·상세·가입 신청 (아래 GroupsMock 참고)
 export default function Groups() {
+  return <ComingSoon kicker="LOCAL COMMUNITY" title="지역 계모임 찾기 · 지도" text="동네 계모임 검색과 지도 기능은 아직 준비 중이에요. 지금은 직접 계모임을 만들어 시작할 수 있어요.">
+    <Link className="btn primary" to="/groups/new">계모임 만들기</Link><Link className="btn soft" to="/my-groups">내 계모임</Link>
+  </ComingSoon>;
+}
+
+// eslint-disable-next-line no-unused-vars -- 서버 API 연결 시 참고용 목업 화면 (현재 화면에서 사용하지 않음)
+function GroupsMock() {
   const { ui, setUi } = useApp();
   const [modal, setModal] = useState(null); // null | {region: string|null}
   const [sim, setSim] = useState(null);
