@@ -39,9 +39,17 @@ class NotificationControllerTest {
     }
 
     @Test
-    @DisplayName("ROLE_ADMIN이 붙어 있어도 관리자 알림함으로 보지 않는다 (관리자 claim 도입 전)")
-    void admin_role_is_not_admin_receiver() {
+    @DisplayName("관리자 토큰(ROLE_ADMIN)이면 관리자 알림함 — 같은 번호의 회원 알림이 섞이지 않는다")
+    void admin_token_is_admin_receiver() {
         NotificationReceiver r = NotificationController.resolveReceiver(member("3", "ROLE_ADMIN"));
+        assertThat(r.adminId()).isEqualTo(3L);
+        assertThat(r.memberId()).isNull();
+    }
+
+    @Test
+    @DisplayName("회원 토큰(ROLE_MEMBER)은 같은 번호여도 회원 알림함")
+    void member_token_same_number_is_member_receiver() {
+        NotificationReceiver r = NotificationController.resolveReceiver(member("3", "ROLE_MEMBER"));
         assertThat(r.memberId()).isEqualTo(3L);
         assertThat(r.adminId()).isNull();
     }
