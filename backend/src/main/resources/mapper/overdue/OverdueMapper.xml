@@ -80,4 +80,24 @@
             SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{targetMemberId}, #{eventType}, #{description}
         )
     </insert>
+
+    <!-- A06 관리자 미납 목록. 경과일은 컬럼 없이 조회 시 계산 (DDL: TRUNC(SYSDATE) - DUE_DATE) -->
+    <select id="findOverdueCases" resultType="com.moava.overdue.dto.OverdueCaseDto">
+        SELECT o.OVERDUE_CASE_ID, o.GROUP_ID, g.TITLE AS GROUP_TITLE,
+        o.MEMBER_ID, mb.NAME AS MEMBER_NAME,
+        o.PAY_MONTH, o.DUE_DATE, TRUNC(SYSDATE) - o.DUE_DATE AS ELAPSED_DAYS,
+        o.STATUS, g.OVERDUE_POLICY, o.WARNED_AT, o.RESOLVED_AT
+        FROM OVERDUE_CASE o
+        JOIN GYE_GROUP g ON g.GROUP_ID = o.GROUP_ID
+        JOIN MEMBER mb   ON mb.MEMBER_ID = o.MEMBER_ID
+        <where>
+            <if test="status == 'OPEN'">o.STATUS &lt;&gt; 'RESOLVED'</if>
+            <if test="status == 'RESOLVED'">o.STATUS = 'RESOLVED'</if>
+        </where>
+        ORDER BY o.DUE_DATE, o.GROUP_ID, o.MEMBER_ID
+    </select>
+
+    <select id="countActiveAdmin" resultType="int">
+        SELECT COUNT(*) FROM ADMIN WHERE ADMIN_ID = #{adminId} AND STATUS = 'ACTIVE'
+    </select>
 </mapper>
