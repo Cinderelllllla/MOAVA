@@ -49,16 +49,16 @@ public class JoinCodeVerifyService {
         return buildVerificationState(attempt);
     }
 
+
+
     /**
      * F18 - 실제 인증코드 검증
      *
-     * 1. 인증 요청 상태 확인
-     * 2. 암호화된 인증코드 조회
-     * 3. CryptoKeyService로 복호화
-     * 4. 입력 코드 비교
-     * 5. 성공 또는 실패 횟수 기록
-     *
-     * 실패 5회 시 15분간 잠금 처리
+     * 이미 인증한 회원도 입력한 코드를 다시 비교한다.
+     * - 올바른 코드 재입력: ALREADY_VERIFIED
+     * - 잘못된 코드 재입력: INVALID_CODE
+     * - 기존 인증 성공 상태는 유지
+     * - 미인증 회원의 5회 실패 / 15분 잠금 유지
      */
     @Transactional
     public JoinCodeVerifyResponse verifyJoinCode(
@@ -66,32 +66,41 @@ public class JoinCodeVerifyService {
             Long memberId,
             String inputCode
     ) {
-
-        // 1. 회원 및 모임 검증, 시도 기록 준비
+        // 1. 모임 및 회원 검증, 코드 버전 동기화
         Map<String, Object> attempt =
                 prepareVerification(groupId, memberId);
 
-        // 2. 잠금 또는 이미 인증된 상태 확인
+        // 2. 현재 인증 상태 확인
         JoinCodeVerifyResponse state =
                 buildVerificationState(attempt);
 
-        if (!"READY".equals(state.status())) {
+        // 잠금 중이면 코드 비교 없이 차단
+        if ("LOCKED".equals(state.status())) {
             return state;
         }
 
+        boolean alreadyVerified =
+                "ALREADY_VERIFIED".equals(state.status());
+
         // 3. 입력 형식 검증
-        // 형식이 잘못된 입력도 실패 횟수에 포함
-        if (inputCode == null
-                || !inputCode.matches("[0-9]{6}")) {
+        if (inputCode == null || !inputCode.matches("[0-9]{6}")) {
+            if (alreadyVerified) {
+                return new JoinCodeVerifyResponse(
+                        false,
+                        JoinCodeVerifyStatus.INVALID_CODE.name(),
+                        "인증코드가 일치하지 않습니다.",
+                        5
+                );
+            }
+
             return recordInvalidCode(groupId, memberId);
         }
 
-        // 4. DB에 저장된 암호화 인증코드 조회
+        // 4. 암호화된 현재 인증코드 조회
         Map<String, Object> codeRow =
                 mapper.findEncryptedJoinCode(groupId);
 
-        if (codeRow == null
-                || codeRow.get("JOIN_CODE_ENC") == null) {
+        if (codeRow == null || codeRow.get("JOIN_CODE_ENC") == null) {
             throw new IllegalStateException(
                     "인증코드 정보가 없습니다."
             );
@@ -111,26 +120,44 @@ public class JoinCodeVerifyService {
         String encryptedCode =
                 (String) codeRow.get("JOIN_CODE_ENC");
 
-        // 5. 보안팀 공통 암호화 서비스로 복호화
+        // 5. 공통 암호화 서비스로 복호화
         String savedCode = cryptoKeyService.decrypt(
                 encryptedCode,
                 keyVersion
         );
 
-        if (savedCode == null
-                || !savedCode.matches("[0-9]{6}")) {
+        if (savedCode == null || !savedCode.matches("[0-9]{6}")) {
             throw new IllegalStateException(
                     "저장된 인증코드 형식이 올바르지 않습니다."
             );
         }
 
-        // 6. 인증코드 비교
+        // 6. 실제 입력 코드 비교
         boolean matched = MessageDigest.isEqual(
                 savedCode.getBytes(StandardCharsets.UTF_8),
                 inputCode.getBytes(StandardCharsets.UTF_8)
         );
 
-        // 7. 인증 성공
+        // 7. 이미 인증한 회원의 재인증 처리
+        if (alreadyVerified) {
+            if (!matched) {
+                return new JoinCodeVerifyResponse(
+                        false,
+                        JoinCodeVerifyStatus.INVALID_CODE.name(),
+                        "인증코드가 일치하지 않습니다.",
+                        5
+                );
+            }
+
+            return new JoinCodeVerifyResponse(
+                    true,
+                    JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
+                    "이미 인증이 완료되었습니다.",
+                    5
+            );
+        }
+
+        // 8. 최초 인증 성공
         if (matched) {
             int updated =
                     mapper.markVerified(groupId, memberId);
@@ -149,9 +176,11 @@ public class JoinCodeVerifyService {
             );
         }
 
-        // 8. 인증 실패
+        // 9. 최초 인증 실패
         return recordInvalidCode(groupId, memberId);
     }
+
+
 
     /**
      * 인증 준비 공통 처리
