@@ -95,6 +95,12 @@ export async function resubmitProofOnServer(groupId, proofId, payDate, images) {
   });
 }
 
+// F25 납입 현황 — payMonth는 'YYYYMM' (생략하면 서버가 이번 달로 조회)
+export async function fetchPaymentStatusFromServer(groupId, payMonth) {
+  const query = payMonth ? `?payMonth=${encodeURIComponent(payMonth)}` : '';
+  return apiFetch(`/api/v1/groups/${groupId}/payments${query}`, { method: 'GET' });
+}
+
 /* ---- 채팅 (F34) & 미납 자동 감지 — 서버 API 없음, 목업 ---- */
 export const messages = (groupId) => db.messages.filter((x) => x.groupId === groupId);
 export async function sendChat(groupId, text) {
