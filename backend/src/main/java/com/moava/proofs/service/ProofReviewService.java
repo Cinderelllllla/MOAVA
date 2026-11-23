@@ -46,9 +46,12 @@ public class ProofReviewService {
         }
 
         // 2. 모임 존재 + 모임장 확인 (REQ-SEC-04 서버 재검증)
-        ProofGroupDto group = proofAccessChecker.getGroupOrThrow(groupId);
+        ProofGroupDto group = proofAccessChecker.getGroupForUpdate(groupId);
         if (!group.getOwnerId().equals(memberId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 모임장만 승인할 수 있어요.");
+        }
+        if ("DISSOLVED".equals(group.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "해산된 모임의 증빙은 심사할 수 없습니다.");
         }
 
         // 3. 증빙 존재 (이 모임의 증빙인지까지 확인)

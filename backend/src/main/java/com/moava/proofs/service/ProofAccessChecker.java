@@ -18,6 +18,14 @@ public class ProofAccessChecker {
 
     private final PaymentProofMapper paymentProofMapper;
 
+    /** 모임 조회 + 행 잠금(FOR UPDATE) — 해산 처리와 동시에 진행되지 않게 (등록·재제출·심사) */
+    public ProofGroupDto getGroupForUpdate(Long groupId) {
+        if (paymentProofMapper.lockGroupForProofUpdate(groupId) == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 모임입니다.");
+        }
+        return getGroupOrThrow(groupId);
+    }
+
     /** 모임 조회 — 없으면 404 */
     public ProofGroupDto getGroupOrThrow(Long groupId) {
         ProofGroupDto group = paymentProofMapper.findGroupForProof(groupId);
