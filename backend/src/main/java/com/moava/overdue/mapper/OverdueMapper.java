@@ -1,5 +1,6 @@
 package com.moava.overdue.mapper;
 
+import com.moava.overdue.dto.OverdueCaseDto;
 import com.moava.overdue.dto.OverdueTargetDto;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -24,4 +25,10 @@ public interface OverdueMapper {
                        @Param("targetMemberId") Long targetMemberId,
                        @Param("eventType") String eventType,
                        @Param("description") String description);
+    // A06 관리자 미납 목록 — status: OPEN(미해소) / RESOLVED(해소) / ALL
+    List<OverdueCaseDto> findOverdueCases(@Param("status") String status);
+
+    // ACTIVE 관리자인지 (1이면 관리자)
+    int countActiveAdmin(@Param("adminId") Long adminId);
+
 }
