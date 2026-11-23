@@ -58,7 +58,6 @@
             LAST_ATTEMPT_AT = SYSDATE
         WHERE GROUP_ID = #{groupId}
           AND MEMBER_ID = #{memberId}
-          AND VERIFIED_YN = 'N'
           AND (LOCKED_UNTIL IS NULL OR LOCKED_UNTIL &lt;= SYSDATE)
     </update>
 
@@ -86,7 +85,6 @@
         WHERE GROUP_ID = #{groupId}
         AND MEMBER_ID = #{memberId}
         AND LOCKED_UNTIL &lt;= SYSDATE
-        AND VERIFIED_YN = 'N'
     </update>
 
     <!-- 인증코드 버전 변경 시 이전 인증 성공 상태만 초기화 -->

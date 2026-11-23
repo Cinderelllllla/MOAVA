@@ -82,19 +82,12 @@ public class JoinCodeVerifyService {
         boolean alreadyVerified =
                 "ALREADY_VERIFIED".equals(state.status());
 
+
         // 3. 입력 형식 검증
         if (inputCode == null || !inputCode.matches("[0-9]{6}")) {
-            if (alreadyVerified) {
-                return new JoinCodeVerifyResponse(
-                        false,
-                        JoinCodeVerifyStatus.INVALID_CODE.name(),
-                        "인증코드가 일치하지 않습니다.",
-                        5
-                );
-            }
-
-            return recordInvalidCode(groupId, memberId);
+        return recordInvalidCode(groupId, memberId);
         }
+
 
         // 4. 암호화된 현재 인증코드 조회
         Map<String, Object> codeRow =
@@ -138,24 +131,21 @@ public class JoinCodeVerifyService {
                 inputCode.getBytes(StandardCharsets.UTF_8)
         );
 
+
         // 7. 이미 인증한 회원의 재인증 처리
         if (alreadyVerified) {
-            if (!matched) {
-                return new JoinCodeVerifyResponse(
-                        false,
-                        JoinCodeVerifyStatus.INVALID_CODE.name(),
-                        "인증코드가 일치하지 않습니다.",
-                        5
-                );
-            }
-
-            return new JoinCodeVerifyResponse(
-                    true,
-                    JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
-                    "이미 인증이 완료되었습니다.",
-                    5
-            );
+        if (!matched) {
+                return recordInvalidCode(groupId, memberId);
         }
+
+        return new JoinCodeVerifyResponse(
+                true,
+                JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
+                "이미 인증이 완료되었습니다.",
+                state.remainingAttempts()
+        );
+        }
+
 
         // 8. 최초 인증 성공
         if (matched) {
@@ -310,55 +300,56 @@ public class JoinCodeVerifyService {
     /**
      * 현재 인증 가능 상태 확인
      */
-    private JoinCodeVerifyResponse buildVerificationState(
-            Map<String, Object> attempt
-    ) {
 
+        private JoinCodeVerifyResponse buildVerificationState(
+                Map<String, Object> attempt
+        ) {
         if (attempt == null) {
-            throw new IllegalStateException(
-                    "인증 시도 정보가 없습니다."
-            );
+                throw new IllegalStateException(
+                        "인증 시도 정보가 없습니다."
+                );
         }
 
-        // 1. 잠금 여부 확인
+        boolean verified = "Y".equalsIgnoreCase(
+                String.valueOf(attempt.get("VERIFIED_YN"))
+        );
+
+        Number failCount = (Number) attempt.get("FAIL_COUNT");
+
+        int failures = failCount == null
+                ? 0
+                : failCount.intValue();
+
+        int remaining = Math.max(0, 5 - failures);
+
+        // 잠금 중에도 기존 인증 성공 여부는 유지
         if (attempt.get("LOCKED_UNTIL") != null) {
-            return new JoinCodeVerifyResponse(
-                    false,
-                    JoinCodeVerifyStatus.LOCKED.name(),
-                    "인증 시도가 일시적으로 제한되었습니다.",
-                    0
-            );
+                return new JoinCodeVerifyResponse(
+                        verified,
+                        JoinCodeVerifyStatus.LOCKED.name(),
+                        "인증 시도가 일시적으로 제한되었습니다.",
+                        0
+                );
         }
 
-        // 2. 이미 인증 완료한 회원
-        String verifiedYn =
-                String.valueOf(attempt.get("VERIFIED_YN"));
-
-        if ("Y".equalsIgnoreCase(verifiedYn)) {
-            return new JoinCodeVerifyResponse(
-                    true,
-                    JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
-                    "이미 인증이 완료되었습니다.",
-                    5
-            );
+        // 기존 인증 완료 상태
+        if (verified) {
+                return new JoinCodeVerifyResponse(
+                        true,
+                        JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
+                        "이미 인증이 완료되었습니다.",
+                        remaining
+                );
         }
-
-        // 3. 남은 인증 시도 횟수
-        Number failCount =
-                (Number) attempt.get("FAIL_COUNT");
-
-        int failures =
-                failCount == null
-                        ? 0
-                        : failCount.intValue();
 
         return new JoinCodeVerifyResponse(
                 false,
                 "READY",
                 "인증코드를 입력할 수 있습니다.",
-                Math.max(0, 5 - failures)
+                remaining
         );
-    }
+        }
+
 
     /**
      * 인증 실패 기록
@@ -409,14 +400,20 @@ public class JoinCodeVerifyService {
                 Math.max(0, 5 - failures);
 
         // 3. 5회 실패 시 잠금
+
         if (remaining == 0) {
-            return new JoinCodeVerifyResponse(
-                    false,
-                    JoinCodeVerifyStatus.LOCKED.name(),
-                    "인증에 5회 실패하여 15분간 잠금 처리되었습니다.",
-                    0
-            );
+        boolean verified = "Y".equalsIgnoreCase(
+                String.valueOf(attempt.get("VERIFIED_YN"))
+        );
+
+        return new JoinCodeVerifyResponse(
+                verified,
+                JoinCodeVerifyStatus.LOCKED.name(),
+                "인증에 5회 실패하여 15분간 잠금 처리되었습니다.",
+                0
+        );
         }
+
 
         // 4. 일반 인증 실패
         return new JoinCodeVerifyResponse(
