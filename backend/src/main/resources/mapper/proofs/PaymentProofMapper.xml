@@ -175,7 +175,8 @@
         AND n.CREATED_AT >= TRUNC(SYSDATE)
     </select>
 
-    <!-- 감사 로그: 증빙 등록·승인·보완 요청·재제출. DESCRIPTION에 보완 사유 등 자유 입력값은 넣지 않음 -->
+    <!-- 감사 로그(F22·F23 증빙 등록·승인·보완 요청·재제출 전용): DESCRIPTION에 보완 사유 등 자유 입력값은 넣지 않음.
+      ※ F24 정정 사유는 설계상 AUDIT_LOG(REF_CORRECT)에 남김 — 계좌·연락처 같은 긴 숫자는 RefNoService에서 차단 -->
     <insert id="insertAuditLog">
         INSERT INTO AUDIT_LOG (
         AUDIT_LOG_ID, GROUP_ID, ACTOR_MEMBER_ID, TARGET_MEMBER_ID, EVENT_TYPE, DESCRIPTION

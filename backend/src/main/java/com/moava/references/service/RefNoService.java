@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * F24 거래 참조번호 지정 · 정정 (관리자, 화면 A05 /admin/references)
@@ -31,6 +32,8 @@ public class RefNoService {
     private static final String REF_NO_PATTERN = "^MOAVA-\\d{5}$";
     private static final int MAX_REASON_BYTES = 600;     // 한글 약 200자 (AUDIT_LOG.DESCRIPTION 1000바이트 안에 들어가도록)
     private static final int MAX_NEXT_TRIES = 10;        // 수동 입력 번호와 겹치면 다음 번호로 넘어가는 최대 횟수
+    // 계좌번호·연락처처럼 숫자 10개 이상 연속(사이 하이픈·공백 1개 허용) → 사유 입력 금지 (AUDIT_LOG.DESCRIPTION에 계좌·연락처 기록 금지)
+    private static final Pattern LONG_NUMBER = Pattern.compile("(\\d[\\s-]?){10,}");
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     /** A05 목록 — ref: UNASSIGNED(미지정) / ASSIGNED(지정 완료) */
@@ -108,6 +111,9 @@ public class RefNoService {
         }
         if (reason.getBytes(StandardCharsets.UTF_8).length > MAX_REASON_BYTES) {
             throw badRequest("정정 사유는 한글 기준 약 200자까지 입력할 수 있습니다.");
+        }
+        if (LONG_NUMBER.matcher(reason).find()) {                                         // ← 추가
+            throw badRequest("정정 사유에 계좌번호·연락처 같은 긴 숫자는 입력할 수 없습니다.");
         }
 
         // 2. 증빙 존재 + 번호가 지정된 건만 + 현재 번호와 달라야 함
