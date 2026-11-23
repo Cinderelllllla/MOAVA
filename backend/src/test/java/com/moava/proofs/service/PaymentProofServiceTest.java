@@ -108,7 +108,6 @@ class PaymentProofServiceTest {
         proofQueryService = new ProofQueryService(paymentProofMapper, proofFileStorage, proofAccessChecker);
         proofReviewService = new ProofReviewService(paymentProofMapper, notificationService, proofAccessChecker);
         lenient().when(paymentProofMapper.lockGroupForProofUpdate(GROUP_ID)).thenReturn(GROUP_ID);
-        lenient().when(paymentProofMapper.lockGroupForProofUpdate(GROUP_ID)).thenReturn(GROUP_ID);
 
         // @Value("${moava.upload.dir}") 대신 임시 폴더를 업로드 경로로 지정
         ReflectionTestUtils.setField(proofFileStorage, "uploadDir", tempDir.toString());
