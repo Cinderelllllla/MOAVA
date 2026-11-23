@@ -34,6 +34,14 @@ export default function MyGroups() {
   const [joinErrors, setJoinErrors] = useState({});
 
 
+  // F16: 모임장 전용 참여 회원 목록
+  const [openMembersGroupId, setOpenMembersGroupId] = useState(null);
+  const [groupMembers, setGroupMembers] = useState({});
+  const [membersLoadingGroupId, setMembersLoadingGroupId] = useState(null);
+  const [membersErrors, setMembersErrors] = useState({});
+
+
+
   const income = Number(finance.getFinance().income) || 0;
 
   const monthlyTotal = list.reduce(
@@ -168,6 +176,46 @@ export default function MyGroups() {
       setCopyingGroupId(null);
     }
   };
+
+
+// F16: 참여 회원 목록 조회
+const loadGroupMembers = async (groupId) => {
+  setMembersLoadingGroupId(groupId);
+  setMembersErrors(prev => ({
+    ...prev,
+    [groupId]: ''
+  }));
+
+  try {
+    const data = await groups.fetchGroupMembers(groupId);
+
+    setGroupMembers(prev => ({
+      ...prev,
+      [groupId]: data
+    }));
+  } catch (error) {
+    setMembersErrors(prev => ({
+      ...prev,
+      [groupId]:
+        error?.message || '참여 회원 목록을 불러오지 못했어요.'
+    }));
+  } finally {
+    setMembersLoadingGroupId(null);
+  }
+};
+
+// F16: 참여 회원 목록 열기/닫기
+const handleToggleGroupMembers = async (groupId) => {
+  if (membersLoadingGroupId !== null) return;
+
+  if (openMembersGroupId === groupId) {
+    setOpenMembersGroupId(null);
+    return;
+  }
+
+  setOpenMembersGroupId(groupId);
+  await loadGroupMembers(groupId);
+};
 
 
 // F16: 가입 신청 목록 불러오기
@@ -429,6 +477,22 @@ const handleJoinDecision = async (
                     </button>
                   )}
 
+
+                  {/* F16: 모임장 전용 참여 회원 목록 */}
+                  {g.role === 'OWNER' && (
+                    <button
+                      type="button"
+                      className="btn soft"
+                      disabled={membersLoadingGroupId !== null}
+                      onClick={() => handleToggleGroupMembers(g.groupId)}
+                    >
+                      {openMembersGroupId === g.groupId
+                        ? '👥 참여 회원 목록 닫기'
+                        : '👥 참여 회원 보기'}
+                    </button>
+                  )}
+
+
                     
                   {/* F16: 모임장 전용 가입 신청 관리 */}
                   {g.role === 'OWNER' && (
@@ -449,6 +513,92 @@ const handleJoinDecision = async (
 
 
                 </div>
+
+
+                  {/* F16: 참여 회원 목록 (모임장 전용) */}
+                  {g.role === 'OWNER' && openMembersGroupId === g.groupId && (
+                    <div
+                      className="policy-lock"
+                      style={{ marginTop: 12 }}
+                    >
+                      <div className="item-head">
+                        <h3>참여 회원 목록</h3>
+
+                        <span className="pill">
+                          {membersLoadingGroupId === g.groupId
+                            ? '조회 중'
+                            : membersErrors[g.groupId]
+                              ? '조회 실패'
+                              : `총 ${groupMembers[g.groupId]?.length ?? 0}명`}
+                        </span>
+                      </div>
+
+                      {membersLoadingGroupId === g.groupId ? (
+                        <p className="muted">
+                          참여 회원 조회 중...
+                        </p>
+                      ) : membersErrors[g.groupId] ? (
+                        <p role="alert" style={{ color: '#c0392b' }}>
+                          {membersErrors[g.groupId]}
+                        </p>
+                      ) : groupMembers[g.groupId]?.length ? (
+                        groupMembers[g.groupId].map(member => (
+                          <div
+                            key={member.gyeMemberId}
+                            className="item-head"
+                            style={{
+                              padding: '14px 0',
+                              borderBottom: '1px solid #e5e7eb'
+                            }}
+                          >
+                            <div>
+                              <strong>
+                                {member.memberName || `회원 #${member.memberId}`}
+                              </strong>
+
+                              <p className="muted mini">
+                                회원 ID: {member.memberId}
+                                {' · '}
+                                가입일: {member.joinedAt
+                                  ? member.joinedAt.replace('T', ' ').slice(0, 16)
+                                  : '-'}
+                              </p>
+                            </div>
+
+                            <div
+                              className="actions"
+                              style={{ margin: 0 }}
+                            >
+                              <span className="pill">
+                                {member.role === 'OWNER'
+                                  ? '모임장'
+                                  : '일반 멤버'}
+                              </span>
+
+                              <span className="pill">
+                                {member.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="muted">
+                          현재 참여 중인 회원이 없어요.
+                        </p>
+                      )}
+
+                      <button
+                        type="button"
+                        className="btn small soft"
+                        disabled={membersLoadingGroupId !== null}
+                        onClick={() => loadGroupMembers(g.groupId)}
+                        style={{ marginTop: 12 }}
+                      >
+                        새로고침
+                      </button>
+                    </div>
+                  )}
+
 
 
                 {/* F16: 가입 신청 목록 */}

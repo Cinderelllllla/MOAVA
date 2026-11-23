@@ -5,6 +5,7 @@
 
 <mapper namespace="com.moava.group.query.mapper.GroupQueryMapper">
 
+    <!-- 내가 모임장인 모임 조회 -->
     <select id="findMyOwnedGroups"
             resultType="com.moava.group.query.dto.GroupListResponse">
 
@@ -56,15 +57,59 @@
             SELECT 1
             FROM GYE_MEMBER GM
             WHERE GM.GROUP_ID = G.GROUP_ID
-            AND GM.MEMBER_ID = #{memberId}
-            AND GM.STATUS = 'ACTIVE'
+              AND GM.MEMBER_ID = #{memberId}
+              AND GM.STATUS = 'ACTIVE'
         )
-        AND G.OWNER_ID != #{memberId}
+          AND G.OWNER_ID != #{memberId}
         ORDER BY G.GROUP_ID DESC
 
     </select>
 
 
-    
+    <!-- F16: 로그인 회원이 해당 모임의 모임장인지 확인 -->
+    <select id="countOwnedGroup"
+            resultType="int">
+
+        SELECT COUNT(*)
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+          AND OWNER_ID = #{memberId}
+
+    </select>
+
+
+    <!-- F16: 해당 모임의 ACTIVE 참여 회원 목록 조회 -->
+    <select id="findActiveGroupMembers"
+            resultType="com.moava.group.query.dto.GroupMemberResponse">
+
+        SELECT
+            GM.GYE_MEMBER_ID AS "gyeMemberId",
+            GM.GROUP_ID AS "groupId",
+            GM.MEMBER_ID AS "memberId",
+            M.NAME AS "memberName",
+            CASE
+                WHEN G.OWNER_ID = GM.MEMBER_ID
+                THEN 'OWNER'
+                ELSE 'MEMBER'
+            END AS "role",
+            GM.STATUS AS "status",
+            GM.JOINED_AT AS "joinedAt",
+            GM.WARNING_COUNT AS "warningCount"
+        FROM GYE_MEMBER GM
+        JOIN MEMBER M
+          ON GM.MEMBER_ID = M.MEMBER_ID
+        JOIN GYE_GROUP G
+          ON GM.GROUP_ID = G.GROUP_ID
+        WHERE GM.GROUP_ID = #{groupId}
+          AND GM.STATUS = 'ACTIVE'
+        ORDER BY
+            CASE
+                WHEN GM.MEMBER_ID = G.OWNER_ID THEN 0
+                ELSE 1
+            END,
+            GM.JOINED_AT ASC,
+            GM.GYE_MEMBER_ID ASC
+
+    </select>
 
 </mapper>
