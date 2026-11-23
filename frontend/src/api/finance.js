@@ -64,6 +64,25 @@ export function affordability() {
   };
 }
 
+const manwon = n => `${Number(n).toLocaleString('ko-KR')}만 원`;
+
+/** 월 가용 금액(수입 − 지출 − 저축 − 비상금) 표시. 마이너스면 "-50만 원" 대신 "50만 원 부족"으로 보여 준다. */
+export function freeText(free) {
+  const n = Number(free);
+  return n < 0 ? `${manwon(-n)} 부족` : manwon(n);
+}
+
+/** 추천액이 0원일 때 화면에 보여 줄 이유. 추천액이 있으면 null.
+ *  (0원은 오류가 아니라 "지금은 납입 여유가 부족하다"는 정상 결과) */
+export function noRecommendReason(a) {
+  if (!a || a.rec > 0) return null;
+  const unit = getPolicy().amountUnitManwon;
+  if (a.free < 0) return `수입보다 지출·저축·비상금 합계가 ${manwon(-a.free)} 더 많아서 매달 모자라는 상태예요.`;
+  return a.free === 0
+    ? '수입에서 지출·저축·비상금을 빼면 매달 남는 돈이 없어요.'
+    : `매달 남는 돈 ${Number(a.free).toLocaleString('ko-KR')}만 원에 안전계수를 적용하면 최소 납입 단위(${unit}만 원)보다 적어요.`;
+}
+
 /** 참고용(화면에서 사용하지 않음): ML 결과 없이 정책식으로 계산하던 예전 방식
  *  추천액 = min((월수입−지출−저축−비상금)×안전계수, 월수입×12%), 5만 원 단위 내림 */
 export function policyAffordability() {
