@@ -80,11 +80,17 @@ export default function Dashboard() {
           ✦ MOAVA SMART RECOMMENDATION
         </span>
 
-        {a ? (
+        {a && a.rec > 0 ? (
           <h2>
             나에게 맞는 월 납입액
             <br />
             {won(a.rec)}부터 시작해 보세요.
+          </h2>
+        ) : a ? (
+          <h2>
+            지금은 납입 여유가 부족해요.
+            <br />
+            금융정보를 조정해 다시 분석해 보세요.
           </h2>
         ) : (
           <h2>
@@ -117,14 +123,14 @@ export default function Dashboard() {
       <div className="grid cols4 section">
         <Stat
           label="추천 월 납입액"
-          val={a ? won(a.rec) : '-'}
+          val={a ? (a.rec > 0 ? won(a.rec) : '추천 없음') : '-'}
           ico="✧"
           to="/journey"
         />
 
         <Stat
-          label="월 가용 금액"
-          val={a ? won(a.free) : '-'}
+          label="매달 남는 돈"
+          val={a ? finance.freeText(a.free) : '-'}
           ico="◉"
           to="/finance"
         />
