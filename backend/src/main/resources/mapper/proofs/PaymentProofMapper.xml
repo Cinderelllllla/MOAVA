@@ -237,4 +237,28 @@
         AND PAYMENT_PROOF_ID = #{proofId}
     </select>
 
+    <!-- F25: 귀속 월 기준 회원별 납입 상태
+     한 달에 증빙이 여러 건(회차별)일 수 있어서 우선순위로 하나만 고름:
+     승인 완료가 하나라도 있으면 CONFIRMED > 승인 대기 PENDING > 나머지(보완 요청) REVISION > 없으면 NONE -->
+    <select id="findMemberPaymentStatus" resultType="com.moava.proofs.dto.PaymentStatusResponse$MemberStatus">
+        SELECT gm.MEMBER_ID     AS memberId,
+        m.NAME           AS memberName,
+        gm.WARNING_COUNT AS warningCount,
+        (SELECT CASE
+        WHEN SUM(CASE WHEN p.STATUS = 'CONFIRMED' THEN 1 ELSE 0 END) &gt; 0 THEN 'CONFIRMED'
+        WHEN SUM(CASE WHEN p.STATUS = 'PENDING'   THEN 1 ELSE 0 END) &gt; 0 THEN 'PENDING'
+        WHEN COUNT(*) &gt; 0 THEN 'REVISION'
+        ELSE 'NONE'
+        END
+        FROM PAYMENT_PROOF p
+        WHERE p.GROUP_ID  = gm.GROUP_ID
+        AND p.MEMBER_ID = gm.MEMBER_ID
+        AND p.PAY_MONTH = #{payMonth}) AS status
+        FROM GYE_MEMBER gm
+        JOIN MEMBER m ON m.MEMBER_ID = gm.MEMBER_ID
+        WHERE gm.GROUP_ID = #{groupId}
+        AND gm.STATUS = 'ACTIVE'
+        ORDER BY gm.JOINED_AT
+    </select>
+
 </mapper>
