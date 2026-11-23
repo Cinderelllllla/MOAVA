@@ -1,5 +1,11 @@
 package com.moava.proofs.service;
 
+import com.moava.proofs.dto.PaymentStatusResponse;
+import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import com.moava.common.util.NameMasker;
 import com.moava.crypto.service.CryptoKeyService;
 import com.moava.notification.common.service.NotificationService;
@@ -451,6 +457,97 @@ class PaymentProofServiceTest {
         assertEquals(404, e.getStatusCode().value());
     }
 
+    // ===================== F25 납입 현황 =====================
+
+    @Test
+    @DisplayName("납입 현황: 그 달 승인 완료가 없는 회원은 잠금 — 본인 행만, 경고 횟수 숨김")
+    void status_unpaidMember_locked() {
+        givenMemberAccess();
+        when(paymentProofMapper.findMemberPaymentStatus(GROUP_ID, "202611")).thenReturn(List.of(
+                memberStatus(MEMBER_ID, "이회원", "PENDING", 1),     // 본인: 승인 대기 → 아직 잠금
+                memberStatus(OTHER_ID, "박다른", "CONFIRMED", 0)));
+
+        PaymentStatusResponse res = proofQueryService.getPaymentStatus(GROUP_ID, MEMBER_ID, "202611");
+
+        assertTrue(res.isLocked());
+        assertEquals(1, res.getMembers().size());                         // 다른 회원 행 없음
+        PaymentStatusResponse.MemberStatus me = res.getMembers().get(0);
+        assertEquals(MEMBER_ID, me.getMemberId());
+        assertTrue(me.isMe());
+        assertEquals("이회원", me.getMemberName());                        // 본인 이름은 그대로
+        assertNull(me.getWarningCount());                                  // 경고는 모임장만
+    }
+
+    @Test
+    @DisplayName("납입 현황: 그 달 승인 완료된 회원은 전체 열람 — 타인 이름 마스킹, 경고 횟수 숨김")
+    void status_paidMember_seesAll() {
+        givenMemberAccess();
+        when(paymentProofMapper.findMemberPaymentStatus(GROUP_ID, "202611")).thenReturn(List.of(
+                memberStatus(MEMBER_ID, "이회원", "CONFIRMED", 0),
+                memberStatus(OTHER_ID, "박다른", "NONE", 2)));
+
+        PaymentStatusResponse res = proofQueryService.getPaymentStatus(GROUP_ID, MEMBER_ID, "202611");
+
+        assertFalse(res.isLocked());
+        assertEquals(2, res.getMembers().size());
+        PaymentStatusResponse.MemberStatus other = res.getMembers().get(1);
+        assertFalse(other.isMe());
+        assertEquals(NameMasker.mask("박다른"), other.getMemberName());    // 타인 이름 마스킹
+        assertNull(other.getWarningCount());                               // 일반 회원에게는 경고 숨김
+    }
+
+    @Test
+    @DisplayName("납입 현황: 모임장은 납입과 상관없이 전체 열람 + 경고 횟수 표시")
+    void status_owner_seesAllWithWarnings() {
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+        when(paymentProofMapper.findMemberPaymentStatus(GROUP_ID, "202611")).thenReturn(List.of(
+                memberStatus(MEMBER_ID, "이회원", "NONE", 2)));
+
+        PaymentStatusResponse res = proofQueryService.getPaymentStatus(GROUP_ID, OWNER_ID, "202611");
+
+        assertFalse(res.isLocked());
+        PaymentStatusResponse.MemberStatus row = res.getMembers().get(0);
+        assertEquals(2, row.getWarningCount());                            // 모임장에게는 경고 보임
+        assertEquals(NameMasker.mask("이회원"), row.getMemberName());      // 모임장이 봐도 타인은 마스킹
+    }
+
+    @Test
+    @DisplayName("납입 현황: 모임 구성원이 아니면 403, 현황 조회 안 함")
+    void status_notMember_403() {
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+        when(paymentProofMapper.countActiveMember(GROUP_ID, OTHER_ID)).thenReturn(0);
+
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> proofQueryService.getPaymentStatus(GROUP_ID, OTHER_ID, "202611"));
+
+        assertEquals(403, e.getStatusCode().value());
+        verify(paymentProofMapper, never()).findMemberPaymentStatus(any(), any());
+    }
+
+    @Test
+    @DisplayName("납입 현황: 귀속 월 형식이 YYYYMM이 아니면 400")
+    void status_invalidMonth_400() {
+        givenMemberAccess();
+
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> proofQueryService.getPaymentStatus(GROUP_ID, MEMBER_ID, "2026-11"));
+
+        assertEquals(400, e.getStatusCode().value());
+        verify(paymentProofMapper, never()).findMemberPaymentStatus(any(), any());
+    }
+
+    @Test
+    @DisplayName("납입 현황: 귀속 월을 안 주면 이번 달(한국 시간)로 조회")
+    void status_noMonth_usesThisMonth() {
+        givenMemberAccess();
+        String thisMonth = YearMonth.now(ZoneId.of("Asia/Seoul")).format(DateTimeFormatter.ofPattern("yyyyMM"));
+        when(paymentProofMapper.findMemberPaymentStatus(GROUP_ID, thisMonth)).thenReturn(List.of());
+
+        PaymentStatusResponse res = proofQueryService.getPaymentStatus(GROUP_ID, MEMBER_ID, null);
+
+        assertEquals(thisMonth, res.getPayMonth());
+    }
+
     // ===================== 도우미 =====================
 
     // 확인 대기(PENDING) 상태인 일반 회원의 증빙
@@ -539,12 +636,28 @@ class PaymentProofServiceTest {
             return s.count();
         }
     }
-
     // 임시 폴더의 proofs 안에 저장된 첫 번째 파일 내용
-    private String readFirstSavedFile() throws IOException {
-        try (Stream<Path> s = Files.list(tempDir.resolve("proofs"))) {
-            Path first = s.findFirst().orElseThrow();
-            return Files.readString(first, StandardCharsets.US_ASCII);
+        private String readFirstSavedFile() throws IOException {
+            try (Stream<Path> s = Files.list(tempDir.resolve("proofs"))) {
+                Path first = s.findFirst().orElseThrow();
+                return Files.readString(first, StandardCharsets.US_ASCII);
+            }
+        }
+        // F25: 모임 조회 + 일반 회원(MEMBER_ID)이 ACTIVE 구성원
+        private void givenMemberAccess() {
+            when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+            when(paymentProofMapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+        }
+
+        // F25: 납입 현황 쿼리 결과 1행 흉내
+        private PaymentStatusResponse.MemberStatus memberStatus(Long memberId, String name, String status, int warningCount)
+        {
+            PaymentStatusResponse.MemberStatus m = new PaymentStatusResponse.MemberStatus();
+            m.setMemberId(memberId);
+            m.setMemberName(name);
+            m.setStatus(status);
+            m.setWarningCount(warningCount);
+            return m;
+
         }
     }
-}
