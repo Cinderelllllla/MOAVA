@@ -7,6 +7,7 @@ import com.moava.references.dto.RefProofDto;
 import com.moava.references.service.RefNoService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -25,7 +26,9 @@ public class RefNoController {
 
     private final RefNoService refNoService;
 
-    /** 목록 — ?ref=UNASSIGNED(미지정, 기본값) / ASSIGNED(지정 완료) */
+    /**
+     * 목록 — ?ref=UNASSIGNED(미지정, 기본값) / ASSIGNED(지정 완료)
+     */
     @GetMapping
     public ApiResponse<List<RefProofDto>> getProofs(
             @RequestParam(defaultValue = "UNASSIGNED") String ref,
@@ -33,7 +36,9 @@ public class RefNoController {
         return ApiResponse.ok(refNoService.getProofs(loginAdminId(authentication), ref), requestId());
     }
 
-    /** 다음 참조번호 제안 (시퀀스 소모 없음) */
+    /**
+     * 다음 참조번호 제안 (시퀀스 소모 없음)
+     */
     @GetMapping("/ref-no/suggestion")
     public ApiResponse<RefNoResponse> suggestRefNo(Authentication authentication) {
         return ApiResponse.ok(refNoService.suggestRefNo(loginAdminId(authentication)), requestId());
@@ -66,13 +71,25 @@ public class RefNoController {
     // ---------- 로그인 관리자 ----------
 
     /**
-     * JWT에서 ADMIN_ID 꺼내기 — 관리자 로그인(F41, Jira MOA-43) 연동 전이라 지금은 항상 403
-     * 연동되면 이 메서드만 'role=ADMIN 확인 → subject(ADMIN_ID)를 Long으로 변환'으로 교체하면 됨
+     * JWT에서 ADMIN_ID 꺼내기 — 관리자 로그인(POST /api/auth/admin/login) 토큰: subject=ADMIN_ID, 권한 ROLE_ADMIN
+     * SecurityConfig가 /api/v1/admin/** 를 ADMIN만 통과시키지만, 설정이 바뀌어도 회원 토큰이 못 들어오게 한 번 더 확인
+     * (ACTIVE 관리자인지는 RefNoService.checkAdmin에서 DB로 확인)
      */
     private static Long loginAdminId(Authentication authentication) {
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "관리자 로그인 연동 전입니다.");
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
+        }
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        if (!isAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "관리자만 이용할 수 있습니다.");
+        }
+        try {
+            return Long.valueOf(authentication.getName());
+        } catch (NumberFormatException e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인 정보가 올바르지 않습니다.");
+        }
     }
-
     private static String requestId() {
         return "req-" + UUID.randomUUID().toString().substring(0, 8);
     }
