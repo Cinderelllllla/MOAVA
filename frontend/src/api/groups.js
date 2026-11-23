@@ -990,6 +990,30 @@ export async function verifyJoinCode(groupId, joinCode) {
   });
 }
 
+
+/**
+ * F18 - 현재 회원의 비공개 모임 인증 상태 조회
+ *
+ * GET /api/groups/{groupId}/join-code/verification-state
+ */
+export async function fetchJoinCodeVerificationState(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = Number(groupId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  return apiFetch(
+    `/api/groups/${id}/join-code/verification-state`,
+    { method: 'GET' }
+  );
+}
+
+
 /* ==================================================
    F16 — 모임 가입 신청 (Spring Boot)
    ================================================== */

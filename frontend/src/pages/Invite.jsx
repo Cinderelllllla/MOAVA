@@ -4,36 +4,24 @@
  *   → 모임 ID + 6자리 인증코드 직접 입력
  *
  * /invite?groupId=13
- *   → 모임 ID 자동 입력 + 인증코드 입력
+ *   → 모임 ID 자동 입력 + 인증 상태 복원
  *
  * /invite?t=토큰
- *   → 기존 토큰 기반 초대 화면 유지
- *
- * F18: 비공개 모임 인증코드 검증
- * F16: 모임 가입 신청
+ *   → 토큰 기반 초대 + 인증 상태 복원
  */
 
-import { useEffect, useState } from 'react';
-import {
-  Link,
-  Navigate,
-  useSearchParams
-} from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 
 import { useApp } from '../common/store';
 import { groups } from '../api';
 import { PageHead, Card } from '../components/ui';
 import { LoadState } from '../components/shared';
 
-// F18 인증 성공 여부 확인
-function isVerificationSuccessful(result) {
-  return (
-    result?.status === 'VERIFIED' ||
-    result?.status === 'ALREADY_VERIFIED'
-  );
-}
+/* =========================================
+   공통 함수
+   ========================================= */
 
-// 모임 ID 검증
 function isValidGroupId(value) {
   const text = String(value ?? '').trim();
 
@@ -43,24 +31,39 @@ function isValidGroupId(value) {
   );
 }
 
+function isVerificationSuccessful(result) {
+  return (
+    result?.status === 'VERIFIED' ||
+    result?.status === 'ALREADY_VERIFIED'
+  );
+}
 
-// 기존 인증 성공 기록이 있는지 확인
 function hasVerifiedRecord(result) {
   return result?.verified === true;
 }
 
+function canRequestJoinWithVerification(result) {
+  return (
+    isVerificationSuccessful(result) ||
+    hasVerifiedRecord(result)
+  );
+}
+
+function isLocked(result) {
+  return result?.status === 'LOCKED';
+}
+
+/* =========================================
+   Invite
+   ========================================= */
 
 export default function Invite() {
   const { session, isAdmin } = useApp();
   const [sp] = useSearchParams();
 
-  // 기존 토큰 방식
   const t = sp.get('t') || '';
-
-  // 신규 직접 입력 방식
   const groupIdParam = sp.get('groupId') || '';
 
-  // 로그인 / 회원가입 후 복귀할 쿼리
   const returnQuery = t
     ? `?t=${encodeURIComponent(t)}`
     : groupIdParam
@@ -68,7 +71,7 @@ export default function Invite() {
       : '';
 
   /* =========================================
-     기존 토큰 기반 초대 상태
+     토큰 방식 상태
      ========================================= */
 
   const [invite, setInvite] = useState({
@@ -83,44 +86,52 @@ export default function Invite() {
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
   const [verifyError, setVerifyError] = useState('');
+  const [tokenStateLoading, setTokenStateLoading] = useState(false);
 
   const [joining, setJoining] = useState(false);
   const [joinResult, setJoinResult] = useState(null);
   const [joinError, setJoinError] = useState('');
 
   /* =========================================
-     신규 직접 입력 방식 상태
+     직접 입력 방식 상태
      ========================================= */
 
   const [directGroupId, setDirectGroupId] = useState(
-    isValidGroupId(groupIdParam)
-      ? groupIdParam
-      : ''
+    isValidGroupId(groupIdParam) ? groupIdParam : ''
   );
 
   const [directCode, setDirectCode] = useState('');
   const [directVerifying, setDirectVerifying] = useState(false);
   const [directVerifyResult, setDirectVerifyResult] = useState(null);
-  const [directVerifiedGroupId, setDirectVerifiedGroupId] =
-    useState(null);
+  const [directVerifiedGroupId, setDirectVerifiedGroupId] = useState(null);
 
   const [directJoining, setDirectJoining] = useState(false);
   const [directJoinResult, setDirectJoinResult] = useState(null);
   const [directError, setDirectError] = useState('');
 
+  const [directStateLoading, setDirectStateLoading] = useState(false);
+  const [directStateGroupId, setDirectStateGroupId] = useState(null);
+
+  // 비동기 응답이 다른 모임 ID에 적용되지 않도록 보호
+  const directGroupIdRef = useRef(directGroupId);
+  directGroupIdRef.current = directGroupId;
+
   const directVerified =
     directVerifiedGroupId !== null &&
-    directVerifiedGroupId === directGroupId;
+    directVerifiedGroupId === directGroupId &&
+    canRequestJoinWithVerification(directVerifyResult);
 
-  const directLocked =
-    directVerifyResult?.status === 'LOCKED';
+  const directLocked = isLocked(directVerifyResult);
+
+  const directVerificationSucceeded =
+    directVerified &&
+    isVerificationSuccessful(directVerifyResult);
 
   /* =========================================
-     기존 토큰 기반 모임 조회
+     F18 — 토큰으로 모임 조회
      ========================================= */
 
   useEffect(() => {
-    // 토큰이 없는 직접 입력 방식에서는 조회하지 않음
     if (!session || isAdmin || !t) {
       return undefined;
     }
@@ -132,6 +143,10 @@ export default function Invite() {
       group: null,
       error: ''
     });
+
+    setVerifyResult(null);
+    setJoinResult(null);
+    setJoinError('');
 
     groups.fetchInvite(t)
       .then(group => {
@@ -159,7 +174,7 @@ export default function Invite() {
   }, [session, isAdmin, t, retry]);
 
   /* =========================================
-     URL 모임 ID 변경 반영
+     URL groupId 변경 반영
      ========================================= */
 
   useEffect(() => {
@@ -174,22 +189,143 @@ export default function Invite() {
     setDirectCode('');
     setDirectVerifyResult(null);
     setDirectVerifiedGroupId(null);
+    setDirectStateGroupId(null);
     setDirectJoinResult(null);
     setDirectError('');
   }, [t, groupIdParam]);
 
   /* =========================================
-     F18 — 기존 토큰 방식 인증코드 검증
+     F18 — 토큰 방식 F5 인증 상태 복원
      ========================================= */
 
-  const handleVerifyJoinCode = async (e) => {
+  const tokenGroupId = invite.group?.groupId;
+  const tokenVisibility = invite.group?.visibility;
+
+  useEffect(() => {
+    if (
+      !session ||
+      isAdmin ||
+      !t ||
+      invite.status !== 'ready' ||
+      tokenVisibility !== 'PRIVATE' ||
+      !isValidGroupId(tokenGroupId)
+    ) {
+      setTokenStateLoading(false);
+      return undefined;
+    }
+
+    let alive = true;
+
+    setTokenStateLoading(true);
+    setVerifyResult(null);
+    setVerifyError('');
+
+    groups.fetchJoinCodeVerificationState(tokenGroupId)
+      .then(result => {
+        if (!alive) return;
+
+        setVerifyResult(result);
+      })
+      .catch(error => {
+        if (!alive) return;
+
+        setVerifyError(
+          error.message ||
+          '인증 상태를 불러오지 못했어요.'
+        );
+      })
+      .finally(() => {
+        if (alive) {
+          setTokenStateLoading(false);
+        }
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [
+    session,
+    isAdmin,
+    t,
+    invite.status,
+    tokenGroupId,
+    tokenVisibility
+  ]);
+
+  /* =========================================
+     F18 — 직접 입력 방식 F5 인증 상태 복원
+
+     모임 ID 입력 후 500ms 대기
+     GET 요청만 사용하므로 인증 실패 횟수 증가 없음
+     ========================================= */
+
+  useEffect(() => {
+    if (
+      !session ||
+      isAdmin ||
+      t ||
+      !isValidGroupId(directGroupId)
+    ) {
+      setDirectStateLoading(false);
+      setDirectStateGroupId(null);
+      return undefined;
+    }
+
+    let alive = true;
+    const requestedGroupId = directGroupId;
+
+    setDirectStateLoading(true);
+    setDirectStateGroupId(null);
+
+    const timer = setTimeout(() => {
+      groups.fetchJoinCodeVerificationState(requestedGroupId)
+        .then(result => {
+          if (!alive) return;
+
+          setDirectVerifyResult(result);
+
+          if (canRequestJoinWithVerification(result)) {
+            setDirectVerifiedGroupId(requestedGroupId);
+          } else {
+            setDirectVerifiedGroupId(null);
+          }
+
+          setDirectStateGroupId(requestedGroupId);
+        })
+        .catch(error => {
+          if (!alive) return;
+
+          setDirectStateGroupId(requestedGroupId);
+          setDirectError(
+            error.message ||
+            '인증 상태를 불러오지 못했어요.'
+          );
+        })
+        .finally(() => {
+          if (alive) {
+            setDirectStateLoading(false);
+          }
+        });
+    }, 500);
+
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [session, isAdmin, t, directGroupId]);
+
+  /* =========================================
+     F18 — 토큰 방식 인증코드 검증
+     ========================================= */
+
+  const handleVerifyJoinCode = async e => {
     e.preventDefault();
 
-    if (verifying) return;
+    if (verifying || tokenStateLoading) return;
 
     const groupId = invite.group?.groupId;
 
-    if (!groupId) {
+    if (!isValidGroupId(groupId)) {
       setVerifyError('모임 정보를 확인할 수 없어요.');
       return;
     }
@@ -216,7 +352,8 @@ export default function Invite() {
       }
     } catch (error) {
       setVerifyError(
-        error.message || '인증 중 오류가 발생했어요.'
+        error.message ||
+        '인증 중 오류가 발생했어요.'
       );
     } finally {
       setVerifying(false);
@@ -224,15 +361,17 @@ export default function Invite() {
   };
 
   /* =========================================
-     F16 — 기존 토큰 방식 가입 신청
+     F16 — 토큰 방식 가입 신청
      ========================================= */
 
   const handleJoinRequest = async () => {
-    if (joining || joinResult) return;
+    if (joining || joinResult || tokenStateLoading) {
+      return;
+    }
 
     const groupId = invite.group?.groupId;
 
-    if (!groupId) {
+    if (!isValidGroupId(groupId)) {
       setJoinError('모임 정보를 확인할 수 없어요.');
       return;
     }
@@ -240,19 +379,10 @@ export default function Invite() {
     const isPrivate =
       invite.group.visibility === 'PRIVATE';
 
-    const verified =
-      isVerificationSuccessful(verifyResult);
-
-    const previouslyVerified =
-      hasVerifiedRecord(verifyResult);
-
-    const locked =
-      verifyResult?.status === 'LOCKED';
-
-    const canRequestJoin =
-      verified || (locked && previouslyVerified);
-
-    if (isPrivate && !canRequestJoin) {
+    if (
+      isPrivate &&
+      !canRequestJoinWithVerification(verifyResult)
+    ) {
       setJoinError(
         '먼저 비공개 모임 인증을 완료해 주세요.'
       );
@@ -286,13 +416,19 @@ export default function Invite() {
   };
 
   /* =========================================
-     F18 — 직접 입력 인증코드 검증
+     F18 — 직접 입력 방식 인증코드 검증
      ========================================= */
 
-  const handleDirectVerify = async (e) => {
+  const handleDirectVerify = async e => {
     e.preventDefault();
 
-    if (directVerifying || directJoining) return;
+    if (
+      directVerifying ||
+      directJoining ||
+      directStateLoading
+    ) {
+      return;
+    }
 
     if (!isValidGroupId(directGroupId)) {
       setDirectError('올바른 모임 ID를 입력해 주세요.');
@@ -320,15 +456,18 @@ export default function Invite() {
         directCode
       );
 
-      // 요청 중 모임 ID가 변경되었다면 결과 적용 방지
-      if (directGroupId !== requestedGroupId) {
+      // 모임 ID가 바뀌었다면 이전 요청 결과 무시
+      if (directGroupIdRef.current !== requestedGroupId) {
         return;
       }
 
       setDirectVerifyResult(result);
 
-      if (isVerificationSuccessful(result)) {
+      if (canRequestJoinWithVerification(result)) {
         setDirectVerifiedGroupId(requestedGroupId);
+      }
+
+      if (isVerificationSuccessful(result)) {
         setDirectCode('');
       } else {
         setDirectError(
@@ -337,6 +476,10 @@ export default function Invite() {
         );
       }
     } catch (error) {
+      if (directGroupIdRef.current !== requestedGroupId) {
+        return;
+      }
+
       setDirectError(
         error.message ||
         '인증코드 확인 중 오류가 발생했어요.'
@@ -353,6 +496,7 @@ export default function Invite() {
   const handleDirectJoin = async () => {
     if (
       !directVerified ||
+      directStateLoading ||
       directJoining ||
       directJoinResult
     ) {
@@ -443,7 +587,9 @@ export default function Invite() {
   }
 
   /* =========================================
-     직접 입력 방식 — /invite
+     직접 입력 화면
+     /invite
+     /invite?groupId=13
      ========================================= */
 
   if (!t) {
@@ -468,12 +614,21 @@ export default function Invite() {
               모임 ID와 인증코드가 필요해요.
             </p>
 
+            {directStateLoading && (
+              <p className="muted" role="status">
+                서버 인증 상태를 확인하는 중이에요...
+              </p>
+            )}
+
             {!directVerified && (
               <form onSubmit={handleDirectVerify}>
                 <div style={{ marginTop: 20 }}>
                   <label
                     htmlFor="direct-group-id"
-                    style={{ display: 'block', marginBottom: 8 }}
+                    style={{
+                      display: 'block',
+                      marginBottom: 8
+                    }}
                   >
                     모임 ID
                   </label>
@@ -487,8 +642,7 @@ export default function Invite() {
                     value={directGroupId}
                     disabled={directVerifying || directJoining}
                     onChange={e => {
-                      const value = e.target.value
-                        .replace(/\D/g, '');
+                      const value = e.target.value.replace(/\D/g, '');
 
                       setDirectGroupId(value);
                       setDirectCode('');
@@ -510,7 +664,10 @@ export default function Invite() {
                 <div>
                   <label
                     htmlFor="direct-join-code"
-                    style={{ display: 'block', marginBottom: 8 }}
+                    style={{
+                      display: 'block',
+                      marginBottom: 8
+                    }}
                   >
                     6자리 인증코드
                   </label>
@@ -523,7 +680,11 @@ export default function Invite() {
                     maxLength={6}
                     placeholder="6자리 숫자"
                     value={directCode}
-                    disabled={directVerifying || directLocked}
+                    disabled={
+                      directVerifying ||
+                      directLocked ||
+                      directStateLoading
+                    }
                     onChange={e => {
                       setDirectCode(
                         e.target.value
@@ -551,6 +712,7 @@ export default function Invite() {
                     className="btn primary"
                     disabled={
                       directVerifying ||
+                      directStateLoading ||
                       directLocked ||
                       !isValidGroupId(directGroupId) ||
                       directCode.length !== 6
@@ -578,8 +740,8 @@ export default function Invite() {
 
             {directVerifyResult &&
               !directVerified &&
-              directVerifyResult.remainingAttempts != null &&
-              !directLocked && (
+              directVerifyResult.status === 'INVALID_CODE' &&
+              directVerifyResult.remainingAttempts != null && (
                 <p className="muted">
                   남은 인증 시도:{' '}
                   {directVerifyResult.remainingAttempts}회
@@ -599,24 +761,34 @@ export default function Invite() {
               </div>
             )}
 
-            {directVerified && (
+            {directVerified && !directStateLoading && (
               <>
-                <div
-                  className="policy-lock"
-                  role="status"
-                  style={{ marginTop: 20 }}
-                >
-                  <h3>✅ 인증 완료!</h3>
+                {directVerificationSucceeded && (
+                  <div
+                    className="policy-lock"
+                    role="status"
+                    style={{ marginTop: 20 }}
+                  >
+                    <h3>✅ 인증 완료!</h3>
 
-                  <p>
-                    모임 ID {directVerifiedGroupId}의
-                    인증코드가 확인되었습니다.
-                  </p>
+                    <p>
+                      모임 ID {directVerifiedGroupId}의
+                      인증코드가 확인되었습니다.
+                    </p>
 
-                  <p className="muted">
-                    이제 모임 가입 신청을 진행할 수 있어요.
-                  </p>
-                </div>
+                    <p className="muted">
+                      이제 모임 가입 신청을 진행할 수 있어요.
+                    </p>
+                  </div>
+                )}
+
+                {directLocked &&
+                  hasVerifiedRecord(directVerifyResult) && (
+                    <p className="muted">
+                      이전에 완료한 인증 기록이 유지되어
+                      가입 신청할 수 있어요.
+                    </p>
+                  )}
 
                 <div
                   className="policy-lock"
@@ -649,7 +821,10 @@ export default function Invite() {
                           type="button"
                           className="btn primary"
                           onClick={handleDirectJoin}
-                          disabled={directJoining}
+                          disabled={
+                            directJoining ||
+                            directStateLoading
+                          }
                         >
                           {directJoining
                             ? '신청 중...'
@@ -681,25 +856,18 @@ export default function Invite() {
   }
 
   /* =========================================
-     기존 토큰 기반 초대 화면
+     토큰 기반 초대 화면
      /invite?t=토큰
      ========================================= */
 
   const g = invite.group;
 
-
-  const verified =
-    isVerificationSuccessful(verifyResult);
-
-  const previouslyVerified =
-    hasVerifiedRecord(verifyResult);
-
-  const locked =
-    verifyResult?.status === 'LOCKED';
+  const verified = isVerificationSuccessful(verifyResult);
+  const previouslyVerified = hasVerifiedRecord(verifyResult);
+  const locked = isLocked(verifyResult);
 
   const canRequestJoin =
-    verified || (locked && previouslyVerified);
-
+    canRequestJoinWithVerification(verifyResult);
 
   return (
     <>
@@ -734,17 +902,23 @@ export default function Invite() {
                 {groups.purposeLabel(g.purpose)}
               </p>
 
-              {/* F18: 기존 비공개 모임 인증 */}
+              {/* F18 — 비공개 모임 인증 */}
               {g.visibility === 'PRIVATE' && (
                 <div style={{ marginTop: 20 }}>
                   <h3>🔑 비공개 모임 인증</h3>
+
+                  {tokenStateLoading && (
+                    <p className="muted" role="status">
+                      서버 인증 상태를 확인하는 중이에요...
+                    </p>
+                  )}
 
                   <p className="muted">
                     모임장에게 전달받은 6자리
                     인증코드를 입력해 주세요.
                   </p>
 
-                  {!verified && (
+                  {!verified && !tokenStateLoading && (
                     <form onSubmit={handleVerifyJoinCode}>
                       <input
                         type="text"
@@ -753,7 +927,11 @@ export default function Invite() {
                         maxLength={6}
                         placeholder="6자리 인증코드"
                         value={joinCode}
-                        disabled={verifying || locked}
+                        disabled={
+                          verifying ||
+                          locked ||
+                          tokenStateLoading
+                        }
                         onChange={e => {
                           setJoinCode(
                             e.target.value
@@ -801,32 +979,43 @@ export default function Invite() {
                     </p>
                   )}
 
-                  {verifyResult && !verified && (
-                    <div
-                      className="policy-lock"
-                      role="status"
-                      style={{ marginTop: 12 }}
-                    >
-                      <p>
-                        {verifyResult.message ||
-                          '인증에 실패했어요.'}
-                      </p>
+                  {verifyResult &&
+                    !verified &&
+                    ['INVALID_CODE', 'LOCKED'].includes(
+                      verifyResult.status
+                    ) && (
+                      <div
+                        className="policy-lock"
+                        role="status"
+                        style={{ marginTop: 12 }}
+                      >
+                        <p>
+                          {verifyResult.message ||
+                            '인증에 실패했어요.'}
+                        </p>
 
-                      {verifyResult.remainingAttempts != null &&
-                        !locked && (
+                        {verifyResult.remainingAttempts != null &&
+                          !locked && (
+                            <p className="muted">
+                              남은 인증 시도:{' '}
+                              {verifyResult.remainingAttempts}회
+                            </p>
+                          )}
+
+                        {locked && (
                           <p className="muted">
-                            남은 인증 시도:{' '}
-                            {verifyResult.remainingAttempts}회
+                            인증 시도가 제한되었어요.
+                            15분 후 다시 시도해 주세요.
                           </p>
                         )}
+                      </div>
+                    )}
 
-                      {locked && (
-                        <p className="muted">
-                          인증 시도가 제한되었어요.
-                          15분 후 다시 시도해 주세요.
-                        </p>
-                      )}
-                    </div>
+                  {locked && previouslyVerified && (
+                    <p className="muted">
+                      이전 인증 기록이 유지되어
+                      가입 신청할 수 있어요.
+                    </p>
                   )}
 
                   {verified && (
@@ -851,7 +1040,7 @@ export default function Invite() {
                 </div>
               )}
 
-              {/* F16: 기존 가입 신청 */}
+              {/* F16 — 가입 신청 */}
               <div
                 className="policy-lock"
                 style={{ marginTop: 16 }}
@@ -874,7 +1063,8 @@ export default function Invite() {
                     <h3>모임 가입 신청</h3>
 
                     <p className="muted">
-                      {g.visibility === 'PRIVATE' && !verified
+                      {g.visibility === 'PRIVATE' &&
+                      !canRequestJoin
                         ? '비공개 모임 인증을 완료하면 가입 신청할 수 있어요.'
                         : '가입 신청 후 모임장의 승인을 기다려 주세요.'}
                     </p>
@@ -886,7 +1076,9 @@ export default function Invite() {
                         onClick={handleJoinRequest}
                         disabled={
                           joining ||
-                          (g.visibility === 'PRIVATE' && !canRequestJoin)
+                          tokenStateLoading ||
+                          (g.visibility === 'PRIVATE' &&
+                            !canRequestJoin)
                         }
                       >
                         {joining

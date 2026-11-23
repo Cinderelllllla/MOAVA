@@ -124,4 +124,35 @@ public class GroupJoinCodeController {
                 .cacheControl(CacheControl.noStore())
                 .body(response);
     }
+
+           /**
+     * F18 - 현재 로그인 회원의 인증 상태 조회
+     *
+     * GET /api/groups/{groupId}/join-code/verification-state
+     *
+     * F5 새로고침 후 인증 상태 복원용
+     */
+    @GetMapping("/verification-state")
+    public ResponseEntity<?> getVerificationState(
+            @PathVariable Long groupId,
+            Authentication authentication
+    ) {
+        Long memberId = getMemberId(authentication);
+
+        if (memberId == null) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .build();
+        }
+
+        JoinCodeVerifyResponse response =
+                verifyService.checkVerificationState(
+                        groupId,
+                        memberId
+                );
+
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(response);
+    }
 }
