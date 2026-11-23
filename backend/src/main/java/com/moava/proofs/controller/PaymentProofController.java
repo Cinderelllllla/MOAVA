@@ -1,16 +1,11 @@
 package com.moava.proofs.controller;
 
 import com.moava.common.response.ApiResponse;
-import com.moava.proofs.dto.PaymentProofCreateRequest;
-import com.moava.proofs.dto.PaymentProofListDto;
-import com.moava.proofs.dto.PaymentProofDetailDto;
-import com.moava.proofs.dto.ProofActionResponse;
-import com.moava.proofs.dto.PaymentProofReviewRequest;
+import com.moava.proofs.dto.*;
 import com.moava.proofs.service.PaymentProofService;
 import com.moava.proofs.service.ProofQueryService;
 import com.moava.proofs.service.ProofReviewService;
 import lombok.RequiredArgsConstructor;
-import com.moava.proofs.dto.ProofFileContent;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -21,11 +16,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
-
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.validation.BindException;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -150,44 +140,6 @@ public class PaymentProofController {
         } catch (NumberFormatException e) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인 정보가 올바르지 않습니다.");
         }
-    }
-
-    // ---------- 오류 응답 (이 컨트롤러에서 난 예외만 처리 — 다른 기능에는 영향 없음) ----------
-
-    /** Service의 ResponseStatusException → 명세 §2 오류 형식 */
-    @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<ApiResponse.Error> handle(ResponseStatusException e) {
-        String code = switch (e.getStatusCode().value()) {
-            case 400 -> "INVALID_REQUEST";
-            case 401 -> "UNAUTHORIZED";
-            case 403 -> "FORBIDDEN";
-            case 404 -> "NOT_FOUND";
-            case 409 -> "INVALID_STATE";
-            default  -> "INTERNAL_ERROR";
-        };
-        String message = e.getReason() != null ? e.getReason() : "요청을 처리할 수 없습니다.";
-        return ResponseEntity.status(e.getStatusCode())
-                .body(ApiResponse.Error.of(code, message, requestId()));
-    }
-
-    /** 요청 값을 파라미터로 바꾸다 실패한 경우 (Controller 실행 전) → 400, 명세 §2 오류 형식 */
-    @ExceptionHandler({
-            MissingServletRequestPartException.class,   // files 파트 없음
-            BindException.class,                        // 폼 값 형식 오류 (payDate, amount, roundNo 등)
-            MethodArgumentTypeMismatchException.class,  // 경로 값이 숫자가 아님 (groupId=abc 등)
-            HttpMessageNotReadableException.class       // 심사 요청 JSON 형식 오류
-    })
-    public ResponseEntity<ApiResponse.Error> handleBadRequest(Exception e) {
-        String message;
-        if (e instanceof MissingServletRequestPartException) {
-            message = "증빙 파일을 첨부해 주세요.";
-        } else if (e instanceof BindException) {
-            message = "입력값 형식이 올바르지 않습니다. (납입일 YYYY-MM-DD, 금액·회차는 숫자)";
-        } else {
-            message = "요청 형식이 올바르지 않습니다.";
-        }
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponse.Error.of("INVALID_REQUEST", message, requestId()));
     }
 
     private static String requestId() {
