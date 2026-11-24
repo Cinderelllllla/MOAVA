@@ -100,6 +100,24 @@ class OverdueDetectServiceTest {
     }
 
     // ===================== 도우미 =====================
+    @Test
+    @DisplayName("납입일 3일 전 회원에게 납입 안내(PAY_DUE_3D): 납입일은 'M월 D일', 약정액은 천 단위 쉼표")
+    void dueNotice_3DaysBefore() {
+        OverdueTargetDto t = target(23L, "이삼일", -3);
+        t.setAmount(100000L);
+        when(overdueMapper.findDueNoticeTargets(TODAY, 3)).thenReturn(List.of(t));
+
+        OverdueDetectService.DetectResult r = overdueDetectService.detect(TODAY);
+
+        assertEquals(1, r.dueNotices());
+        assertEquals(0, r.memberNotices());      // 미납 안내(PAY_OVERDUE)와 따로 셈
+        verify(notificationService).notifyMember(eq(23L), eq(NotifType.PAY_DUE_3D), isNull(), eq(Map.of(
+                "groupId", GROUP_ID,
+                "group", "테스트모임",
+                "month", "11월분",
+                "payDate", "11월 5일",
+                "amount", "100,000")));
+    }
 
     // 감지 쿼리 결과 1행 흉내 (같은 모임 · 11월분 · 납부 기한 11/05)
     private OverdueTargetDto target(Long memberId, String name, int elapsedDays) {

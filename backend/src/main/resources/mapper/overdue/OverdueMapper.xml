@@ -13,7 +13,7 @@
          - 경과일 = 기준일(today) - 납부 기한. 테스트를 위해 SYSDATE 대신 today를 받음 -->
     <sql id="unpaidDues">
         SELECT d.GROUP_ID, d.GROUP_TITLE, d.MEMBER_ID, d.MEMBER_NAME,
-               d.PAY_MONTH, d.DUE_DATE, d.ELAPSED_DAYS
+               d.PAY_MONTH, d.DUE_DATE, d.ELAPSED_DAYS, d.AMOUNT
           FROM (
                 SELECT g.GROUP_ID,
                        g.TITLE                                  AS GROUP_TITLE,
@@ -22,12 +22,12 @@
                        TO_CHAR(mo.YM, 'YYYYMM')                 AS PAY_MONTH,
                        mo.YM + (g.PAY_DAY - 1)                  AS DUE_DATE,
                        TRUNC(#{today}) - (mo.YM + (g.PAY_DAY - 1)) AS ELAPSED_DAYS,
-                       g.STARTED_AT, gm.JOINED_AT, g.MONTHS
+                       g.STARTED_AT, gm.JOINED_AT, g.MONTHS, g.AMOUNT
                   FROM GYE_GROUP g
                   JOIN GYE_MEMBER gm ON gm.GROUP_ID = g.GROUP_ID AND gm.STATUS = 'ACTIVE'
                   JOIN MEMBER mb     ON mb.MEMBER_ID = gm.MEMBER_ID
-                  JOIN (SELECT ADD_MONTHS(TRUNC(#{today}, 'MM'), 1 - LEVEL) AS YM
-                          FROM DUAL CONNECT BY LEVEL &lt;= 37) mo          <!-- 최근 37개월 (운영 최대 36개월) -->
+                  JOIN (SELECT ADD_MONTHS(TRUNC(#{today}, 'MM'), 2 - LEVEL) AS YM
+                          FROM DUAL CONNECT BY LEVEL &lt;= 38) mo          <!-- 최근 37개월 (운영 최대 36개월) -->
                     ON mo.YM >= TRUNC(g.STARTED_AT, 'MM')
                  WHERE g.STATUS = 'ACTIVE'
                    AND g.STARTED_AT IS NOT NULL
@@ -58,6 +58,19 @@
           FROM (<include refid="unpaidDues"/>) u
          WHERE u.ELAPSED_DAYS = #{days}
          ORDER BY u.GROUP_ID, u.MEMBER_ID
+    </select>
+
+    <!-- 납입일 3일 전 안내(PAY_DUE_3D): 그 달 증빙을 아직 안 올린 회원만 (승인은 unpaidDues에서, 대기는 여기서 제외) -->
+    <select id="findDueNoticeTargets" resultType="com.moava.overdue.dto.OverdueTargetDto">
+        SELECT u.*
+        FROM (<include refid="unpaidDues"/>) u
+        WHERE u.ELAPSED_DAYS = 0 - #{daysBefore}
+        AND NOT EXISTS (SELECT 1 FROM PAYMENT_PROOF p
+        WHERE p.GROUP_ID = u.GROUP_ID
+        AND p.MEMBER_ID = u.MEMBER_ID
+        AND p.PAY_MONTH = u.PAY_MONTH
+        AND p.STATUS = 'PENDING')
+        ORDER BY u.GROUP_ID, u.MEMBER_ID
     </select>
 
     <!-- 미납 건 저장. 관리자 알림은 같은 트랜잭션에서 바로 보내므로 ADMIN_NOTIFIED_AT도 함께 기록 -->
@@ -158,4 +171,5 @@
         SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{adminId}, #{targetMemberId}, #{eventType}, #{description}
         )
     </insert>
+
 </mapper>

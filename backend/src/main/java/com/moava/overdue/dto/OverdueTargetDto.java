@@ -19,4 +19,5 @@ public class OverdueTargetDto {
     private String payMonth;        // YYYYMM
     private LocalDate dueDate;      // 납부 기한 = 해당 월 PAY_DAY
     private Integer elapsedDays;    // 기준일 - 납부 기한
+    private Long amount;            // 월 납입액 (납입일 3일 전 안내용)
 }
