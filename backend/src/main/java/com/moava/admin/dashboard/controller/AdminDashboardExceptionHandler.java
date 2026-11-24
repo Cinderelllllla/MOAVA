@@ -1,5 +1,6 @@
 package com.moava.admin.dashboard.controller;
 
+import com.moava.admin.controller.AdminAuthController;
 import com.moava.common.response.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -11,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.UUID;
 
 @RestControllerAdvice(assignableTypes = {
+        AdminAuthController.class,
         AdminDashboardController.class,
         AdminDemoController.class
 })

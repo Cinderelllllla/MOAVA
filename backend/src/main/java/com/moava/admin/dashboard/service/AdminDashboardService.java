@@ -67,7 +67,10 @@ public class AdminDashboardService {
     private String formatActorLabel(AdminDashboardDTO.RecentAuditRow row) {
         if (row.getActorAdminId() != null) {
             String adminName = row.getAdminName() == null ? "" : row.getAdminName().trim();
-            return adminName.isEmpty() ? "관리자" : "관리자 " + adminName;
+            if (adminName.isEmpty()) {
+                return "관리자";
+            }
+            return adminName.startsWith("관리자") ? adminName : "관리자 " + adminName;
         }
         if (row.getActorMemberId() != null) {
             String memberName = row.getMemberName() == null ? null : row.getMemberName().trim();
