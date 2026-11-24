@@ -79,14 +79,14 @@ public class OverdueAdminService {
 
     // ---------- 조치 4종 ----------
 
-    // 경고: WARNED + WARNED_AT, 회원 알림(+SMS, 알림 코드표 PR 머지 후 — 아래 TODO), AUDIT_LOG(OVERDUE_WARN). SANCTION·WARNING_COUNT는 안 건드림 (F30 모임장 경고와 별개)
+    // 경고: WARNED + WARNED_AT, 회원 알림 OVERDUE_WARNED(+SMS), AUDIT_LOG(OVERDUE_WARN). SANCTION·WARNING_COUNT는 안 건드림 (F30 모임장 경고와 별개)
     private void warn(Long adminId, OverdueCaseDto c) {
         if (overdueMapper.updateCaseWarned(c.getOverdueCaseId()) == 0) {
             throw conflict("이미 경고를 보냈거나 경고할 수 없는 상태입니다.");
         }
-        // TODO(알림 코드표 v3.1 PR 머지 후 주석 해제): 경고만 SMS 발송 (F36, API 명세서 7.4)
-        // notificationService.notifyMember(c.getMemberId(), NotifType.OVERDUE_WARNED, c.getOverdueCaseId(),
-        //         Map.of("groupId", c.getGroupId(), "group", c.getGroupTitle(), "month", monthLabel(c.getPayMonth())));
+        // 관리자 조치 중 경고만 회원 알림 + SMS (F36, API 명세서 7.4, 알림 코드표 v3.1)
+        notificationService.notifyMember(c.getMemberId(), NotifType.OVERDUE_WARNED, c.getOverdueCaseId(),
+                Map.of("groupId", c.getGroupId(), "group", c.getGroupTitle(), "month", monthLabel(c.getPayMonth())));
         overdueMapper.insertAdminAuditLog(c.getGroupId(), adminId, c.getMemberId(), "OVERDUE_WARN",
                 "미납 경고 #" + c.getOverdueCaseId() + " (" + c.getPayMonth() + ")");
     }

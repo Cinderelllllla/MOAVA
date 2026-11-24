@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -86,7 +87,7 @@ class OverdueAdminServiceTest {
     static final Long MEMBER_ID = 20L;
 
     @Test
-    @DisplayName("경고: DETECTED → WARNED, 감사 로그 OVERDUE_WARN(관리자 기록), SANCTION은 안 만듦")
+    @DisplayName("경고: DETECTED → WARNED, 회원 알림 OVERDUE_WARNED, 감사 로그 OVERDUE_WARN(관리자 기록), SANCTION은 안 만듦")
     void warn_success() {
         givenAdmin();
         when(overdueMapper.findOverdueCaseById(CASE_ID)).thenReturn(overdueCase("DETECTED", "ALERT_RESTRICT"));
@@ -94,6 +95,7 @@ class OverdueAdminServiceTest {
 
         overdueAdminService.applyAction(ADMIN_ID, CASE_ID, action("WARN", null));
 
+        verify(notificationService).notifyMember(eq(MEMBER_ID), eq(NotifType.OVERDUE_WARNED), eq(CASE_ID), eq(Map.of("groupId", GROUP_ID, "group", "테스트모임", "month", "11월분")));
         verify(overdueMapper).insertAdminAuditLog(eq(GROUP_ID), eq(ADMIN_ID), eq(MEMBER_ID), eq("OVERDUE_WARN"), any());
         verify(overdueMapper, never()).insertSanction(any(), any(), any(), any(), any(), any());
     }
@@ -139,6 +141,7 @@ class OverdueAdminServiceTest {
 
         assertEquals(409, e.getStatusCode().value());
         verify(overdueMapper, never()).updateChatRestricted(any(), any(), any(), any());
+        verify(notificationService, never()).notifyMember(anyLong(), any(), any(), any());
     }
 
     @Test
