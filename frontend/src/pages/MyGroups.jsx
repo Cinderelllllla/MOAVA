@@ -1,11 +1,23 @@
-
 /* S08 내 계모임 — /my-groups
-   서버(GET /api/groups/my)의 "내가 만든 계모임" 목록.
+   서버(GET /api/groups/my)의 내 계모임 목록.
+   F16: 가입 신청 관리 및 참여 회원 목록
+   F16: 가입 신청 알림 클릭 시 관리 영역 자동 열기
    F18: 비공개 모임 인증코드 발급·재발급 및 초대 링크 복사
 */
 
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback
+} from 'react';
+
+import {
+  useNavigate,
+  useSearchParams
+} from 'react-router-dom';
+
+import { useInitialGroupId } from '../common/useInitialGroupId';
 import useMyGroups from '../common/useMyGroups';
 import { groups, finance } from '../api';
 import { PageHead, Card } from '../components/ui';
@@ -14,17 +26,24 @@ import { wonFromKrw } from '../common/format';
 
 export default function MyGroups() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
+  const pickGroup = useInitialGroupId();
+
   const myGroups = useMyGroups();
   const list = myGroups.items;
+
+  // F16: 알림을 통한 가입 신청 관리 자동 열기
+  const requestedGroupId = params.get('groupId');
+  const requestedTab = params.get('tab');
+  const autoOpenedRef = useRef(false);
 
   // F18: 모임별 인증코드 발급 상태
   const [issuingGroupId, setIssuingGroupId] = useState(null);
   const [issuedCodes, setIssuedCodes] = useState({});
   const [issueErrors, setIssueErrors] = useState({});
 
-  // [F18 추가] 초대 링크 조회 중인 모임 ID
+  // F18: 초대 링크 조회 중인 모임 ID
   const [copyingGroupId, setCopyingGroupId] = useState(null);
-
 
   // F16: 모임장 가입 신청 관리
   const [openJoinGroupId, setOpenJoinGroupId] = useState(null);
@@ -33,14 +52,11 @@ export default function MyGroups() {
   const [joinProcessingId, setJoinProcessingId] = useState(null);
   const [joinErrors, setJoinErrors] = useState({});
 
-
   // F16: 모임장 전용 참여 회원 목록
   const [openMembersGroupId, setOpenMembersGroupId] = useState(null);
   const [groupMembers, setGroupMembers] = useState({});
   const [membersLoadingGroupId, setMembersLoadingGroupId] = useState(null);
   const [membersErrors, setMembersErrors] = useState({});
-
-
 
   const income = Number(finance.getFinance().income) || 0;
 
@@ -57,7 +73,10 @@ export default function MyGroups() {
     finance.getPolicy().incomeCapRatio * 100
   );
 
+  // =========================================================
   // F18: 인증코드 발급 및 재발급
+  // =========================================================
+
   const handleIssueJoinCode = async (groupId) => {
     if (issuingGroupId !== null) return;
 
@@ -95,11 +114,13 @@ export default function MyGroups() {
         ...prev,
         [groupId]: String(result.joinCode)
       }));
+
     } catch (error) {
       setIssueErrors(prev => ({
         ...prev,
         [groupId]: error.message
       }));
+
     } finally {
       setIssuingGroupId(null);
     }
@@ -114,7 +135,10 @@ export default function MyGroups() {
     });
   };
 
-  // [F18 수정] 비공개 모임 초대 토큰 조회 후 링크 복사
+  // =========================================================
+  // F18: 비공개 모임 초대 토큰 조회 후 링크 복사
+  // =========================================================
+
   const handleCopyInviteLink = async (groupId) => {
     if (copyingGroupId !== null) return;
 
@@ -129,12 +153,12 @@ export default function MyGroups() {
     setCopyingGroupId(groupId);
 
     try {
-      // [F18] 모임장 인증 후 서버에서 초대 토큰 조회
+      // 모임장 인증 후 서버에서 초대 토큰 조회
       const result = await groups.fetchInviteLink(groupId);
 
       const inviteToken = result?.inviteToken;
 
-      // [F18] 초대 토큰 형식 확인
+      // 초대 토큰 형식 확인
       if (
         typeof inviteToken !== 'string' ||
         !/^[0-9a-fA-F]{32}$/.test(inviteToken)
@@ -144,7 +168,7 @@ export default function MyGroups() {
         );
       }
 
-      // [F18] 모임 ID가 아닌 초대 토큰으로 URL 생성
+      // 모임 ID가 아닌 초대 토큰으로 URL 생성
       const inviteUrl = new URL(
         '/invite',
         window.location.origin
@@ -161,156 +185,306 @@ export default function MyGroups() {
           '초대 링크를 복사했어요!\n' +
           '인증코드는 별도로 전달해 주세요.'
         );
+
       } catch {
         window.prompt(
           '아래 초대 링크를 직접 복사해 주세요.',
           inviteUrl.toString()
         );
       }
+
     } catch (error) {
       window.alert(
         error?.message ||
         '초대 링크를 가져오지 못했어요.'
       );
+
     } finally {
       setCopyingGroupId(null);
     }
   };
 
+  // =========================================================
+  // F16: 참여 회원 목록 조회
+  // =========================================================
 
-// F16: 참여 회원 목록 조회
-const loadGroupMembers = async (groupId) => {
-  setMembersLoadingGroupId(groupId);
-  setMembersErrors(prev => ({
-    ...prev,
-    [groupId]: ''
-  }));
+  const loadGroupMembers = async (groupId) => {
+    setMembersLoadingGroupId(groupId);
 
-  try {
-    const data = await groups.fetchGroupMembers(groupId);
-
-    setGroupMembers(prev => ({
-      ...prev,
-      [groupId]: data
-    }));
-  } catch (error) {
     setMembersErrors(prev => ({
       ...prev,
-      [groupId]:
-        error?.message || '참여 회원 목록을 불러오지 못했어요.'
-    }));
-  } finally {
-    setMembersLoadingGroupId(null);
-  }
-};
-
-// F16: 참여 회원 목록 열기/닫기
-const handleToggleGroupMembers = async (groupId) => {
-  if (membersLoadingGroupId !== null) return;
-
-  if (openMembersGroupId === groupId) {
-    setOpenMembersGroupId(null);
-    return;
-  }
-
-  setOpenMembersGroupId(groupId);
-  await loadGroupMembers(groupId);
-};
-
-
-// F16: 가입 신청 목록 불러오기
-const loadJoinRequests = async (groupId) => {
-  setJoinLoadingGroupId(groupId);
-  setJoinErrors(prev => ({ ...prev, [groupId]: '' }));
-
-  try {
-    const data = await groups.fetchJoinRequests(groupId);
-
-    setJoinRequests(prev => ({
-      ...prev,
-      [groupId]: data.filter(r => r.status === 'PENDING')
+      [groupId]: ''
     }));
 
-    return true;
-  } catch (error) {
-    setJoinErrors(prev => ({
-      ...prev,
-      [groupId]:
-        error?.message || '가입 신청 목록을 불러오지 못했어요.'
-    }));
+    try {
+      const data = await groups.fetchGroupMembers(groupId);
 
-    return false;
-  } finally {
-    setJoinLoadingGroupId(null);
-  }
-};
+      setGroupMembers(prev => ({
+        ...prev,
+        [groupId]: data
+      }));
 
-// F16: 가입 신청 관리 영역 열기/닫기
-const handleToggleJoinRequests = async (groupId) => {
-  if (joinLoadingGroupId !== null || joinProcessingId !== null) {
-    return;
-  }
+    } catch (error) {
+      setMembersErrors(prev => ({
+        ...prev,
+        [groupId]:
+          error?.message ||
+          '참여 회원 목록을 불러오지 못했어요.'
+      }));
 
-  if (openJoinGroupId === groupId) {
-    setOpenJoinGroupId(null);
-    return;
-  }
+    } finally {
+      setMembersLoadingGroupId(null);
+    }
+  };
 
-  setOpenJoinGroupId(groupId);
-  await loadJoinRequests(groupId);
-};
+  // F16: 참여 회원 목록 열기/닫기
+  const handleToggleGroupMembers = async (groupId) => {
+    if (membersLoadingGroupId !== null) return;
 
-// F16: 가입 승인/거절
-const handleJoinDecision = async (
-  groupId, requestId, memberId, memberName, action
-) => {
-  if (joinProcessingId !== null || joinLoadingGroupId !== null) {
-    return;
-  }
-
-  const isApprove = action === 'approve';
-  const actionLabel = isApprove ? '승인' : '거절';
-
-  const displayName = memberName || `회원 #${memberId}`;
-
-  if (!window.confirm(
-    `${displayName}님의 가입 신청을 ${actionLabel}하시겠어요?`
-  )) {
-    return;
-  }
-
-  setJoinProcessingId(requestId);
-  setJoinErrors(prev => ({ ...prev, [groupId]: '' }));
-
-  try {
-    if (isApprove) {
-      await groups.approveJoinRequest(groupId, requestId);
-    } else {
-      await groups.rejectJoinRequest(groupId, requestId);
+    if (openMembersGroupId === groupId) {
+      setOpenMembersGroupId(null);
+      return;
     }
 
-    // 서버 처리가 성공한 뒤 최신 대기 목록 갱신
-    const refreshed = await loadJoinRequests(groupId);
+    setOpenMembersGroupId(groupId);
 
-    if (refreshed) {
-      window.alert(`가입 신청 ${actionLabel} 처리가 완료됐어요.`);
-    } else {
-      window.alert(
-        `가입 신청 ${actionLabel}은 완료됐지만, ` +
-        '목록을 새로고침하지 못했어요.'
-      );
-    }
-  } catch (error) {
+    await loadGroupMembers(groupId);
+  };
+
+  // =========================================================
+  // F16: 가입 신청 목록 불러오기
+  // =========================================================
+
+  const loadJoinRequests = useCallback(async (groupId) => {
+    setJoinLoadingGroupId(groupId);
+
     setJoinErrors(prev => ({
       ...prev,
-      [groupId]:
-        error?.message || `가입 신청 ${actionLabel}에 실패했어요.`
+      [groupId]: ''
     }));
-  } finally {
-    setJoinProcessingId(null);
-  }
-};
 
+    try {
+      const data = await groups.fetchJoinRequests(groupId);
+
+      setJoinRequests(prev => ({
+        ...prev,
+        [groupId]: data.filter(r => r.status === 'PENDING')
+      }));
+
+      return true;
+
+    } catch (error) {
+      setJoinErrors(prev => ({
+        ...prev,
+        [groupId]:
+          error?.message ||
+          '가입 신청 목록을 불러오지 못했어요.'
+      }));
+
+      return false;
+
+    } finally {
+      setJoinLoadingGroupId(null);
+    }
+  }, []);
+
+  // =========================================================
+  // F16: 가입 신청 알림 클릭 시 관리 영역 자동 열기
+  //
+  // /my-groups?groupId=13&tab=joinRequests
+  //
+  // 공통 useInitialGroupId 훅 활용
+  // 해당 모임의 모임장인 경우에만 실행
+  // 최초 진입 시 한 번만 자동 열기
+  // =========================================================
+
+  useEffect(() => {
+    // 중복 실행 방지
+    if (autoOpenedRef.current) return;
+
+    // 가입 신청 관리 이동 요청인지 확인
+    if (requestedTab !== 'joinRequests') return;
+
+    // 모임 목록 조회 완료 대기
+    if (myGroups.status !== 'ready') return;
+
+    // 올바른 모임 ID인지 확인
+    if (
+      !requestedGroupId ||
+      !Number.isSafeInteger(Number(requestedGroupId)) ||
+      Number(requestedGroupId) <= 0
+    ) {
+      return;
+    }
+
+    // 해당 모임 존재 여부 및 모임장 권한 확인
+    const targetGroup = list.find(
+      g =>
+        String(g.groupId) === requestedGroupId &&
+        g.role === 'OWNER'
+    );
+
+    if (!targetGroup) return;
+
+    // 공통 훅으로 최초 진입 모임 선택
+    const selectedGroupId = pickGroup(list)('');
+
+    // 다른 모임이 선택되는 상황 방지
+    if (selectedGroupId !== requestedGroupId) return;
+
+    // 중복 실행 방지
+    autoOpenedRef.current = true;
+
+    // 해당 모임 가입 신청 관리 자동 열기
+    setOpenJoinGroupId(targetGroup.groupId);
+
+    // 서버에서 가입 신청 목록 조회
+    loadJoinRequests(targetGroup.groupId);
+
+  }, [
+    requestedGroupId,
+    requestedTab,
+    myGroups.status,
+    list,
+    pickGroup,
+    loadJoinRequests
+  ]);
+
+  // =========================================================
+  // F16: 자동으로 열린 가입 신청 관리 영역으로 스크롤
+  // =========================================================
+
+  useEffect(() => {
+    if (!autoOpenedRef.current) return;
+
+    if (requestedTab !== 'joinRequests') return;
+
+    if (openJoinGroupId === null) return;
+
+    if (
+      String(openJoinGroupId) !== requestedGroupId
+    ) {
+      return;
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      document
+        .getElementById(`join-requests-${openJoinGroupId}`)
+        ?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+    });
+
+    return () => cancelAnimationFrame(frameId);
+
+  }, [
+    openJoinGroupId,
+    requestedGroupId,
+    requestedTab
+  ]);
+
+  // =========================================================
+  // F16: 가입 신청 관리 영역 수동 열기/닫기
+  // =========================================================
+
+  const handleToggleJoinRequests = async (groupId) => {
+    if (
+      joinLoadingGroupId !== null ||
+      joinProcessingId !== null
+    ) {
+      return;
+    }
+
+    if (openJoinGroupId === groupId) {
+      setOpenJoinGroupId(null);
+      return;
+    }
+
+    setOpenJoinGroupId(groupId);
+
+    await loadJoinRequests(groupId);
+  };
+
+  // =========================================================
+  // F16: 가입 승인/거절
+  // =========================================================
+
+  const handleJoinDecision = async (
+    groupId,
+    requestId,
+    memberId,
+    memberName,
+    action
+  ) => {
+    if (
+      joinProcessingId !== null ||
+      joinLoadingGroupId !== null
+    ) {
+      return;
+    }
+
+    const isApprove = action === 'approve';
+    const actionLabel = isApprove ? '승인' : '거절';
+
+    const displayName = memberName || `회원 #${memberId}`;
+
+    if (!window.confirm(
+      `${displayName}님의 가입 신청을 ${actionLabel}하시겠어요?`
+    )) {
+      return;
+    }
+
+    setJoinProcessingId(requestId);
+
+    setJoinErrors(prev => ({
+      ...prev,
+      [groupId]: ''
+    }));
+
+    try {
+      if (isApprove) {
+        await groups.approveJoinRequest(
+          groupId,
+          requestId
+        );
+      } else {
+        await groups.rejectJoinRequest(
+          groupId,
+          requestId
+        );
+      }
+
+      // 서버 처리가 성공한 뒤 최신 대기 목록 갱신
+      const refreshed = await loadJoinRequests(groupId);
+
+      if (refreshed) {
+        window.alert(
+          `가입 신청 ${actionLabel} 처리가 완료됐어요.`
+        );
+      } else {
+        window.alert(
+          `가입 신청 ${actionLabel}은 완료됐지만, ` +
+          '목록을 새로고침하지 못했어요.'
+        );
+      }
+
+    } catch (error) {
+      setJoinErrors(prev => ({
+        ...prev,
+        [groupId]:
+          error?.message ||
+          `가입 신청 ${actionLabel}에 실패했어요.`
+      }));
+
+    } finally {
+      setJoinProcessingId(null);
+    }
+  };
+
+  // =========================================================
+  // 화면 렌더링
+  // =========================================================
 
   return (
     <>
@@ -329,6 +503,7 @@ const handleJoinDecision = async (
 
       {/* 상단 통계 */}
       <div className="grid cols3">
+
         <Card>
           <small>내 계모임</small>
 
@@ -374,8 +549,10 @@ const handleJoinDecision = async (
             </small>
           )}
         </Card>
+
       </div>
 
+      {/* 내 계모임 목록 */}
       <div className="section list">
         <LoadState
           status={myGroups.status}
@@ -386,16 +563,21 @@ const handleJoinDecision = async (
           {list.length ? (
             list.map(g => (
               <Card key={g.groupId}>
+
+                {/* 모임 제목 및 내 역할 */}
                 <div className="item-head">
                   <h2 style={{ margin: 0 }}>
                     {g.title}
                   </h2>
 
-                <span className="pill">
-                  {g.role === 'OWNER' ? '모임장' : '일반 멤버'}
-                </span>
+                  <span className="pill">
+                    {g.role === 'OWNER'
+                      ? '모임장'
+                      : '일반 멤버'}
+                  </span>
                 </div>
 
+                {/* 모임 기본 정보 */}
                 <p className="muted">
                   {[g.regionSido, g.regionSigungu]
                     .filter(Boolean)
@@ -414,7 +596,6 @@ const handleJoinDecision = async (
                     {groups.groupStatusLabel(g.status)}
                   </span>
 
-
                   {g.visibility === 'PRIVATE' && (
                     <>
                       {' '}
@@ -423,10 +604,11 @@ const handleJoinDecision = async (
                       </span>
                     </>
                   )}
-
                 </p>
 
+                {/* 모임 관리 버튼 */}
                 <div className="actions">
+
                   <button
                     className="btn primary"
                     onClick={() =>
@@ -446,37 +628,38 @@ const handleJoinDecision = async (
                   </button>
 
                   {/* F18: 비공개 모임장 전용 인증코드 발급 */}
-                  {g.role === 'OWNER' && g.visibility === 'PRIVATE' && (
-                    <button
-                      type="button"
-                      className="btn soft"
-                      disabled={issuingGroupId !== null}
-                      onClick={() =>
-                        handleIssueJoinCode(g.groupId)
-                      }
-                    >
-                      {issuingGroupId === g.groupId
-                        ? '발급 중...'
-                        : '🔑 인증코드 발급·재발급'}
-                    </button>
-                  )}
+                  {g.role === 'OWNER' &&
+                    g.visibility === 'PRIVATE' && (
+                      <button
+                        type="button"
+                        className="btn soft"
+                        disabled={issuingGroupId !== null}
+                        onClick={() =>
+                          handleIssueJoinCode(g.groupId)
+                        }
+                      >
+                        {issuingGroupId === g.groupId
+                          ? '발급 중...'
+                          : '🔑 인증코드 발급·재발급'}
+                      </button>
+                    )}
 
-                  {/* [F18 수정] 비공개 모임 초대 링크 복사 */}
-                  {g.role === 'OWNER' && g.visibility === 'PRIVATE' && (
-                    <button
-                      type="button"
-                      className="btn soft"
-                      disabled={copyingGroupId !== null}
-                      onClick={() =>
-                        handleCopyInviteLink(g.groupId)
-                      }
-                    >
-                      {copyingGroupId === g.groupId
-                        ? '링크 가져오는 중...'
-                        : '🔗 초대 링크 복사'}
-                    </button>
-                  )}
-
+                  {/* F18: 비공개 모임 초대 링크 복사 */}
+                  {g.role === 'OWNER' &&
+                    g.visibility === 'PRIVATE' && (
+                      <button
+                        type="button"
+                        className="btn soft"
+                        disabled={copyingGroupId !== null}
+                        onClick={() =>
+                          handleCopyInviteLink(g.groupId)
+                        }
+                      >
+                        {copyingGroupId === g.groupId
+                          ? '링크 가져오는 중...'
+                          : '🔗 초대 링크 복사'}
+                      </button>
+                    )}
 
                   {/* F16: 모임장 전용 참여 회원 목록 */}
                   {g.role === 'OWNER' && (
@@ -484,7 +667,9 @@ const handleJoinDecision = async (
                       type="button"
                       className="btn soft"
                       disabled={membersLoadingGroupId !== null}
-                      onClick={() => handleToggleGroupMembers(g.groupId)}
+                      onClick={() =>
+                        handleToggleGroupMembers(g.groupId)
+                      }
                     >
                       {openMembersGroupId === g.groupId
                         ? '👥 참여 회원 목록 닫기'
@@ -492,8 +677,6 @@ const handleJoinDecision = async (
                     </button>
                   )}
 
-
-                    
                   {/* F16: 모임장 전용 가입 신청 관리 */}
                   {g.role === 'OWNER' && (
                     <button
@@ -503,7 +686,9 @@ const handleJoinDecision = async (
                         joinLoadingGroupId !== null ||
                         joinProcessingId !== null
                       }
-                      onClick={() => handleToggleJoinRequests(g.groupId)}
+                      onClick={() =>
+                        handleToggleJoinRequests(g.groupId)
+                      }
                     >
                       {openJoinGroupId === g.groupId
                         ? '👥 가입 신청 관리 닫기'
@@ -511,12 +696,14 @@ const handleJoinDecision = async (
                     </button>
                   )}
 
-
                 </div>
 
+                {/* =========================================
+                    F16: 참여 회원 목록 (모임장 전용)
+                    ========================================= */}
 
-                  {/* F16: 참여 회원 목록 (모임장 전용) */}
-                  {g.role === 'OWNER' && openMembersGroupId === g.groupId && (
+                {g.role === 'OWNER' &&
+                  openMembersGroupId === g.groupId && (
                     <div
                       className="policy-lock"
                       style={{ marginTop: 12 }}
@@ -537,10 +724,15 @@ const handleJoinDecision = async (
                         <p className="muted">
                           참여 회원 조회 중...
                         </p>
+
                       ) : membersErrors[g.groupId] ? (
-                        <p role="alert" style={{ color: '#c0392b' }}>
+                        <p
+                          role="alert"
+                          style={{ color: '#c0392b' }}
+                        >
                           {membersErrors[g.groupId]}
                         </p>
+
                       ) : groupMembers[g.groupId]?.length ? (
                         groupMembers[g.groupId].map(member => (
                           <div
@@ -553,14 +745,19 @@ const handleJoinDecision = async (
                           >
                             <div>
                               <strong>
-                                {member.memberName || `회원 #${member.memberId}`}
+                                {member.memberName ||
+                                  `회원 #${member.memberId}`}
                               </strong>
 
                               <p className="muted mini">
                                 회원 ID: {member.memberId}
+
                                 {' · '}
+
                                 가입일: {member.joinedAt
-                                  ? member.joinedAt.replace('T', ' ').slice(0, 16)
+                                  ? member.joinedAt
+                                      .replace('T', ' ')
+                                      .slice(0, 16)
                                   : '-'}
                               </p>
                             </div>
@@ -581,6 +778,7 @@ const handleJoinDecision = async (
                             </div>
                           </div>
                         ))
+
                       ) : (
                         <p className="muted">
                           현재 참여 중인 회원이 없어요.
@@ -591,7 +789,9 @@ const handleJoinDecision = async (
                         type="button"
                         className="btn small soft"
                         disabled={membersLoadingGroupId !== null}
-                        onClick={() => loadGroupMembers(g.groupId)}
+                        onClick={() =>
+                          loadGroupMembers(g.groupId)
+                        }
                         style={{ marginTop: 12 }}
                       >
                         새로고침
@@ -599,112 +799,161 @@ const handleJoinDecision = async (
                     </div>
                   )}
 
+                {/* =========================================
+                    F16: 가입 신청 목록 (모임장 전용)
+                    알림 클릭 시 자동 열기 및 스크롤 대상
+                    ========================================= */}
 
-
-                {/* F16: 가입 신청 목록 */}
-                {g.role === 'OWNER' && openJoinGroupId === g.groupId && (
-                  <div className="policy-lock" style={{ marginTop: 12 }}>
-                    <div className="item-head">
-                      <h3>가입 신청 관리</h3>
-                      <span className="pill">
-                        대기 {joinRequests[g.groupId]?.length ?? 0}명
-                      </span>
-                    </div>
-
-                    {joinLoadingGroupId === g.groupId ? (
-                      <p className="muted">가입 신청 조회 중...</p>
-                    ) : (
-                      <>
-                        {joinRequests[g.groupId]?.length > 0 ? (
-                          joinRequests[g.groupId].map(request => (
-                            <div
-                              key={request.joinRequestId}
-                              style={{
-                                padding: '14px 0',
-                                borderBottom: '1px solid #e5e7eb'
-                              }}
-                            >
-                              <div className="item-head">
-                                <strong>{request.memberName || `회원 #${request.memberId}`}</strong>
-                                <span className="pill">승인 대기</span>
-                              </div>
-
-                              <p className="muted">
-                                가입 경로: {request.via === 'INVITE'
-                                  ? '초대 링크'
-                                  : '공개 모임 검색'}
-                              </p>
-
-                              <p className="muted">
-                                신청 일시: {request.createdAt
-                                  ? request.createdAt.replace('T', ' ').slice(0, 16)
-                                  : '-'}
-                              </p>
-
-                              <div className="actions">
-                                <button
-                                  type="button"
-                                  className="btn soft"
-                                  disabled={joinProcessingId !== null}
-                                  onClick={() => handleJoinDecision(
-                                    g.groupId,
-                                    request.joinRequestId,
-                                    request.memberId,
-                                    request.memberName,
-                                    'reject'
-                                  )}
-                                >
-                                  거절
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="btn primary"
-                                  disabled={joinProcessingId !== null}
-                                  onClick={() => handleJoinDecision(
-                                    g.groupId,
-                                    request.joinRequestId,
-                                    request.memberId,
-                                    request.memberName,
-                                    'approve'
-                                  )}
-                                >
-                                  승인
-                                </button>
-                              </div>
-                            </div>
-                          ))
-                        ) : !joinErrors[g.groupId] ? (
-                          <p className="muted">
-                            대기 중인 가입 신청이 없어요.
-                          </p>
-                        ) : null}
-                      </>
-                    )}
-
-                    {joinErrors[g.groupId] && (
-                      <p role="alert" style={{ color: '#c0392b' }}>
-                        {joinErrors[g.groupId]}
-                      </p>
-                    )}
-
-                    <button
-                      type="button"
-                      className="btn small soft"
-                      disabled={
-                        joinLoadingGroupId !== null ||
-                        joinProcessingId !== null
-                      }
-                      onClick={() => loadJoinRequests(g.groupId)}
-                      style={{ marginTop: 12 }}
+                {g.role === 'OWNER' &&
+                  openJoinGroupId === g.groupId && (
+                    <div
+                      id={`join-requests-${g.groupId}`}
+                      className="policy-lock"
+                      style={{
+                        marginTop: 12,
+                        scrollMarginTop: 100
+                      }}
                     >
-                      새로고침
-                    </button>
-                  </div>
-                )}
+                      <div className="item-head">
+                        <h3>가입 신청 관리</h3>
 
+                        <span className="pill">
+                          {joinLoadingGroupId === g.groupId
+                            ? '조회 중'
+                            : joinErrors[g.groupId]
+                              ? '조회 실패'
+                              : `대기 ${joinRequests[g.groupId]?.length ?? 0}명`}
+                        </span>
+                      </div>
 
-                {/* F18: 발급된 인증코드 표시 */}
+                      {joinLoadingGroupId === g.groupId ? (
+                        <p className="muted">
+                          가입 신청 조회 중...
+                        </p>
+
+                      ) : (
+                        <>
+                          {joinRequests[g.groupId]?.length > 0 ? (
+                            joinRequests[g.groupId].map(request => (
+                              <div
+                                key={request.joinRequestId}
+                                style={{
+                                  padding: '14px 0',
+                                  borderBottom: '1px solid #e5e7eb'
+                                }}
+                              >
+                                <div className="item-head">
+                                  <strong>
+                                    {request.memberName ||
+                                      `회원 #${request.memberId}`}
+                                  </strong>
+
+                                  <span className="pill">
+                                    승인 대기
+                                  </span>
+                                </div>
+
+                                <p className="muted">
+                                  가입 경로: {request.via === 'INVITE'
+                                    ? '초대 링크'
+                                    : '공개 모임 검색'}
+                                </p>
+
+                                <p className="muted">
+                                  신청 일시: {request.createdAt
+                                    ? request.createdAt
+                                        .replace('T', ' ')
+                                        .slice(0, 16)
+                                    : '-'}
+                                </p>
+
+                                <div className="actions">
+
+                                  {/* 가입 거절 */}
+                                  <button
+                                    type="button"
+                                    className="btn soft"
+                                    disabled={
+                                      joinProcessingId !== null
+                                    }
+                                    onClick={() =>
+                                      handleJoinDecision(
+                                        g.groupId,
+                                        request.joinRequestId,
+                                        request.memberId,
+                                        request.memberName,
+                                        'reject'
+                                      )
+                                    }
+                                  >
+                                    거절
+                                  </button>
+
+                                  {/* 가입 승인 */}
+                                  <button
+                                    type="button"
+                                    className="btn primary"
+                                    disabled={
+                                      joinProcessingId !== null
+                                    }
+                                    onClick={() =>
+                                      handleJoinDecision(
+                                        g.groupId,
+                                        request.joinRequestId,
+                                        request.memberId,
+                                        request.memberName,
+                                        'approve'
+                                      )
+                                    }
+                                  >
+                                    승인
+                                  </button>
+
+                                </div>
+                              </div>
+                            ))
+
+                          ) : !joinErrors[g.groupId] ? (
+                            <p className="muted">
+                              대기 중인 가입 신청이 없어요.
+                            </p>
+                          ) : null}
+                        </>
+                      )}
+
+                      {/* 가입 신청 조회 및 처리 오류 */}
+                      {joinErrors[g.groupId] && (
+                        <p
+                          role="alert"
+                          style={{ color: '#c0392b' }}
+                        >
+                          {joinErrors[g.groupId]}
+                        </p>
+                      )}
+
+                      {/* 가입 신청 목록 새로고침 */}
+                      <button
+                        type="button"
+                        className="btn small soft"
+                        disabled={
+                          joinLoadingGroupId !== null ||
+                          joinProcessingId !== null
+                        }
+                        onClick={() =>
+                          loadJoinRequests(g.groupId)
+                        }
+                        style={{ marginTop: 12 }}
+                      >
+                        새로고침
+                      </button>
+
+                    </div>
+                  )}
+
+                {/* =========================================
+                    F18: 발급된 인증코드 표시
+                    ========================================= */}
+
                 {g.role === 'OWNER' &&
                   g.visibility === 'PRIVATE' &&
                   issuedCodes[g.groupId] && (
@@ -748,7 +997,7 @@ const handleJoinDecision = async (
                     </div>
                   )}
 
-                {/* F18: 발급 오류 */}
+                {/* F18: 인증코드 발급 오류 */}
                 {issueErrors[g.groupId] && (
                   <p
                     role="alert"
@@ -760,8 +1009,10 @@ const handleJoinDecision = async (
                     {issueErrors[g.groupId]}
                   </p>
                 )}
+
               </Card>
             ))
+
           ) : (
             <div className="empty">
               아직 만들거나 참여한 계모임이 없어요.{' '}

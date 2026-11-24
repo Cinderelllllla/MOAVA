@@ -98,7 +98,7 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
 
 | 코드 | 언제 | 필요한 값 | 이동 경로 |
 |---|---|---|---|
-| `JOIN_REQUEST` | 가입 신청 접수 | groupId, member, group | /operations?groupId= |
+| `JOIN_REQUEST` | 가입 신청 접수 | groupId, member, group | /my-groups?groupId={groupId}&tab=joinRequests |
 | `PROOF_PENDING` | 증빙 등록·재제출 | groupId, group | /evidence?groupId= |
 | `ORDER_REQUEST` | 수령 순서 신청·수정 | groupId, member, group, round, stage(신청/수정) | /procedures?groupId= |
 | `ACCOUNT_VERIFIED` | 관리자 계좌 소유 확인 완료 | groupId, group, bank, last4 | /operations?groupId= |
