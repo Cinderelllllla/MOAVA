@@ -55,18 +55,7 @@ function NotificationItem({ n, checked, onToggle, onOpen, onRead }) {
 }
 
 export function Notifications() {
-  const { isAdmin } = useApp();
-  return isAdmin ? <AdminNotificationsPending /> : <MemberNotifications />;
-}
-
-/** 관리자 알림함: 관리자 JWT 로그인(관리자 전용 claim)이 생기기 전까지 안내만 표시 */
-function AdminNotificationsPending() {
-  return <><PageHead kicker="NOTIFICATION CENTER" title="관리자 알림" sub="관리자 알림함은 준비 중입니다." />
-    <Card><Empty>관리자 알림은 아직 준비 중이에요.</Empty></Card></>;
-}
-
-function MemberNotifications() {
-  const { run, setUi } = useApp();
+  const { isAdmin, run, setUi } = useApp();
   const nav = useNavigate();
   const [unread, setUnread] = useState(EMPTY_LIST), [read, setRead] = useState(EMPTY_LIST);
   const [unreadTotal, setUnreadTotal] = useState(0);
@@ -135,7 +124,7 @@ function MemberNotifications() {
   const moreBtn = (key, list) => list.hasNext && <div className="actions"><button className="btn soft" onClick={() => loadMore(key)} disabled={more === key}>{more === key ? '불러오는 중…' : '이전 알림 더 보기'}</button></div>;
   const empty = !unread.items.length && !read.items.length;
 
-  return <><PageHead kicker="NOTIFICATION CENTER" title="내 알림함" sub="알림을 누르면 읽음 처리되고 관련 화면으로 이동합니다.">
+  return <><PageHead kicker="NOTIFICATION CENTER" title={isAdmin ? '관리자 알림' : '내 알림함'} sub="알림을 누르면 읽음 처리되고 관련 화면으로 이동합니다.">
       <button className="btn soft" onClick={readAll} disabled={!unreadTotal}>모두 읽기</button>
       <button className="btn danger" onClick={hide} disabled={!sel.length}>선택 삭제{sel.length ? ` (${sel.length})` : ''}</button>
     </PageHead>
@@ -150,7 +139,11 @@ function MemberNotifications() {
         <div className="list">{read.items.length ? read.items.map(row) : <Empty>읽은 알림이 없습니다.</Empty>}</div>
         {moreBtn('Y', read)}
       </>}
-      <p className="muted mini">선택 삭제한 알림은 내 알림함에서만 사라지고, 모임 운영 기록은 그대로 남아요.</p>
+      <p className="muted mini">
+        {isAdmin
+          ? '선택 삭제한 알림은 관리자 알림함에서만 사라지고, 플랫폼 운영 기록은 그대로 남아요.'
+          : '선택 삭제한 알림은 내 알림함에서만 사라지고, 모임 운영 기록은 그대로 남아요.'}
+      </p>
     </Card></>;
 }
 
