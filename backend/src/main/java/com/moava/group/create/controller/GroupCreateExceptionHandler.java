@@ -1,4 +1,3 @@
-
 package com.moava.group.create.controller;
 
 import java.util.Map;
@@ -11,7 +10,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = {
         GroupCreateController.class,
-        GroupJoinCodeController.class
+        GroupJoinCodeController.class,
+        GroupInviteLinkController.class
 })
 public class GroupCreateExceptionHandler {
 
@@ -44,6 +44,21 @@ public class GroupCreateExceptionHandler {
         return ResponseEntity
                 .status(status)
                 .body(Map.of("message", e.getMessage()));
+    }
+
+    // 모임 상태 및 인증코드 관련 예외 처리
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalState(
+            IllegalStateException e
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(Map.of(
+                        "message",
+                        e.getMessage() != null
+                                ? e.getMessage()
+                                : "현재 상태에서는 요청을 처리할 수 없습니다."
+                ));
     }
 
     @ExceptionHandler(Exception.class)

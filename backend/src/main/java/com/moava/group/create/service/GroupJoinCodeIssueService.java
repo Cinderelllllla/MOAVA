@@ -23,9 +23,9 @@ public class GroupJoinCodeIssueService {
         this.cryptoKeyService = cryptoKeyService;
         }
     /**
-     * 인증코드 발급 전 모임장 권한 및 모임 상태 확인
+     * 인증코드 발급 전 모임장 권한 및 비공개 모임 여부 확인
      *
-     * 실제 발급은 보안팀 암호화 기능 연결 후 구현
+     * 현재 인증코드 버전을 반환한다.
      */
     @Transactional
     public int validateIssuePermission(
@@ -90,15 +90,15 @@ public class GroupJoinCodeIssueService {
         return version.intValue();
     }
 
-    /**
-     * 인증코드 발급 준비
-     *
-     * 모임장 권한 확인 후 6자리 코드를 생성한다.
-     * 암호화 및 DB 저장은 보안팀 키 관리 기능
-     * 연동 후 하나의 트랜잭션에서 처리한다.
-     *
-     * 현재는 실제 발급 API에서 호출하지 않는다.
-     */
+        /**
+         * F18 - 비공개 모임 인증코드 발급 및 재발급
+         *
+         * 모임장 권한 확인 후 6자리 인증코드를 생성한다.
+         * 보안팀 공통 키 관리 기능을 이용하여 AES-256-GCM으로
+         * 암호화하고 하나의 트랜잭션에서 DB에 저장한다.
+         *
+         * 발급 결과는 모임장에게 반환한다.
+         */
 
         @Transactional
         public GroupJoinCodeIssueResponse prepareJoinCodeIssue(
