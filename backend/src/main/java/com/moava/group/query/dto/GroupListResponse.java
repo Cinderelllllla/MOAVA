@@ -12,6 +12,7 @@ public record GroupListResponse(
         String regionSigungu,
         Long amount,
         Integer maxMembers,
+        Integer currentMembers,
         Integer months,
         Integer payDay,
         BigDecimal assumedRate,

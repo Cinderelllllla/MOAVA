@@ -44,8 +44,11 @@ function hasVerifiedRecord(result) {
 
 function canRequestJoinWithVerification(result) {
   return (
-    isVerificationSuccessful(result) ||
-    hasVerifiedRecord(result)
+    !isLocked(result) &&
+    (
+      isVerificationSuccessful(result) ||
+      hasVerifiedRecord(result)
+    )
   );
 }
 
@@ -755,8 +758,8 @@ export default function Invite() {
                 style={{ marginTop: 12 }}
               >
                 <p>
-                  인증 시도가 제한되었어요.
-                  15분 후 다시 시도해 주세요.
+                  인증코드 입력에 3회 실패했어요.
+                  모임장에게 인증코드 재발급을 요청해 주세요.
                 </p>
               </div>
             )}
@@ -781,14 +784,6 @@ export default function Invite() {
                     </p>
                   </div>
                 )}
-
-                {directLocked &&
-                  hasVerifiedRecord(directVerifyResult) && (
-                    <p className="muted">
-                      이전에 완료한 인증 기록이 유지되어
-                      가입 신청할 수 있어요.
-                    </p>
-                  )}
 
                 <div
                   className="policy-lock"
@@ -863,7 +858,6 @@ export default function Invite() {
   const g = invite.group;
 
   const verified = isVerificationSuccessful(verifyResult);
-  const previouslyVerified = hasVerifiedRecord(verifyResult);
   const locked = isLocked(verifyResult);
 
   const canRequestJoin =
@@ -1004,19 +998,12 @@ export default function Invite() {
 
                         {locked && (
                           <p className="muted">
-                            인증 시도가 제한되었어요.
-                            15분 후 다시 시도해 주세요.
+                            인증코드 입력에 3회 실패했어요.
+                            모임장에게 인증코드 재발급을 요청해 주세요.
                           </p>
                         )}
                       </div>
                     )}
-
-                  {locked && previouslyVerified && (
-                    <p className="muted">
-                      이전 인증 기록이 유지되어
-                      가입 신청할 수 있어요.
-                    </p>
-                  )}
 
                   {verified && (
                     <div

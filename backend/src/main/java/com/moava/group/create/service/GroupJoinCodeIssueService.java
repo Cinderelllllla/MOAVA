@@ -1,31 +1,30 @@
-
 package com.moava.group.create.service;
 
 import com.moava.crypto.service.CryptoKeyService;
 import com.moava.group.create.mapper.GroupJoinCodeIssueMapper;
+import com.moava.group.create.dto.GroupJoinCodeIssueResponse;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.moava.group.create.dto.GroupJoinCodeIssueResponse;
 
 import java.util.Map;
 
 @Service
 public class GroupJoinCodeIssueService {
 
-        private final GroupJoinCodeIssueMapper mapper;
-        private final CryptoKeyService cryptoKeyService;
+    private final GroupJoinCodeIssueMapper mapper;
+    private final CryptoKeyService cryptoKeyService;
 
-        public GroupJoinCodeIssueService(
-                GroupJoinCodeIssueMapper mapper,
-                CryptoKeyService cryptoKeyService
-        ) {
+    public GroupJoinCodeIssueService(
+            GroupJoinCodeIssueMapper mapper,
+            CryptoKeyService cryptoKeyService
+    ) {
         this.mapper = mapper;
         this.cryptoKeyService = cryptoKeyService;
-        }
+    }
+
     /**
      * 인증코드 발급 전 모임장 권한 및 비공개 모임 여부 확인
-     *
-     * 현재 인증코드 버전을 반환한다.
      */
     @Transactional
     public int validateIssuePermission(
@@ -33,13 +32,29 @@ public class GroupJoinCodeIssueService {
             Long memberId
     ) {
 
+        Map<String, Object> group =
+                findAuthorizedGroup(groupId, memberId);
+
+        return getCodeVersion(group);
+    }
+
+    /**
+     * 모임장 권한 확인 및 모임 행 잠금
+     */
+    private Map<String, Object> findAuthorizedGroup(
+            Long groupId,
+            Long memberId
+    ) {
+
         if (groupId == null || groupId <= 0) {
+
             throw new IllegalArgumentException(
                     "올바르지 않은 모임 ID입니다."
             );
         }
 
         if (memberId == null || memberId <= 0) {
+
             throw new IllegalArgumentException(
                     "올바르지 않은 회원 ID입니다."
             );
@@ -50,38 +65,50 @@ public class GroupJoinCodeIssueService {
                 mapper.findGroupForIssue(groupId);
 
         if (group == null) {
+
             throw new IllegalStateException(
                     "존재하지 않는 모임입니다."
             );
         }
 
-        // 모임장 확인
+        // 모임장 권한 확인
         Number ownerId =
                 (Number) group.get("OWNER_ID");
 
-        if (ownerId == null ||
-                ownerId.longValue() != memberId.longValue()) {
+        if (ownerId == null
+                || ownerId.longValue() != memberId.longValue()) {
 
             throw new SecurityException(
                     "모임장만 인증코드를 발급할 수 있습니다."
             );
         }
 
-        // 비공개 모임 확인
+        // 비공개 모임 여부 확인
         String visibility =
                 String.valueOf(group.get("VISIBILITY"));
 
         if (!"PRIVATE".equalsIgnoreCase(visibility)) {
+
             throw new IllegalStateException(
                     "비공개 모임에서만 인증코드를 발급할 수 있습니다."
             );
         }
 
-        // 현재 인증코드 버전 반환
+        return group;
+    }
+
+    /**
+     * 현재 인증코드 버전 확인
+     */
+    private int getCodeVersion(
+            Map<String, Object> group
+    ) {
+
         Number version =
                 (Number) group.get("JOIN_CODE_VERSION");
 
         if (version == null) {
+
             throw new IllegalStateException(
                     "인증코드 버전 정보가 없습니다."
             );
@@ -90,51 +117,107 @@ public class GroupJoinCodeIssueService {
         return version.intValue();
     }
 
-        /**
-         * F18 - 비공개 모임 인증코드 발급 및 재발급
-         *
-         * 모임장 권한 확인 후 6자리 인증코드를 생성한다.
-         * 보안팀 공통 키 관리 기능을 이용하여 AES-256-GCM으로
-         * 암호화하고 하나의 트랜잭션에서 DB에 저장한다.
-         *
-         * 발급 결과는 모임장에게 반환한다.
-         */
+    /**
+     * F18 - 비공개 모임 인증코드 발급 및 재발급
+     *
+     * 1. 모임장 권한 확인
+     * 2. 기존 인증코드 조회 및 복호화
+     * 3. 기존 코드와 다른 6자리 코드 생성
+     * 4. AES-256-GCM 암호화
+     * 5. 인증코드 저장 및 버전 증가
+     *
+     * 회원별 인증 시도 기록은 다음 인증 상태 조회 또는
+     * 인증 시도 시 새로운 버전에 맞춰 초기화된다.
+     */
+    @Transactional
+    public GroupJoinCodeIssueResponse prepareJoinCodeIssue(
+            Long groupId,
+            Long memberId
+    ) {
 
-        @Transactional
-        public GroupJoinCodeIssueResponse prepareJoinCodeIssue(
-                Long groupId,
-                Long memberId
-        ) {
-        // 1. 모임장 권한 및 PRIVATE 여부 확인
+        // 1. 모임장 권한 및 비공개 모임 확인
+        Map<String, Object> group =
+                findAuthorizedGroup(groupId, memberId);
+
         int currentVersion =
-                validateIssuePermission(groupId, memberId);
+                getCodeVersion(group);
 
         // DDL: JOIN_CODE_VERSION NUMBER(3)
         if (currentVersion >= 999) {
-                throw new IllegalStateException(
-                        "인증코드 재발급 가능 횟수를 초과했습니다."
-                );
+
+            throw new IllegalStateException(
+                    "인증코드 재발급 가능 횟수를 초과했습니다."
+            );
         }
 
-        // 2. 6자리 인증코드 생성
-        String joinCode = GroupJoinCodeGenerator.generate();
+        // 2. 기존 인증코드 조회
+        String previousCode = null;
 
-        if (!joinCode.matches("[0-9]{6}")) {
+        Object previousEncryptedCode =
+                group.get("JOIN_CODE_ENC");
+
+        if (previousEncryptedCode != null) {
+
+            Number previousKeyVersion =
+                    (Number) group.get("JOIN_CODE_KEY_VER");
+
+            if (previousKeyVersion == null) {
+
                 throw new IllegalStateException(
-                        "인증코드 생성에 실패했습니다."
+                        "기존 인증코드 암호화 키 버전이 없습니다."
                 );
+            }
+
+            previousCode = cryptoKeyService.decrypt(
+                    String.valueOf(previousEncryptedCode),
+                    previousKeyVersion.intValue()
+            );
+
+            if (previousCode == null
+                    || !previousCode.matches("[0-9]{6}")) {
+
+                throw new IllegalStateException(
+                        "기존 인증코드 정보가 올바르지 않습니다."
+                );
+            }
         }
 
-        // 3. 보안팀 공통 암호화 키 버전 조회
+        // 3. 기존 코드와 다른 6자리 인증코드 생성
+        String joinCode = null;
+
+        for (int i = 0; i < 10; i++) {
+
+            String candidate =
+                    GroupJoinCodeGenerator.generate();
+
+            if (candidate != null
+                    && candidate.matches("[0-9]{6}")
+                    && !candidate.equals(previousCode)) {
+
+                joinCode = candidate;
+                break;
+            }
+        }
+
+        if (joinCode == null) {
+
+            throw new IllegalStateException(
+                    "새로운 인증코드 생성에 실패했습니다."
+            );
+        }
+
+        // 4. 현재 암호화 키 버전 조회
         int keyVersion =
                 cryptoKeyService.getCurrentKeyVersion();
 
-        // 4. AES-256-GCM 암호화
+        // 5. AES-256-GCM 암호화
         String encryptedCode =
-                cryptoKeyService.encrypt(joinCode, keyVersion);
+                cryptoKeyService.encrypt(
+                        joinCode,
+                        keyVersion
+                );
 
-        // 5. 암호문 및 키 버전 저장
-        // JOIN_CODE_VERSION은 Mapper SQL에서 +1
+        // 6. 암호화된 인증코드 저장 및 버전 증가
         int updatedRows = mapper.updateJoinCode(
                 groupId,
                 memberId,
@@ -143,12 +226,13 @@ public class GroupJoinCodeIssueService {
         );
 
         if (updatedRows != 1) {
-                throw new IllegalStateException(
-                        "인증코드 저장에 실패했습니다."
-                );
+
+            throw new IllegalStateException(
+                    "인증코드 저장에 실패했습니다."
+            );
         }
 
-        // 6. 모임장에게 발급 결과 반환
+        // 7. 모임장에게 발급 결과 반환
         return new GroupJoinCodeIssueResponse(
                 groupId,
                 joinCode,
@@ -156,7 +240,5 @@ public class GroupJoinCodeIssueService {
                 null,
                 "인증코드가 발급되었습니다."
         );
-        }
-
-
+    }
 }

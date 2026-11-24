@@ -169,12 +169,16 @@ export default function MyGroups() {
                   {' · '}월 {wonFromKrw(g.amount)}
                   {' · '}매월 {g.payDay}일
                   {' · '}{g.months}개월
-                  {' · '}최대 {g.maxMembers}명
+                  {' · '}{g.currentMembers ?? '-'} / {g.maxMembers}명
 
                   {' · '}
 
                   <span className="pill">
-                    {groups.groupStatusLabel(g.status)}
+                    {groups.groupStatusLabel(
+                      g.status,
+                      g.currentMembers,
+                      g.maxMembers
+                    )}
                   </span>
 
                   {g.visibility === 'PRIVATE' && (
@@ -279,9 +283,9 @@ export default function MyGroups() {
                       </div>
 
                       <div>
-                        <span>모집 정원</span>
+                        <span>참여 인원</span>
                         <strong>
-                          최대 {g.maxMembers}명
+                          {g.currentMembers ?? '-'} / {g.maxMembers}명
                         </strong>
                       </div>
 
@@ -302,7 +306,11 @@ export default function MyGroups() {
                       <div>
                         <span>모집 상태</span>
                         <strong>
-                          {groups.groupStatusLabel(g.status)}
+                          {groups.groupStatusLabel(
+                            g.status,
+                            g.currentMembers,
+                            g.maxMembers
+                          )}
                         </strong>
                       </div>
 

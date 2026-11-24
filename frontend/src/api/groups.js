@@ -80,7 +80,21 @@ export async function fetchInvite(token) {
 
 /** 서버 모임 상태 코드(GYE_GROUP.STATUS) → 화면 문구 */
 export const GROUP_STATUS_LABEL = { RECRUITING: '모집 중', ACTIVE: '운영 중', DISSOLVE_PENDING: '해산 검토 중', DISSOLVED: '해산 완료' };
-export const groupStatusLabel = s => GROUP_STATUS_LABEL[s] || '확인 중';
+// 모집 상태 표시
+// 정원에 도달한 경우 DB 상태 변경 없이 모집 종료로 표시
+export const groupStatusLabel = (s, currentMembers, maxMembers) => {
+  if (
+    s === 'RECRUITING' &&
+    Number.isInteger(currentMembers) &&
+    Number.isInteger(maxMembers) &&
+    maxMembers > 0 &&
+    currentMembers >= maxMembers
+  ) {
+    return '모집 종료';
+  }
+
+  return GROUP_STATUS_LABEL[s] || '확인 중';
+};
 /** 서버 모임 목적 코드(GYE_GROUP.PURPOSE) → 화면 문구 */
 export const PURPOSE_LABEL = { SAVINGS: '목돈 마련', INVEST: '재테크', SOCIAL: '친목', STARTUP: '창업', TRAVEL: '여행' };
 export const purposeLabel = p => PURPOSE_LABEL[p] || p || '-';
@@ -334,12 +348,22 @@ export async function joinRequest(id) {
     fail('이미 신청했어요.');
   }
 
-  if (
-      g.visibility === 'PRIVATE' &&
-      !D.ensureJoinCode(g).verified[String(D.me())]
-  ) {
-    fail('비공개 모임은 초대 링크와 인증코드로만 가입 신청할 수 있어요.');
+  if (g.visibility === 'PRIVATE') {
+  const d = D.ensureJoinCode(g);
+  const key = String(D.me());
+
+  if ((d.attempts[key]?.count ?? 0) >= 3) {
+    fail(
+      '인증에 3회 실패했습니다. 모임장에게 인증코드 재발급을 요청해 주세요.'
+    );
   }
+
+  if (!d.verified[key]) {
+    fail(
+      '비공개 모임은 초대 링크와 인증코드로만 가입 신청할 수 있어요.'
+    );
+  }
+}
 
   g.joinRequests.push({
     id: D.uid(),
@@ -367,38 +391,45 @@ export async function verifyInviteCode(id, value) {
 
   const d = D.ensureJoinCode(g);
   const key = String(D.me());
-  const a = d.attempts[key] || { count: 0, until: 0 };
 
-  if (Date.now() < a.until) {
-    fail('인증 시도 제한 중입니다. 잠시 후 다시 시도해 주세요.');
+  const a = d.attempts[key] || {
+    count: 0
+  };
+
+  const lockedMessage =
+    '인증에 3회 실패했습니다. 모임장에게 인증코드 재발급을 요청해 주세요.';
+
+  // 3회 실패 시 코드 재발급 전까지 인증 차단
+  if (a.count >= 3) {
+    fail(lockedMessage);
   }
 
-  if (!/^\d{6}$/.test(value)) {
-    fail('6자리 숫자 인증코드를 입력해 주세요.');
-  }
-
-  if (value !== String(d.code)) {
-    a.count++;
-
-    if (a.count >= 5) {
-      a.count = 0;
-      a.until = Date.now() + 15 * 60000;
-    }
+  // 인증코드 형식 및 일치 여부 확인
+  if (
+    !/^\d{6}$/.test(value) ||
+    value !== String(d.code)
+  ) {
+    a.count = Math.min(3, a.count + 1);
 
     d.attempts[key] = a;
+
     save();
 
-    fail(
-        a.until > Date.now()
-            ? '5회 실패하여 15분 동안 인증이 제한됩니다.'
-            : '인증코드가 올바르지 않습니다.'
-    );
+    if (a.count >= 3) {
+      fail(lockedMessage);
+    }
+
+    fail('인증코드가 올바르지 않습니다.');
   }
 
-  d.verified[key] = true;
-  delete d.attempts[key];
+  // 인증 성공 처리
+  if (!d.verified[key]) {
+    d.verified[key] = true;
+    delete d.attempts[key];
+  }
 
   D.groupLog(g, '인증코드 확인');
+
   save();
 
   await joinRequest(id);
@@ -536,13 +567,37 @@ export async function rotateInviteCode(id) {
     fail('비공개 모임장만 변경할 수 있습니다.');
   }
 
+  // 기존 인증코드 확인
+  const previousCode = String(D.ensureJoinCode(g).code);
+
+  let newCode = null;
+
+  // 기존 인증코드와 다른 번호 생성
+  for (let i = 0; i < 10; i++) {
+    const candidate = String(D.inviteDigits());
+
+    if (
+      /^\d{6}$/.test(candidate) &&
+      candidate !== previousCode
+    ) {
+      newCode = candidate;
+      break;
+    }
+  }
+
+  if (newCode === null) {
+    fail('새로운 인증코드 생성에 실패했습니다.');
+  }
+
+  // 인증코드 재발급 및 회원별 인증 상태 초기화
   g.joinCode = {
-    code: D.inviteDigits(),
+    code: newCode,
     attempts: {},
     verified: {}
   };
 
   D.groupLog(g, '비공개 초대 인증코드 변경');
+
   save();
 }
 

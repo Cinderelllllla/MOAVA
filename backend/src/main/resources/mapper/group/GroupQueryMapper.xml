@@ -10,24 +10,31 @@
             resultType="com.moava.group.query.dto.GroupListResponse">
 
         SELECT
-            GROUP_ID AS "groupId",
-            TITLE AS "title",
-            OWNER_ID AS "ownerId",
-            STATUS AS "status",
-            PURPOSE AS "purpose",
-            REGION_SIDO AS "regionSido",
-            REGION_SIGUNGU AS "regionSigungu",
-            AMOUNT AS "amount",
-            MAX_MEMBERS AS "maxMembers",
-            MONTHS AS "months",
-            PAY_DAY AS "payDay",
-            ASSUMED_RATE AS "assumedRate",
-            VISIBILITY AS "visibility",
-            DESCRIPTION AS "description",
+            G.GROUP_ID AS "groupId",
+            G.TITLE AS "title",
+            G.OWNER_ID AS "ownerId",
+            G.STATUS AS "status",
+            G.PURPOSE AS "purpose",
+            G.REGION_SIDO AS "regionSido",
+            G.REGION_SIGUNGU AS "regionSigungu",
+            G.AMOUNT AS "amount",
+            G.MAX_MEMBERS AS "maxMembers",
+            (
+                SELECT COUNT(DISTINCT GM.MEMBER_ID)
+                FROM GYE_MEMBER GM
+                WHERE GM.GROUP_ID = G.GROUP_ID
+                  AND GM.STATUS = 'ACTIVE'
+                  AND GM.MEMBER_ID != G.OWNER_ID
+            ) + 1 AS "currentMembers",
+            G.MONTHS AS "months",
+            G.PAY_DAY AS "payDay",
+            G.ASSUMED_RATE AS "assumedRate",
+            G.VISIBILITY AS "visibility",
+            G.DESCRIPTION AS "description",
             'OWNER' AS "role"
-        FROM GYE_GROUP
-        WHERE OWNER_ID = #{memberId}
-        ORDER BY GROUP_ID DESC
+        FROM GYE_GROUP G
+        WHERE G.OWNER_ID = #{memberId}
+        ORDER BY G.GROUP_ID DESC
 
     </select>
 
@@ -46,6 +53,13 @@
             G.REGION_SIGUNGU AS "regionSigungu",
             G.AMOUNT AS "amount",
             G.MAX_MEMBERS AS "maxMembers",
+            (
+                SELECT COUNT(DISTINCT GM.MEMBER_ID)
+                FROM GYE_MEMBER GM
+                WHERE GM.GROUP_ID = G.GROUP_ID
+                  AND GM.STATUS = 'ACTIVE'
+                  AND GM.MEMBER_ID != G.OWNER_ID
+            ) + 1 AS "currentMembers",
             G.MONTHS AS "months",
             G.PAY_DAY AS "payDay",
             G.ASSUMED_RATE AS "assumedRate",

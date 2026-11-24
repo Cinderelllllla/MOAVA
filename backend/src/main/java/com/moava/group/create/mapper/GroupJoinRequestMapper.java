@@ -1,4 +1,3 @@
-
 package com.moava.group.create.mapper;
 
 import com.moava.group.create.dto.GroupPendingJoinRequestResponse;
@@ -20,7 +19,14 @@ public interface GroupJoinRequestMapper {
             @Param("groupId") Long groupId
     );
 
+    // 기존 참여 이력 확인
     int countExistingMembership(
+            @Param("groupId") Long groupId,
+            @Param("memberId") Long memberId
+    );
+
+    // 재가입이 불가능한 기존 참여 관계 확인
+    int countBlockedMembership(
             @Param("groupId") Long groupId,
             @Param("memberId") Long memberId
     );
@@ -62,39 +68,60 @@ public interface GroupJoinRequestMapper {
     );
 
     // ==========================================
-    // F16 - 모임장 가입 승인 (신규)
+    // F16 - 모임장 가입 승인
     // ==========================================
 
-    // 승인할 가입 신청 조회
     Map<String, Object> findJoinRequestForDecision(
             @Param("groupId") Long groupId,
             @Param("requestId") Long requestId
     );
 
-    // 가입 신청 상태를 APPROVED로 변경
     int approveJoinRequest(
             @Param("groupId") Long groupId,
             @Param("requestId") Long requestId,
             @Param("ownerId") Long ownerId
     );
 
-    // 승인된 회원을 GYE_MEMBER에 등록
+    // 신규 회원 등록
     int insertApprovedMember(
             @Param("groupId") Long groupId,
             @Param("memberId") Long memberId
     );
 
+    // 기존 자진 탈퇴 회원 재활성화
+    int reactivateWithdrawnMember(
+            @Param("groupId") Long groupId,
+            @Param("memberId") Long memberId
+    );
 
+    // ==========================================
     // F16 - 모임장 가입 신청 거절
+    // ==========================================
+
     int rejectJoinRequest(
             @Param("groupId") Long groupId,
             @Param("requestId") Long requestId,
             @Param("ownerId") Long ownerId
     );
 
-    // F16 - 알림에 표시할 신청자 이름 조회
     String findMemberName(
             @Param("memberId") Long memberId
     );
 
+    // ==========================================
+    // F16 - 가입 신청 7일 자동 만료
+    // ==========================================
+
+    // 만료 대상 가입 신청 ID 목록 조회
+    List<Long> findExpiredPendingRequestIds();
+
+    // 만료 대상 신청 및 알림 정보 조회
+    Map<String, Object> findExpiredPendingRequest(
+            @Param("requestId") Long requestId
+    );
+
+    // 만료 조건을 충족한 신청만 EXPIRED로 변경
+    int expireJoinRequest(
+            @Param("requestId") Long requestId
+    );
 }

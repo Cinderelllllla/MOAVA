@@ -1,4 +1,3 @@
-
 package com.moava.group.create.service;
 
 import com.moava.crypto.service.CryptoKeyService;
@@ -15,6 +14,12 @@ import java.util.Map;
 @Service
 public class JoinCodeVerifyService {
 
+    // F18 - 회원별 최대 인증 실패 횟수
+    private static final int MAX_ATTEMPTS = 3;
+
+    private static final String LOCKED_MESSAGE =
+            "인증에 3회 실패했습니다. 모임장에게 인증코드 재발급을 요청해 주세요.";
+
     private final JoinCodeAttemptMapper mapper;
     private final CryptoKeyService cryptoKeyService;
 
@@ -29,14 +34,8 @@ public class JoinCodeVerifyService {
     /**
      * F18 - 인증 요청 사전 상태 확인
      *
-     * 1. 모임 및 회원 ID 확인
-     * 2. 비공개 모임의 인증코드 존재 여부 확인
-     * 3. 회원별 인증 시도 기록 생성
-     * 4. 인증코드 재발급 버전 동기화
-     * 5. 잠금 여부 확인
-     * 6. 기존 인증 성공 여부 확인
-     *
-     * 이 메서드는 실제 인증코드를 비교하지 않는다.
+     * 현재 인증코드 버전과 회원별 인증 상태를 확인한다.
+     * 실제 인증코드를 비교하지 않는다.
      */
     @Transactional
     public JoinCodeVerifyResponse checkVerificationState(
@@ -49,16 +48,12 @@ public class JoinCodeVerifyService {
         return buildVerificationState(attempt);
     }
 
-
-
     /**
      * F18 - 실제 인증코드 검증
      *
-     * 이미 인증한 회원도 입력한 코드를 다시 비교한다.
-     * - 올바른 코드 재입력: ALREADY_VERIFIED
-     * - 잘못된 코드 재입력: INVALID_CODE
-     * - 기존 인증 성공 상태는 유지
-     * - 미인증 회원의 5회 실패 / 15분 잠금 유지
+     * 회원별 최대 3회 실패 허용
+     * 3회 실패 시 모임장의 코드 재발급 전까지 인증 차단
+     * 다른 회원의 인증 시도에는 영향을 주지 않는다.
      */
     @Transactional
     public JoinCodeVerifyResponse verifyJoinCode(
@@ -66,6 +61,7 @@ public class JoinCodeVerifyService {
             Long memberId,
             String inputCode
     ) {
+
         // 1. 모임 및 회원 검증, 코드 버전 동기화
         Map<String, Object> attempt =
                 prepareVerification(groupId, memberId);
@@ -74,7 +70,7 @@ public class JoinCodeVerifyService {
         JoinCodeVerifyResponse state =
                 buildVerificationState(attempt);
 
-        // 잠금 중이면 코드 비교 없이 차단
+        // 3회 실패한 회원은 재발급 전까지 인증 차단
         if ("LOCKED".equals(state.status())) {
             return state;
         }
@@ -82,18 +78,20 @@ public class JoinCodeVerifyService {
         boolean alreadyVerified =
                 "ALREADY_VERIFIED".equals(state.status());
 
-
         // 3. 입력 형식 검증
-        if (inputCode == null || !inputCode.matches("[0-9]{6}")) {
-        return recordInvalidCode(groupId, memberId);
-        }
+        if (inputCode == null
+                || !inputCode.matches("[0-9]{6}")) {
 
+            return recordInvalidCode(groupId, memberId);
+        }
 
         // 4. 암호화된 현재 인증코드 조회
         Map<String, Object> codeRow =
                 mapper.findEncryptedJoinCode(groupId);
 
-        if (codeRow == null || codeRow.get("JOIN_CODE_ENC") == null) {
+        if (codeRow == null
+                || codeRow.get("JOIN_CODE_ENC") == null) {
+
             throw new IllegalStateException(
                     "인증코드 정보가 없습니다."
             );
@@ -119,7 +117,9 @@ public class JoinCodeVerifyService {
                 keyVersion
         );
 
-        if (savedCode == null || !savedCode.matches("[0-9]{6}")) {
+        if (savedCode == null
+                || !savedCode.matches("[0-9]{6}")) {
+
             throw new IllegalStateException(
                     "저장된 인증코드 형식이 올바르지 않습니다."
             );
@@ -131,54 +131,44 @@ public class JoinCodeVerifyService {
                 inputCode.getBytes(StandardCharsets.UTF_8)
         );
 
-
-        // 7. 이미 인증한 회원의 재인증 처리
-        if (alreadyVerified) {
+        // 7. 인증 실패
         if (!matched) {
-                return recordInvalidCode(groupId, memberId);
+            return recordInvalidCode(groupId, memberId);
+        }
+
+        // 8. 이미 인증한 회원의 올바른 코드 재입력
+        if (alreadyVerified) {
+            return new JoinCodeVerifyResponse(
+                    true,
+                    JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
+                    "이미 인증이 완료되었습니다.",
+                    state.remainingAttempts()
+            );
+        }
+
+        // 9. 최초 인증 성공
+        int updated =
+                mapper.markVerified(groupId, memberId);
+
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "인증 성공 처리에 실패했습니다."
+            );
         }
 
         return new JoinCodeVerifyResponse(
                 true,
-                JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
-                "이미 인증이 완료되었습니다.",
-                state.remainingAttempts()
+                JoinCodeVerifyStatus.VERIFIED.name(),
+                "인증코드 확인이 완료되었습니다.",
+                MAX_ATTEMPTS
         );
-        }
-
-
-        // 8. 최초 인증 성공
-        if (matched) {
-            int updated =
-                    mapper.markVerified(groupId, memberId);
-
-            if (updated != 1) {
-                throw new IllegalStateException(
-                        "인증 성공 처리에 실패했습니다."
-                );
-            }
-
-            return new JoinCodeVerifyResponse(
-                    true,
-                    JoinCodeVerifyStatus.VERIFIED.name(),
-                    "인증코드 확인이 완료되었습니다.",
-                    5
-            );
-        }
-
-        // 9. 최초 인증 실패
-        return recordInvalidCode(groupId, memberId);
     }
-
-
 
     /**
      * 인증 준비 공통 처리
      *
-     * 같은 모임의 인증 요청을 직렬화하여
-     * 최초 INSERT 및 코드 재발급과의 충돌을 방지한다.
-     *
-     * 호출한 public 메서드의 트랜잭션 안에서 실행된다.
+     * 모임 행 잠금을 통해 동시 인증 요청과
+     * 인증코드 재발급 사이의 충돌을 방지한다.
      */
     private Map<String, Object> prepareVerification(
             Long groupId,
@@ -188,6 +178,7 @@ public class JoinCodeVerifyService {
         // 1. ID 유효성 확인
         if (groupId == null || groupId <= 0
                 || memberId == null || memberId <= 0) {
+
             throw new IllegalArgumentException(
                     "모임 또는 회원 정보가 올바르지 않습니다."
             );
@@ -203,7 +194,7 @@ public class JoinCodeVerifyService {
             );
         }
 
-        // 3. DB의 현재 인증코드 버전 조회
+        // 3. 현재 인증코드 버전 조회
         Integer codeVersion =
                 mapper.findCurrentCodeVersion(groupId);
 
@@ -219,6 +210,7 @@ public class JoinCodeVerifyService {
 
         if (encryptedCode == null
                 || encryptedCode.get("JOIN_CODE_ENC") == null) {
+
             throw new IllegalStateException(
                     "인증코드 정보가 없습니다."
             );
@@ -230,6 +222,7 @@ public class JoinCodeVerifyService {
 
         // 6. 최초 인증 시도 기록 생성
         if (attempt == null) {
+
             int inserted = mapper.insertAttempt(
                     groupId,
                     memberId,
@@ -246,12 +239,12 @@ public class JoinCodeVerifyService {
                     groupId,
                     memberId
             );
+        }
 
-            if (attempt == null) {
-                throw new IllegalStateException(
-                        "인증 시도 기록을 확인할 수 없습니다."
-                );
-            }
+        if (attempt == null) {
+            throw new IllegalStateException(
+                    "인증 시도 기록을 확인할 수 없습니다."
+            );
         }
 
         // 7. 인증코드 재발급 버전 확인
@@ -262,6 +255,7 @@ public class JoinCodeVerifyService {
                 || storedVersion.intValue()
                         != codeVersion.intValue()) {
 
+            // 새 인증코드 버전에서는 실패 횟수 및 인증 상태 초기화
             int updated = mapper.resetForNewVersion(
                     groupId,
                     memberId,
@@ -280,66 +274,63 @@ public class JoinCodeVerifyService {
             );
         }
 
-        // 8. 잠금 시간이 만료되었으면 초기화
-        if (attempt.get("LOCKED_UNTIL") != null) {
-
-            mapper.resetExpiredLock(
-                    groupId,
-                    memberId
-            );
-
-            attempt = mapper.findAttempt(
-                    groupId,
-                    memberId
+        if (attempt == null) {
+            throw new IllegalStateException(
+                    "인증 시도 기록을 확인할 수 없습니다."
             );
         }
 
+        // 시간 경과에 따른 잠금 해제는 하지 않는다.
         return attempt;
     }
 
     /**
      * 현재 인증 가능 상태 확인
      */
+    private JoinCodeVerifyResponse buildVerificationState(
+            Map<String, Object> attempt
+    ) {
 
-        private JoinCodeVerifyResponse buildVerificationState(
-                Map<String, Object> attempt
-        ) {
         if (attempt == null) {
-                throw new IllegalStateException(
-                        "인증 시도 정보가 없습니다."
-                );
+            throw new IllegalStateException(
+                    "인증 시도 정보가 없습니다."
+            );
         }
 
         boolean verified = "Y".equalsIgnoreCase(
                 String.valueOf(attempt.get("VERIFIED_YN"))
         );
 
-        Number failCount = (Number) attempt.get("FAIL_COUNT");
+        Number failCount =
+                (Number) attempt.get("FAIL_COUNT");
 
         int failures = failCount == null
                 ? 0
                 : failCount.intValue();
 
-        int remaining = Math.max(0, 5 - failures);
+        int remaining =
+                Math.max(0, MAX_ATTEMPTS - failures);
 
-        // 잠금 중에도 기존 인증 성공 여부는 유지
-        if (attempt.get("LOCKED_UNTIL") != null) {
-                return new JoinCodeVerifyResponse(
-                        verified,
-                        JoinCodeVerifyStatus.LOCKED.name(),
-                        "인증 시도가 일시적으로 제한되었습니다.",
-                        0
-                );
+        // 3회 이상 실패하면 코드 재발급 전까지 차단
+        if (failures >= MAX_ATTEMPTS) {
+
+            return new JoinCodeVerifyResponse(
+                    false,
+                    JoinCodeVerifyStatus.LOCKED.name(),
+                    LOCKED_MESSAGE,
+                    0
+            );
         }
 
         // 기존 인증 완료 상태
         if (verified) {
-                return new JoinCodeVerifyResponse(
-                        true,
-                        JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
-                        "이미 인증이 완료되었습니다.",
-                        remaining
-                );
+
+            return new JoinCodeVerifyResponse(
+                    true,
+                    JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
+                    "이미 인증이 완료되었습니다.",
+                    remaining
+            );
         }
 
         return new JoinCodeVerifyResponse(
@@ -348,13 +339,12 @@ public class JoinCodeVerifyService {
                 "인증코드를 입력할 수 있습니다.",
                 remaining
         );
-        }
-
+    }
 
     /**
      * 인증 실패 기록
      *
-     * 실패 결과를 예외가 아닌 정상 응답으로 반환하여
+     * 실패 결과를 정상 응답으로 반환하여
      * FAIL_COUNT 변경이 트랜잭션에 반영되도록 한다.
      */
     private JoinCodeVerifyResponse recordInvalidCode(
@@ -363,11 +353,10 @@ public class JoinCodeVerifyService {
     ) {
 
         // 1. 실패 횟수 증가
-        int updated =
-                mapper.increaseFailCount(
-                        groupId,
-                        memberId
-                );
+        int updated = mapper.increaseFailCount(
+                groupId,
+                memberId
+        );
 
         if (updated != 1) {
             throw new IllegalStateException(
@@ -375,12 +364,9 @@ public class JoinCodeVerifyService {
             );
         }
 
-        // 2. 변경된 시도 기록 조회
+        // 2. 변경된 인증 시도 기록 조회
         Map<String, Object> attempt =
-                mapper.findAttempt(
-                        groupId,
-                        memberId
-                );
+                mapper.findAttempt(groupId, memberId);
 
         if (attempt == null) {
             throw new IllegalStateException(
@@ -391,29 +377,23 @@ public class JoinCodeVerifyService {
         Number failCount =
                 (Number) attempt.get("FAIL_COUNT");
 
-        int failures =
-                failCount == null
-                        ? 0
-                        : failCount.intValue();
+        int failures = failCount == null
+                ? 0
+                : failCount.intValue();
 
         int remaining =
-                Math.max(0, 5 - failures);
+                Math.max(0, MAX_ATTEMPTS - failures);
 
-        // 3. 5회 실패 시 잠금
-
+        // 3. 최대 실패 횟수 도달
         if (remaining == 0) {
-        boolean verified = "Y".equalsIgnoreCase(
-                String.valueOf(attempt.get("VERIFIED_YN"))
-        );
 
-        return new JoinCodeVerifyResponse(
-                verified,
-                JoinCodeVerifyStatus.LOCKED.name(),
-                "인증에 5회 실패하여 15분간 잠금 처리되었습니다.",
-                0
-        );
+            return new JoinCodeVerifyResponse(
+                    false,
+                    JoinCodeVerifyStatus.LOCKED.name(),
+                    LOCKED_MESSAGE,
+                    0
+            );
         }
-
 
         // 4. 일반 인증 실패
         return new JoinCodeVerifyResponse(

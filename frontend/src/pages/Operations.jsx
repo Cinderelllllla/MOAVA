@@ -71,7 +71,7 @@ function ServerOperations() {
   // 모임 상태 표시 항목
   const statusRows = g ? [
     ['내 역할', roleLabel(g.role)],
-    ['모집 상태', groups.groupStatusLabel(g.status)],
+    ['모집 상태', groups.groupStatusLabel(g.status, g.currentMembers, g.maxMembers)],
     [
       '공개 여부',
       g.visibility === 'PRIVATE'
@@ -86,7 +86,7 @@ function ServerOperations() {
     ],
     ['월 납입액', wonFromKrw(g.amount)],
     ['납입일', `매월 ${g.payDay}일`],
-    ['모집 정원', `최대 ${g.maxMembers}명`],
+    ['참여 인원', `${g.currentMembers ?? '-'} / ${g.maxMembers}명`],
     ['운영 기간', `${g.months}개월`]
   ] : [];
 
@@ -181,7 +181,7 @@ function ServerOperations() {
                   <h2>모임 상태</h2>
 
                   <span className="pill">
-                    {groups.groupStatusLabel(g.status)}
+                    {groups.groupStatusLabel(g.status, g.currentMembers, g.maxMembers)}
                   </span>
                 </div>
 

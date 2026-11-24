@@ -410,58 +410,101 @@ COMMENT ON COLUMN LEADER_TRANSFER_REQUEST.STATUS IS 'PENDING / CONFIRMED / CANCE
 COMMENT ON COLUMN LEADER_TRANSFER_REQUEST.DECIDED_AT IS '확정·취소 시각';
 COMMENT ON COLUMN LEADER_TRANSFER_REQUEST.CREATED_AT IS '요청 시각';
 
--- JOIN_CODE_ATTEMPT: 비공개 모임 인증코드 검증 시도·잠금·검증 상태 (회원×모임당 1행)
+-- JOIN_CODE_ATTEMPT: 비공개 모임 인증코드 검증 시도 및 상태
+-- 회원 × 모임당 1행
 CREATE TABLE JOIN_CODE_ATTEMPT (
-                                   ATTEMPT_ID             NUMBER(10)     NOT NULL,
-                                   GROUP_ID               NUMBER(10)     NOT NULL,
-                                   MEMBER_ID              NUMBER(10)     NOT NULL,
-                                   CODE_VERSION           NUMBER(3)      NOT NULL,
-                                   FAIL_COUNT             NUMBER(2)      DEFAULT 0 NOT NULL,
-                                   LOCKED_UNTIL           DATE,
-                                   VERIFIED_YN            CHAR(1)        DEFAULT 'N' NOT NULL,
-                                   VERIFIED_AT            DATE,
-                                   LAST_ATTEMPT_AT        DATE           DEFAULT SYSDATE NOT NULL,
-                                   CONSTRAINT PK_JOIN_CODE_ATTEMPT PRIMARY KEY (ATTEMPT_ID),
-                                   CONSTRAINT UK_JOIN_CODE_ATTEMPT_1 UNIQUE (GROUP_ID, MEMBER_ID),
-                                   CONSTRAINT CK_JOIN_CODE_ATTEMPT_1 CHECK (FAIL_COUNT BETWEEN 0 AND 5),
-                                   CONSTRAINT CK_JOIN_CODE_ATTEMPT_2 CHECK (VERIFIED_YN IN ('Y','N'))
-);
-COMMENT ON TABLE JOIN_CODE_ATTEMPT IS '비공개 모임 인증코드 검증 시도·잠금·검증 상태 (회원×모임당 1행)';
-COMMENT ON COLUMN JOIN_CODE_ATTEMPT.GROUP_ID IS '모임';
-COMMENT ON COLUMN JOIN_CODE_ATTEMPT.MEMBER_ID IS '시도 회원';
-COMMENT ON COLUMN JOIN_CODE_ATTEMPT.CODE_VERSION IS '시도 당시 JOIN_CODE_VERSION. 재발급 시 불일치 행은 초기화';
-COMMENT ON COLUMN JOIN_CODE_ATTEMPT.FAIL_COUNT IS '연속 실패 횟수. 5회 도달 시 잠금';
-COMMENT ON COLUMN JOIN_CODE_ATTEMPT.LOCKED_UNTIL IS '잠금 해제 시각 (실패 5회 시 +15분)';
-COMMENT ON COLUMN JOIN_CODE_ATTEMPT.VERIFIED_YN IS '검증 성공 여부';
-COMMENT ON COLUMN JOIN_CODE_ATTEMPT.VERIFIED_AT IS '검증 성공 시각';
-COMMENT ON COLUMN JOIN_CODE_ATTEMPT.LAST_ATTEMPT_AT IS '마지막 시도 시각';
+    ATTEMPT_ID       NUMBER(10) NOT NULL,
+    GROUP_ID         NUMBER(10) NOT NULL,
+    MEMBER_ID        NUMBER(10) NOT NULL,
+    CODE_VERSION     NUMBER(3) NOT NULL,
+    FAIL_COUNT       NUMBER(2) DEFAULT 0 NOT NULL,
+    LOCKED_UNTIL     DATE,
+    VERIFIED_YN      CHAR(1) DEFAULT 'N' NOT NULL,
+    VERIFIED_AT      DATE,
+    LAST_ATTEMPT_AT  DATE DEFAULT SYSDATE NOT NULL,
 
--- JOIN_REQUEST: 가입 신청. 검색/초대 경로 구분
+    CONSTRAINT PK_JOIN_CODE_ATTEMPT
+        PRIMARY KEY (ATTEMPT_ID),
+
+    CONSTRAINT UK_JOIN_CODE_ATTEMPT_1
+        UNIQUE (GROUP_ID, MEMBER_ID),
+
+    CONSTRAINT CK_JOIN_CODE_ATTEMPT_1
+        CHECK (FAIL_COUNT BETWEEN 0 AND 3),
+
+    CONSTRAINT CK_JOIN_CODE_ATTEMPT_2
+        CHECK (VERIFIED_YN IN ('Y','N'))
+);
+
+COMMENT ON TABLE JOIN_CODE_ATTEMPT IS
+'비공개 모임 인증코드 검증 시도 및 상태 (회원×모임당 1행)';
+COMMENT ON COLUMN JOIN_CODE_ATTEMPT.GROUP_ID IS
+'모임';
+COMMENT ON COLUMN JOIN_CODE_ATTEMPT.MEMBER_ID IS
+'시도 회원';
+COMMENT ON COLUMN JOIN_CODE_ATTEMPT.CODE_VERSION IS
+'시도 당시 JOIN_CODE_VERSION. 재발급 시 실패 횟수 및 인증 상태 초기화';
+COMMENT ON COLUMN JOIN_CODE_ATTEMPT.FAIL_COUNT IS
+'회원별 인증 실패 횟수. 3회 도달 시 코드 재발급 전까지 인증 차단';
+COMMENT ON COLUMN JOIN_CODE_ATTEMPT.LOCKED_UNTIL IS
+'기존 시간 기반 잠금 정책 호환용 컬럼. 현재 잠금 판단에는 사용하지 않음';
+COMMENT ON COLUMN JOIN_CODE_ATTEMPT.VERIFIED_YN IS
+'검증 성공 여부';
+COMMENT ON COLUMN JOIN_CODE_ATTEMPT.VERIFIED_AT IS
+'검증 성공 시각';
+COMMENT ON COLUMN JOIN_CODE_ATTEMPT.LAST_ATTEMPT_AT IS
+'마지막 시도 시각';
+
+-- JOIN_REQUEST: 모임 가입 신청 및 처리 이력
 CREATE TABLE JOIN_REQUEST (
-                              JOIN_REQUEST_ID        NUMBER(10)     NOT NULL,
-                              GROUP_ID               NUMBER(10)     NOT NULL,
-                              MEMBER_ID              NUMBER(10)     NOT NULL,
-                              VIA                    VARCHAR2(10)   DEFAULT 'SEARCH' NOT NULL,
-                              CODE_VERIFIED_YN       CHAR(1)        DEFAULT 'N' NOT NULL,
-                              STATUS                 VARCHAR2(10)   DEFAULT 'PENDING' NOT NULL,
-                              DECIDED_BY             NUMBER(10),
-                              DECIDED_AT             DATE,
-                              CREATED_AT             DATE           DEFAULT SYSDATE NOT NULL,
-                              CONSTRAINT PK_JOIN_REQUEST PRIMARY KEY (JOIN_REQUEST_ID),
-                              CONSTRAINT CK_JOIN_REQUEST_1 CHECK (VIA IN ('SEARCH','INVITE')),
-                              CONSTRAINT CK_JOIN_REQUEST_2 CHECK (STATUS IN ('PENDING','APPROVED','REJECTED')),
-                              CONSTRAINT CK_JOIN_REQUEST_3 CHECK (CODE_VERIFIED_YN IN ('Y','N'))
-);
-COMMENT ON TABLE JOIN_REQUEST IS '가입 신청. 검색/초대 경로 구분';
-COMMENT ON COLUMN JOIN_REQUEST.GROUP_ID IS '모임';
-COMMENT ON COLUMN JOIN_REQUEST.MEMBER_ID IS '신청 회원';
-COMMENT ON COLUMN JOIN_REQUEST.VIA IS 'SEARCH(검색·추천·지도) / INVITE(초대 링크·QR)';
-COMMENT ON COLUMN JOIN_REQUEST.CODE_VERIFIED_YN IS '비공개 모임 인증코드 검증 통과 여부. PRIVATE 모임은 Y만 허용';
-COMMENT ON COLUMN JOIN_REQUEST.STATUS IS 'PENDING / APPROVED / REJECTED';
-COMMENT ON COLUMN JOIN_REQUEST.DECIDED_BY IS '처리한 모임장';
-COMMENT ON COLUMN JOIN_REQUEST.DECIDED_AT IS '처리 시각';
-COMMENT ON COLUMN JOIN_REQUEST.CREATED_AT IS '신청 시각';
+    JOIN_REQUEST_ID  NUMBER(10) NOT NULL,
+    GROUP_ID         NUMBER(10) NOT NULL,
+    MEMBER_ID        NUMBER(10) NOT NULL,
+    VIA              VARCHAR2(10) DEFAULT 'SEARCH' NOT NULL,
+    CODE_VERIFIED_YN CHAR(1) DEFAULT 'N' NOT NULL,
+    STATUS           VARCHAR2(10) DEFAULT 'PENDING' NOT NULL,
+    DECIDED_BY       NUMBER(10),
+    DECIDED_AT       DATE,
+    CREATED_AT       DATE DEFAULT SYSDATE NOT NULL,
 
+    CONSTRAINT PK_JOIN_REQUEST
+        PRIMARY KEY (JOIN_REQUEST_ID),
+
+    CONSTRAINT CK_JOIN_REQUEST_1
+        CHECK (VIA IN ('SEARCH','INVITE')),
+
+    CONSTRAINT CK_JOIN_REQUEST_2
+        CHECK (
+            STATUS IN (
+                'PENDING',
+                'APPROVED',
+                'REJECTED',
+                'EXPIRED'
+            )
+        ),
+
+    CONSTRAINT CK_JOIN_REQUEST_3
+        CHECK (CODE_VERIFIED_YN IN ('Y','N'))
+);
+
+COMMENT ON TABLE JOIN_REQUEST IS
+'가입 신청 및 처리 이력. 신청 후 7일 동안 미처리 시 자동 만료';
+COMMENT ON COLUMN JOIN_REQUEST.GROUP_ID IS
+'모임';
+COMMENT ON COLUMN JOIN_REQUEST.MEMBER_ID IS
+'신청 회원';
+COMMENT ON COLUMN JOIN_REQUEST.VIA IS
+'SEARCH(검색·추천·지도) / INVITE(초대 링크·인증코드)';
+COMMENT ON COLUMN JOIN_REQUEST.CODE_VERIFIED_YN IS
+'가입 신청 당시 비공개 모임 인증코드 검증 통과 여부';
+COMMENT ON COLUMN JOIN_REQUEST.STATUS IS
+'PENDING / APPROVED / REJECTED / EXPIRED';
+COMMENT ON COLUMN JOIN_REQUEST.DECIDED_BY IS
+'처리한 모임장. 시스템 자동 만료 시 NULL';
+COMMENT ON COLUMN JOIN_REQUEST.DECIDED_AT IS
+'승인·거절·자동 만료 처리 시각';
+COMMENT ON COLUMN JOIN_REQUEST.CREATED_AT IS
+'신청 시각. 자동 만료 기준';
 -- PAYMENT_PROOF: 납입 증빙 (회원·모임·납입월당 1건). 모임장 승인/보완, 관리자 참조번호
 CREATE TABLE PAYMENT_PROOF (
                                PAYMENT_PROOF_ID       NUMBER(10)     NOT NULL,

@@ -5,7 +5,7 @@
 
 <mapper namespace="com.moava.group.create.mapper.JoinCodeAttemptMapper">
 
-    <!-- 인증 시도 기록 조회 -->
+    <!-- 회원별 인증 시도 기록 조회 -->
     <select id="findAttempt" resultType="map">
         SELECT
             ATTEMPT_ID,
@@ -22,6 +22,7 @@
           AND MEMBER_ID = #{memberId}
         FOR UPDATE
     </select>
+
 
     <!-- 최초 인증 시도 기록 생성 -->
     <insert id="insertAttempt">
@@ -45,21 +46,18 @@
         )
     </insert>
 
-    <!-- 인증 실패 횟수 증가 -->
+
+    <!-- 회원별 인증 실패 횟수 증가: 최대 3회 -->
     <update id="increaseFailCount">
         UPDATE JOIN_CODE_ATTEMPT
         SET FAIL_COUNT = FAIL_COUNT + 1,
-            LOCKED_UNTIL =
-                CASE
-                    WHEN FAIL_COUNT + 1 >= 5
-                    THEN SYSDATE + (15 / 1440)
-                    ELSE LOCKED_UNTIL
-                END,
+            LOCKED_UNTIL = NULL,
             LAST_ATTEMPT_AT = SYSDATE
         WHERE GROUP_ID = #{groupId}
           AND MEMBER_ID = #{memberId}
-          AND (LOCKED_UNTIL IS NULL OR LOCKED_UNTIL &lt;= SYSDATE)
+          AND FAIL_COUNT &lt; 3
     </update>
+
 
     <!-- 인증 성공 처리 -->
     <update id="markVerified">
@@ -72,36 +70,28 @@
         WHERE GROUP_ID = #{groupId}
           AND MEMBER_ID = #{memberId}
           AND VERIFIED_YN = 'N'
-          AND (LOCKED_UNTIL IS NULL OR LOCKED_UNTIL &lt;= SYSDATE)
+          AND FAIL_COUNT &lt; 3
     </update>
 
 
-    <!-- 잠금 시간이 만료되면 실패 횟수 초기화 -->
-    <update id="resetExpiredLock">
-        UPDATE JOIN_CODE_ATTEMPT
-        SET FAIL_COUNT = 0,
-            LOCKED_UNTIL = NULL,
-            LAST_ATTEMPT_AT = SYSDATE
-        WHERE GROUP_ID = #{groupId}
-        AND MEMBER_ID = #{memberId}
-        AND LOCKED_UNTIL &lt;= SYSDATE
-    </update>
-
-    <!-- 인증코드 버전 변경 시 이전 인증 성공 상태만 초기화 -->
-    <!-- 기존 잠금은 유지하여 코드 재발급으로 잠금을 우회하지 못하게 함 -->
+    <!-- 인증코드 재발급 시 실패 횟수 및 인증 상태 초기화 -->
     <update id="resetForNewVersion">
         UPDATE JOIN_CODE_ATTEMPT
         SET CODE_VERSION = #{codeVersion},
+            FAIL_COUNT = 0,
+            LOCKED_UNTIL = NULL,
             VERIFIED_YN = 'N',
             VERIFIED_AT = NULL,
             LAST_ATTEMPT_AT = SYSDATE
         WHERE GROUP_ID = #{groupId}
-        AND MEMBER_ID = #{memberId}
-        AND CODE_VERSION != #{codeVersion}
+          AND MEMBER_ID = #{memberId}
+          AND CODE_VERSION != #{codeVersion}
     </update>
 
-    <!-- 최초 인증 시도 생성의 동시 요청 충돌 방지 -->
-    <select id="lockGroupForAttempt" resultType="java.lang.Long">
+
+    <!-- 최초 인증 시도 생성 및 재발급 동시 요청 충돌 방지 -->
+    <select id="lockGroupForAttempt"
+            resultType="java.lang.Long">
         SELECT GROUP_ID
         FROM GYE_GROUP
         WHERE GROUP_ID = #{groupId}
@@ -115,13 +105,14 @@
         SELECT JOIN_CODE_VERSION
         FROM GYE_GROUP
         WHERE GROUP_ID = #{groupId}
-        AND VISIBILITY = 'PRIVATE'
-        AND JOIN_CODE_ENC IS NOT NULL
+          AND VISIBILITY = 'PRIVATE'
+          AND JOIN_CODE_ENC IS NOT NULL
     </select>
 
 
     <!-- 비공개 모임의 암호화된 인증코드 조회 -->
-    <select id="findEncryptedJoinCode" resultType="map">
+    <select id="findEncryptedJoinCode"
+            resultType="map">
         SELECT
             JOIN_CODE_ENC,
             JOIN_CODE_KEY_VER,
@@ -129,11 +120,8 @@
             JOIN_CODE_ISSUED_AT
         FROM GYE_GROUP
         WHERE GROUP_ID = #{groupId}
-        AND VISIBILITY = 'PRIVATE'
-        AND JOIN_CODE_ENC IS NOT NULL
+          AND VISIBILITY = 'PRIVATE'
+          AND JOIN_CODE_ENC IS NOT NULL
     </select>
-
-
-
 
 </mapper>
