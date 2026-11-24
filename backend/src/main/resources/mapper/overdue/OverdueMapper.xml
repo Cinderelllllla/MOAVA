@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- F26 미납 자동 감지 (DDL 7번 참고 SQL 기반 + 억울한 감지를 막는 조건 3개 보강) -->
+<mapper namespace="com.moava.overdue.mapper.OverdueMapper">
+
+    <!-- 실제로 내야 했는데 아직 승인(CONFIRMED)된 증빙이 없는 (모임, 회원, 귀속 월)과 경과일
+         - 운영 중(ACTIVE) 모임의 ACTIVE 회원만
+         - ① 납부 기한 ≥ 모임 시작일  (시작 전 달 제외)
+         - ② 납부 기한 ≥ 회원 가입일  (중간 가입자의 가입 전 달 제외)
+         - ③ 납부 기한 < 시작일 + 운영 개월 수 (끝난 뒤 달 제외)
+         - 경과일 = 기준일(today) - 납부 기한. 테스트를 위해 SYSDATE 대신 today를 받음 -->
+    <sql id="unpaidDues">
+        SELECT d.GROUP_ID, d.GROUP_TITLE, d.MEMBER_ID, d.MEMBER_NAME,
+               d.PAY_MONTH, d.DUE_DATE, d.ELAPSED_DAYS, d.AMOUNT
+          FROM (
+                SELECT g.GROUP_ID,
+                       g.TITLE                                  AS GROUP_TITLE,
+                       gm.MEMBER_ID,
+                       mb.NAME                                  AS MEMBER_NAME,
+                       TO_CHAR(mo.YM, 'YYYYMM')                 AS PAY_MONTH,
+                       mo.YM + (g.PAY_DAY - 1)                  AS DUE_DATE,
+                       TRUNC(#{today}) - (mo.YM + (g.PAY_DAY - 1)) AS ELAPSED_DAYS,
+                       g.STARTED_AT, gm.JOINED_AT, g.MONTHS, g.AMOUNT
+                  FROM GYE_GROUP g
+                  JOIN GYE_MEMBER gm ON gm.GROUP_ID = g.GROUP_ID AND gm.STATUS = 'ACTIVE'
+                  JOIN MEMBER mb     ON mb.MEMBER_ID = gm.MEMBER_ID
+                  JOIN (SELECT ADD_MONTHS(TRUNC(#{today}, 'MM'), 2 - LEVEL) AS YM
+                          FROM DUAL CONNECT BY LEVEL &lt;= 38) mo          <!-- 최근 37개월 (운영 최대 36개월) -->
+                    ON mo.YM >= TRUNC(g.STARTED_AT, 'MM')
+                 WHERE g.STATUS = 'ACTIVE'
+                   AND g.STARTED_AT IS NOT NULL
+               ) d
+         WHERE d.DUE_DATE >= TRUNC(d.STARTED_AT)                         -- ①
+           AND d.DUE_DATE >= TRUNC(d.JOINED_AT)                          -- ②
+           AND d.DUE_DATE &lt; ADD_MONTHS(TRUNC(d.STARTED_AT), d.MONTHS)   -- ③
+           AND NOT EXISTS (SELECT 1 FROM PAYMENT_PROOF p
+                            WHERE p.GROUP_ID = d.GROUP_ID
+                              AND p.MEMBER_ID = d.MEMBER_ID
+                              AND p.PAY_MONTH = d.PAY_MONTH
+                              AND p.STATUS = 'CONFIRMED')
+    </sql>
+
+    <select id="findNewOverdueTargets" resultType="com.moava.overdue.dto.OverdueTargetDto">
+        SELECT u.*
+          FROM (<include refid="unpaidDues"/>) u
+         WHERE u.ELAPSED_DAYS >= #{minDays}
+           AND NOT EXISTS (SELECT 1 FROM OVERDUE_CASE o
+                            WHERE o.GROUP_ID = u.GROUP_ID
+                              AND o.MEMBER_ID = u.MEMBER_ID
+                              AND o.PAY_MONTH = u.PAY_MONTH)
+         ORDER BY u.GROUP_ID, u.MEMBER_ID, u.PAY_MONTH
+    </select>
+
+    <select id="findUnpaidOnDay" resultType="com.moava.overdue.dto.OverdueTargetDto">
+        SELECT u.*
+          FROM (<include refid="unpaidDues"/>) u
+         WHERE u.ELAPSED_DAYS = #{days}
+         ORDER BY u.GROUP_ID, u.MEMBER_ID
+    </select>
+
+    <!-- 납입일 3일 전 안내(PAY_DUE_3D): 그 달 증빙을 아직 안 올린 회원만 (승인은 unpaidDues에서, 대기는 여기서 제외) -->
+    <select id="findDueNoticeTargets" resultType="com.moava.overdue.dto.OverdueTargetDto">
+        SELECT u.*
+        FROM (<include refid="unpaidDues"/>) u
+        WHERE u.ELAPSED_DAYS = 0 - #{daysBefore}
+        AND NOT EXISTS (SELECT 1 FROM PAYMENT_PROOF p
+        WHERE p.GROUP_ID = u.GROUP_ID
+        AND p.MEMBER_ID = u.MEMBER_ID
+        AND p.PAY_MONTH = u.PAY_MONTH
+        AND p.STATUS = 'PENDING')
+        ORDER BY u.GROUP_ID, u.MEMBER_ID
+    </select>
+
+    <!-- 미납 건 저장. 관리자 알림은 같은 트랜잭션에서 바로 보내므로 ADMIN_NOTIFIED_AT도 함께 기록 -->
+    <insert id="insertOverdueCase" parameterType="com.moava.overdue.dto.OverdueTargetDto">
+        <selectKey keyProperty="overdueCaseId" resultType="long" order="BEFORE">
+            SELECT SEQ_OVERDUE_CASE.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO OVERDUE_CASE (
+            OVERDUE_CASE_ID, GROUP_ID, MEMBER_ID, PAY_MONTH, DUE_DATE, STATUS, ADMIN_NOTIFIED_AT
+        ) VALUES (
+            #{overdueCaseId}, #{groupId}, #{memberId}, #{payMonth}, #{dueDate}, 'DETECTED', SYSDATE
+        )
+    </insert>
+
+    <!-- 감사 로그: 배치 실행이라 ACTOR_MEMBER_ID·ACTOR_ADMIN_ID 모두 NULL (DDL: ACTOR_* NULL = 배치) -->
+    <insert id="insertAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID, GROUP_ID, TARGET_MEMBER_ID, EVENT_TYPE, DESCRIPTION
+        ) VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{targetMemberId}, #{eventType}, #{description}
+        )
+    </insert>
+
+    <!-- A06 미납 건 조회 공통 (목록·조치 대상 1건). 경과일은 컬럼 없이 조회 시 계산 (DDL: TRUNC(SYSDATE) - DUE_DATE)
+     회원 채팅 제한 여부는 GYE_MEMBER에서 (탈퇴 등으로 행이 없어도 미납 건은 보이도록 LEFT JOIN) -->
+    <sql id="overdueCaseSelect">
+        SELECT o.OVERDUE_CASE_ID, o.GROUP_ID, g.TITLE AS GROUP_TITLE,
+        o.MEMBER_ID, mb.NAME AS MEMBER_NAME,
+        o.PAY_MONTH, o.DUE_DATE, TRUNC(SYSDATE) - o.DUE_DATE AS ELAPSED_DAYS,
+        o.STATUS, g.OVERDUE_POLICY, gm.CHAT_RESTRICTED_YN, o.WARNED_AT, o.RESOLVED_AT
+        FROM OVERDUE_CASE o
+        JOIN GYE_GROUP g       ON g.GROUP_ID = o.GROUP_ID
+        JOIN MEMBER mb         ON mb.MEMBER_ID = o.MEMBER_ID
+        LEFT JOIN GYE_MEMBER gm ON gm.GROUP_ID = o.GROUP_ID AND gm.MEMBER_ID = o.MEMBER_ID
+    </sql>
+
+    <!-- A06 관리자 미납 목록 — status: OPEN(미해소) / RESOLVED(해소) / ALL -->
+    <select id="findOverdueCases" resultType="com.moava.overdue.dto.OverdueCaseDto">
+        <include refid="overdueCaseSelect"/>
+        <where>
+            <if test="status == 'OPEN'">o.STATUS &lt;&gt; 'RESOLVED'</if>
+            <if test="status == 'RESOLVED'">o.STATUS = 'RESOLVED'</if>
+        </where>
+        ORDER BY o.DUE_DATE, o.GROUP_ID, o.MEMBER_ID
+    </select>
+
+    <!-- 조치 대상 1건 — 미납 건 행을 잠금 (증빙 승인의 RESOLVED 처리와 동시에 바뀌지 않게, 조치 트랜잭션 끝까지 유지) -->
+    <select id="findOverdueCaseById" resultType="com.moava.overdue.dto.OverdueCaseDto">
+        <include refid="overdueCaseSelect"/>
+        WHERE o.OVERDUE_CASE_ID = #{overdueCaseId}
+        FOR UPDATE OF o.OVERDUE_CASE_ID
+    </select>
+
+    <!-- 경고: DETECTED일 때만 (동시에 두 관리자가 눌러도 한 번만 성공) -->
+    <update id="updateCaseWarned">
+        UPDATE OVERDUE_CASE
+        SET STATUS = 'WARNED', WARNED_AT = SYSDATE
+        WHERE OVERDUE_CASE_ID = #{overdueCaseId}
+        AND STATUS = 'DETECTED'
+    </update>
+
+    <!-- 채팅 제한: DETECTED·WARNED → RESTRICTED -->
+    <update id="updateCaseRestricted">
+        UPDATE OVERDUE_CASE
+        SET STATUS = 'RESTRICTED'
+        WHERE OVERDUE_CASE_ID = #{overdueCaseId}
+        AND STATUS IN ('DETECTED', 'WARNED')
+    </update>
+
+    <!-- 회원 채팅 제한 여부: 지금 값이 from인 ACTIVE 회원만 to로 -->
+    <update id="updateChatRestricted">
+        UPDATE GYE_MEMBER
+        SET CHAT_RESTRICTED_YN = #{to}
+        WHERE GROUP_ID = #{groupId}
+        AND MEMBER_ID = #{memberId}
+        AND STATUS = 'ACTIVE'
+        AND CHAT_RESTRICTED_YN = #{from}
+    </update>
+
+    <select id="nextSanctionId" resultType="long">
+        SELECT SEQ_SANCTION.NEXTVAL FROM DUAL
+    </select>
+
+    <!-- 관리자 제재 이력: ISSUED_ADMIN_ID만 채움 (CK_SANCTION_2: 모임장·관리자 중 하나만) -->
+    <insert id="insertSanction">
+        INSERT INTO SANCTION (
+        SANCTION_ID, SANCTION_TYPE, MEMBER_ID, GROUP_ID, ISSUED_ADMIN_ID, REASON
+        ) VALUES (
+        #{sanctionId}, #{sanctionType}, #{memberId}, #{groupId}, #{adminId}, #{reason}
+        )
+    </insert>
+
+    <!-- 관리자 감사 로그: ACTOR_ADMIN_ID만 채움 (CK_AUDIT_LOG_1: 회원·관리자 중 하나만) -->
+    <insert id="insertAdminAuditLog">
+        INSERT INTO AUDIT_LOG (
+        AUDIT_LOG_ID, GROUP_ID, ACTOR_ADMIN_ID, TARGET_MEMBER_ID, EVENT_TYPE, DESCRIPTION
+        ) VALUES (
+        SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{adminId}, #{targetMemberId}, #{eventType}, #{description}
+        )
+    </insert>
+
+</mapper>
