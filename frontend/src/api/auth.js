@@ -177,79 +177,57 @@ export async function updateAccount(f) {
     fail('로그인이 필요합니다.');
   }
 
-  if (u.source === 'SERVER') {
-    fail('회원정보 수정은 아직 준비 중이에요.');
+  if (u.source !== 'SERVER') {
+    fail('서버 회원 정보만 수정할 수 있습니다.');
   }
 
-  if (
-    db.members.some(
-      x => x.id !== u.id && x.email === f.email
-    )
-  ) {
-    fail('이미 사용 중인 이메일입니다.');
-  }
-
-  for (const k of [
-    'name',
-    'email',
-    'phone',
-    'regionSido',
-    'regionSigungu'
-  ]) {
-    u[k] = String(f[k]).trim();
-  }
-
-  audit('내 정보 수정', null, u.name);
-
+  const updatedUser = await apiFetch('/api/auth/me', {
+    method: 'PUT',
+    body: JSON.stringify({
+      name:f.name.trim(),
+      email: f.email.trim(),
+      phone: f.phone.trim(),
+      regionSido: f.regionSido.trim(),
+      regionSigungu: f.regionSigungu.trim()
+    })
+  });
+  setServerMember(updatedUser);
   save();
+  return updatedUser;
 }
 
 // ========================================
 // 8. 회원 탈퇴 (서버 API 없음 → 화면에서 "준비 중")
 // ========================================
 
-export async function withdrawAccount() {
+export async function withdrawAccount(password) {
   const u = currentUser();
 
   if (!u) {
     fail('로그인이 필요합니다.');
   }
 
-  if (u.source === 'SERVER') {
-    fail('회원 탈퇴는 아직 준비 중이에요.');
+  if (u.source !== 'SERVER') {
+    fail('서버 회원만 탈퇴할 수 있습니다.');
   }
 
-  if (
-    db.groups.some(
-      g => leader(g) && !isEnded(g)
-    )
-  ) {
-    fail(
-      '모임장인 모임이 있습니다. 승계 또는 해산 후 탈퇴할 수 있어요.'
-    );
+  if(!password || !password.trim()){
+    fail('탈퇴를 위해 비밀번호를 입력해주세요.');
   }
 
-  if (db.groups.some(activeJoined)) {
-    fail(
-      '참여 중인 모임이 있습니다. 중도 탈퇴 절차를 먼저 완료해 주세요.'
-    );
-  }
-
-  Object.assign(u, {
-    status: 'WITHDRAWN',
-    withdrawnAt: nowText(),
-    email: null,
-    phone: '',
-    name: '탈퇴회원'
+  await apiFetch('/api/auth/me', {
+    method: 'DELETE',
+    body: JSON.stringify({
+      password: password
+    })
   });
-
-  audit('회원 탈퇴', null, '익명화 처리');
-
   clearAccessToken();
-
   db.session = null;
+  clearFinance();
 
   save();
+
+  return true;
 }
 
 // ========================================
