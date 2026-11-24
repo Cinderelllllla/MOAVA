@@ -42,7 +42,10 @@ public class SecurityConfig {
                     "/assets/**",
                     "/favicon.ico",
                     //test용 API
-                    "/api/test"
+                    "/api/test",
+                    // F34 채팅 웹소켓 연결. 브라우저는 여기에 토큰 헤더를 못 붙이므로
+                    // 로그인 확인은 com.moava.chat.config.ChatChannelInterceptor 가 STOMP CONNECT 때 한다.
+                    "/ws/**"
                 ).permitAll()
                 .requestMatchers(
                     "/api/auth/signup",
