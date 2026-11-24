@@ -7,7 +7,6 @@ import com.moava.group.create.mapper.GroupJoinRequestMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.moava.common.util.NameMasker;
 import com.moava.notification.common.domain.NotifType;
 import com.moava.notification.common.service.NotificationService;
 
@@ -149,7 +148,7 @@ public class GroupJoinRequestService {
                 Map.of(
                         "groupId", groupId,
                         "group", String.valueOf(group.get("TITLE")),
-                        "member", NameMasker.mask(applicantName)
+                        "member", applicantName != null ? applicantName : "회원"
                 )
         );
 

@@ -52,8 +52,8 @@ public class GroupInviteService {
                 );
 
         if (inviteCode == null) {
-            throw new IllegalStateException(
-                    "초대 링크를 조회할 수 없습니다."
+            throw new SecurityException(
+                    "초대 링크를 조회할 권한이 없거나 조회할 수 없는 모임입니다."
             );
         }
 
