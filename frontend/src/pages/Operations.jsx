@@ -62,7 +62,10 @@ function ServerOperations() {
           <h2>모임 정보</h2>
           <p>{g.description || '모임 소개가 등록되지 않았습니다.'}</p>
           <p className="muted mini">목적 {groups.purposeLabel(g.purpose)} · 가정 이율 연 {g.assumedRate ?? '-'}%</p>
-          <div className="actions"><button className="btn primary" onClick={() => nav(`/evidence?groupId=${g.groupId}`)}>납입 증빙 확인 →</button></div>
+          <div className="actions">
+            <button className="btn primary" onClick={() => nav(`/evidence?groupId=${g.groupId}`)}>납입 증빙 확인 →</button>
+            <button className="btn soft" onClick={() => nav(`/procedures?groupId=${g.groupId}`)}>모임 절차 →</button>
+          </div>
           {/* TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거 — 가입 승인·채팅·계좌 변경·초대코드 (아래 MockOperations 참고) */}
           <div className="info" style={{ marginTop: 12 }}>가입 승인·채팅·계좌 변경·초대코드 관리는 아직 준비 중이에요.</div>
         </Card></div>
