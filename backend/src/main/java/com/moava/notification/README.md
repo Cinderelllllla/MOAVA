@@ -214,5 +214,5 @@ backend/src/main/resources/mapper/notification/common/
 - [ ] 프론트 관리자 로그인 연결 후 관리자 알림 화면("준비 중") 실제 API 연결
 - [x] SMS 규칙 반영 — 자동 미납 안내(`PAY_OVERDUE`) SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 추가 (코드표 v3.1)
 - [x] 배치: 오래된 알림 정리(읽음 14일·안 읽음 30일)
-- [ ] 배치: 납입 3일 전 (`PAY_DUE_3D`) — 미납 안내(`PAY_OVERDUE`)·관리자 알림(`OVERDUE_5D`)은 F26 미납 감지 배치(`overdue/OverdueDetectService`)가 담당
+- [ ] 납입 3일 전(`PAY_DUE_3D`)·미납 안내(`PAY_OVERDUE`)·관리자 알림(`OVERDUE_5D`) — 모두 F26 미납 감지 배치(`overdue/OverdueDetectService`, 담당 조서현)가 발송
 - [ ] 2차: SOLAPI SMS 발송 (`PHONE_ENC`가 NULL인 탈퇴 회원은 건너뜀)
