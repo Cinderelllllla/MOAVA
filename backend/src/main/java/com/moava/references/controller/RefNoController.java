@@ -7,11 +7,8 @@ import com.moava.references.dto.RefProofDto;
 import com.moava.references.service.RefNoService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -74,31 +71,6 @@ public class RefNoController {
      */
     private static Long loginAdminId(Authentication authentication) {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "관리자 로그인 연동 전입니다.");
-    }
-
-    // ---------- 오류 응답 (이 컨트롤러에서 난 예외만 처리) ----------
-
-    /** Service의 ResponseStatusException → 명세 §2 오류 형식 */
-    @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<ApiResponse.Error> handle(ResponseStatusException e) {
-        String code = switch (e.getStatusCode().value()) {
-            case 400 -> "INVALID_REQUEST";
-            case 401 -> "UNAUTHORIZED";
-            case 403 -> "FORBIDDEN";
-            case 404 -> "NOT_FOUND";
-            case 409 -> "INVALID_STATE";
-            default  -> "INTERNAL_ERROR";
-        };
-        String message = e.getReason() != null ? e.getReason() : "요청을 처리할 수 없습니다.";
-        return ResponseEntity.status(e.getStatusCode())
-                .body(ApiResponse.Error.of(code, message, requestId()));
-    }
-
-    /** 경로 값이 숫자가 아니거나 JSON 형식이 깨진 경우 → 400 */
-    @ExceptionHandler({MethodArgumentTypeMismatchException.class, HttpMessageNotReadableException.class})
-    public ResponseEntity<ApiResponse.Error> handleBadRequest(Exception e) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponse.Error.of("INVALID_REQUEST", "요청 형식이 올바르지 않습니다.", requestId()));
     }
 
     private static String requestId() {

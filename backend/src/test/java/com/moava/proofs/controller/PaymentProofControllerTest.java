@@ -55,6 +55,7 @@ class PaymentProofControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(paymentProofController)
+                .setControllerAdvice(new ProofExceptionHandler())             // 밖으로 뺀 오류 처리기 등록
                 .defaultResponseCharacterEncoding(StandardCharsets.UTF_8)   // 한글 메시지가 깨지지 않게
                 .build();
     }
