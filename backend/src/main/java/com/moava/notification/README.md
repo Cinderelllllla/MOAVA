@@ -1,6 +1,6 @@
 # 알림 (Notification) — MOA-40
 
-> 담당: 박기태 · 관련 기능: F35 인앱 알림, F36 SMS · 기준 문서: 알림코드표 v3, API 명세서 v0.5
+> 담당: 박기태 · 관련 기능: F35 인앱 알림, F36 SMS · 기준 문서: 알림코드표 v3.1, API 명세서 v0.5(7.4), 기능명세서 v3.1(F35·F36)
 
 MOAVA의 모든 기능이 **같은 방법으로 알림을 보내고**, 회원·관리자가 **알림함에서 확인**할 수 있게 하는 모듈입니다.
 
@@ -73,11 +73,11 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
         Map.of("group", groupName, "member", NameMasker.mask(memberName), "month", "11월", "days", 5));
 ```
 
-### 알림 코드 21개 (`NotifType`)
+### 알림 코드 22개 (`NotifType`, 코드표 v3.1)
 
 `params`에 아래 **필요한 값**을 모두 넣어야 합니다. 빠지면 `IllegalArgumentException`이 납니다 (개발 중 바로 발견용).
 
-**유저 (11)**
+**유저 (12)**
 
 | 코드 | 언제 | 필요한 값 | 이동 경로 |
 |---|---|---|---|
@@ -85,13 +85,14 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
 | `CONSENT_REQ` | 계좌 변경·모임장 승계·수령 순서·탈퇴 정산 동의 요청 | groupId, group, item, deadline | /procedures?groupId= |
 | `CONSENT_RESULT` | 위 절차 확정·부결·만료 | groupId, item, group, result, detail(없으면 "") | /procedures?groupId= |
 | `PROOF_REVISION` | 증빙 보완 요청 | groupId, group, round, reason | /evidence?groupId= |
-| `PAY_DUE_3D` | 납입일 3일 전 (배치) | groupId, group, month, payDate, amount | /evidence?groupId= |
-| `PAY_OVERDUE` | 미납 1일 차·5일 차 (배치) | groupId, group, month, days, guide | /evidence?groupId= |
+| `PAY_DUE_3D` | 납입일 3일 전 (배치, **SMS**) | groupId, group, month, payDate, amount | /evidence?groupId= |
+| `PAY_OVERDUE` | 미납 1일 차·5일 차 (F26 미납 감지 배치, 인앱만) | groupId, group, month, days, guide | /evidence?groupId= |
+| `OVERDUE_WARNED` | 관리자 미납 경고 조치 (F26·A06, **SMS**) | groupId, group, month | /evidence?groupId= |
 | `SANCTION` | 모임 경고·강제 탈퇴, 가입 제한·해제 | scope(모임명 또는 MOAVA), action | /support |
 | `WITHDRAW_DONE` | 탈퇴 처리 완료 | group | /my-groups |
 | `DISSOLVED` | 해산 승인 (모임 전원) | group | /my-groups |
 | `REPORT_STATUS` | 신고 처리 상태 변경 | status | /support |
-| `RISK_UP` | AI 위험 등급 RISK 전환 | (없음) | /finance |
+| `RISK_UP` | AI 위험 등급 RISK 전환 (**SMS**) | (없음) | /finance |
 
 **유저(모임장) (6)**
 
@@ -113,6 +114,7 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
 | `DISSOLVE_REQUEST` | 해산 신청 | group, reason | /admin/dissolve |
 | `REPORT_RECEIVED` | 신고 접수 | category, group | /admin/support |
 
+> **SMS 대상은 `PAY_DUE_3D`·`RISK_UP`·`OVERDUE_WARNED` 3개뿐입니다** (기능명세서 v3.1 F36, API 명세서 7.4). 자동 감지 배치의 미납 안내(`PAY_OVERDUE`)는 SMS를 보내지 않습니다.
 > 코드표에 없는 알림이 필요하면 담당자(박기태)에게 요청해 주세요. `NotifType`에 추가합니다.
 > 공개 설정 변경 · 운영 규칙 변경 · 곗돈 수령 기록 · 채팅 제한/해제 · 증빙 승인은 **알림을 보내지 않습니다** (채팅방 시스템 메시지 / 화면 표시로 대체, 알림 축소 결정).
 
@@ -182,7 +184,7 @@ API 명세서 v0.5 F35 기준. **회원(S13)·관리자(A07) 공용** — 로그
 ```
 backend/src/main/java/com/moava/
 ├── notification/common/
-│   ├── domain/NotifType.java                  알림 코드 21개 (템플릿·이동 경로·SMS 여부)
+│   ├── domain/NotifType.java                  알림 코드 22개 (템플릿·이동 경로·SMS 여부)
 │   ├── service/NotificationService.java       공통 함수 3개
 │   ├── service/NotificationSmsListener.java   SMS 자리 (커밋 후 @Async, 지금은 로그)
 │   ├── service/NotificationCleanupService.java 오래된 알림 정리 배치 (매일 03:30)
@@ -210,7 +212,7 @@ backend/src/main/resources/mapper/notification/common/
 - [x] JWT 연동 후 임시 헤더 방식 제거 (PR #33)
 - [x] 관리자 JWT(role=ADMIN) 기준 관리자 알림함 API 구분
 - [ ] 프론트 관리자 로그인 연결 후 관리자 알림 화면("준비 중") 실제 API 연결
-- [ ] SMS 규칙 v0.5 반영 — 자동 미납 안내 SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 시 SMS (코드표 v3.1)
+- [x] SMS 규칙 반영 — 자동 미납 안내(`PAY_OVERDUE`) SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 추가 (코드표 v3.1)
 - [x] 배치: 오래된 알림 정리(읽음 14일·안 읽음 30일)
-- [ ] 배치: 납입 3일 전·미납 안내
+- [ ] 납입 3일 전(`PAY_DUE_3D`)·미납 안내(`PAY_OVERDUE`)·관리자 알림(`OVERDUE_5D`) — 모두 F26 미납 감지 배치(`overdue/OverdueDetectService`, 담당 조서현)가 발송
 - [ ] 2차: SOLAPI SMS 발송 (`PHONE_ENC`가 NULL인 탈퇴 회원은 건너뜀)
