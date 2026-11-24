@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.chat.mapper.ChatMapper">
+
+    <!-- 관리자 채팅 제재: 이 회원의 CHAT_RESTRICT / CHAT_RELEASE 중 가장 최근 것 (플랫폼 전체(GROUP_ID NULL) 또는 이 모임 대상) -->
+    <sql id="lastChatSanction">
+        (SELECT MAX(s.SANCTION_TYPE) KEEP (DENSE_RANK LAST ORDER BY s.CREATED_AT, s.SANCTION_ID)
+           FROM SANCTION s
+          WHERE s.MEMBER_ID = #{memberId}
+            AND s.SANCTION_TYPE IN ('CHAT_RESTRICT', 'CHAT_RELEASE')
+            AND (s.GROUP_ID IS NULL OR s.GROUP_ID = g.GROUP_ID))
+    </sql>
+
+    <resultMap id="accessMap" type="com.moava.chat.dto.ChatAccess">
+        <constructor>
+            <arg column="GROUP_STATUS"       javaType="java.lang.String"/>
+            <arg column="MEMBER_STATUS"      javaType="java.lang.String"/>
+            <arg column="CHAT_RESTRICTED_YN" javaType="java.lang.String"/>
+            <arg column="LAST_CHAT_SANCTION" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectAccess" resultMap="accessMap">
+        SELECT g.STATUS              AS GROUP_STATUS,
+               gm.STATUS             AS MEMBER_STATUS,
+               gm.CHAT_RESTRICTED_YN AS CHAT_RESTRICTED_YN,
+               <include refid="lastChatSanction"/> AS LAST_CHAT_SANCTION
+          FROM GYE_GROUP g
+          LEFT JOIN GYE_MEMBER gm
+            ON gm.GROUP_ID = g.GROUP_ID AND gm.MEMBER_ID = #{memberId}
+         WHERE g.GROUP_ID = #{groupId}
+    </select>
+
+    <resultMap id="roomMap" type="com.moava.chat.dto.ChatRoomRow">
+        <constructor>
+            <arg column="GROUP_ID"           javaType="_long"/>
+            <arg column="TITLE"              javaType="java.lang.String"/>
+            <arg column="STATUS"             javaType="java.lang.String"/>
+            <arg column="MEMBER_COUNT"       javaType="_int"/>
+            <arg column="LAST_SENT_AT"       javaType="java.time.LocalDateTime"/>
+            <arg column="CHAT_RESTRICTED_YN" javaType="java.lang.String"/>
+            <arg column="LAST_CHAT_SANCTION" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectRooms" resultMap="roomMap">
+        SELECT g.GROUP_ID,
+               g.TITLE,
+               g.STATUS,
+               (SELECT COUNT(*) FROM GYE_MEMBER x WHERE x.GROUP_ID = g.GROUP_ID AND x.STATUS = 'ACTIVE') AS MEMBER_COUNT,
+               (SELECT MAX(c.SENT_AT) FROM CHAT_MESSAGE c WHERE c.GROUP_ID = g.GROUP_ID)                AS LAST_SENT_AT,
+               gm.CHAT_RESTRICTED_YN,
+               <include refid="lastChatSanction"/> AS LAST_CHAT_SANCTION
+          FROM GYE_MEMBER gm
+          JOIN GYE_GROUP g ON g.GROUP_ID = gm.GROUP_ID
+         WHERE gm.MEMBER_ID = #{memberId}
+           AND gm.STATUS = 'ACTIVE'
+         ORDER BY CASE WHEN g.STATUS = 'DISSOLVED' THEN 1 ELSE 0 END, LAST_SENT_AT DESC NULLS LAST, g.GROUP_ID DESC
+    </select>
+
+    <resultMap id="messageMap" type="com.moava.chat.dto.ChatMessageRow">
+        <constructor>
+            <arg column="MESSAGE_ID"  javaType="_long"/>
+            <arg column="GROUP_ID"    javaType="_long"/>
+            <arg column="MEMBER_ID"   javaType="_long"/>
+            <arg column="SENDER_NAME" javaType="java.lang.String"/>
+            <arg column="BODY_ENC"    javaType="java.lang.String"/>
+            <arg column="KEY_VER"     javaType="_int"/>
+            <arg column="SENT_AT"     javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!-- IX_CHAT_MESSAGE_1 (GROUP_ID, SENT_AT). 메시지 번호는 시퀀스(NOCACHE)라 번호 순 = 보낸 순 -->
+    <select id="selectMessages" resultMap="messageMap">
+        SELECT c.MESSAGE_ID, c.GROUP_ID, c.MEMBER_ID, m.NAME AS SENDER_NAME, c.BODY_ENC, c.KEY_VER, c.SENT_AT
+          FROM CHAT_MESSAGE c
+          JOIN MEMBER m ON m.MEMBER_ID = c.MEMBER_ID
+         WHERE c.GROUP_ID = #{groupId}
+        <if test="beforeId != null">
+           AND c.MESSAGE_ID &lt; #{beforeId}
+        </if>
+         ORDER BY c.MESSAGE_ID DESC
+         FETCH FIRST #{limit} ROWS ONLY
+    </select>
+
+    <select id="nextMessageId" resultType="_long">
+        SELECT SEQ_CHAT_MESSAGE.NEXTVAL FROM DUAL
+    </select>
+
+    <insert id="insertMessage">
+        INSERT INTO CHAT_MESSAGE (MESSAGE_ID, GROUP_ID, MEMBER_ID, BODY_ENC, KEY_VER, SENT_AT)
+        VALUES (#{messageId}, #{groupId}, #{memberId}, #{bodyEnc}, #{keyVer}, #{sentAt})
+    </insert>
+
+    <select id="selectMemberName" resultType="string">
+        SELECT NAME FROM MEMBER WHERE MEMBER_ID = #{memberId}
+    </select>
+
+    <resultMap id="participantMap" type="com.moava.chat.dto.ChatParticipant">
+        <constructor>
+            <arg column="MEMBER_ID" javaType="_long"/>
+            <arg column="NAME"      javaType="java.lang.String"/>
+            <arg column="LEADER"    javaType="_boolean"/>
+            <arg column="JOINED_AT" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 이름·모임장 여부만 조회 (전화번호 등 다른 개인정보는 읽지 않음) -->
+    <select id="selectParticipants" resultMap="participantMap">
+        SELECT gm.MEMBER_ID,
+               m.NAME,
+               CASE WHEN g.OWNER_ID = gm.MEMBER_ID THEN 1 ELSE 0 END AS LEADER,
+               gm.JOINED_AT
+          FROM GYE_MEMBER gm
+          JOIN MEMBER m    ON m.MEMBER_ID = gm.MEMBER_ID
+          JOIN GYE_GROUP g ON g.GROUP_ID = gm.GROUP_ID
+         WHERE gm.GROUP_ID = #{groupId}
+           AND gm.STATUS = 'ACTIVE'
+         ORDER BY LEADER DESC, gm.JOINED_AT, gm.MEMBER_ID
+    </select>
+</mapper>
