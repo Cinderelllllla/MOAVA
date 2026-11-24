@@ -157,4 +157,12 @@ public class CryptoKeyService {
         return bytes;
     }
     
+    public void validateActiveKey(){
+        CryptoKeyRecord activeKey = mapper.findActiveKey();
+
+        if(activeKey == null){
+            throw new IllegalStateException("활성 암호화 키가 없습니다.");
+        }
+        decryptDek(activeKey);
+    }
 }

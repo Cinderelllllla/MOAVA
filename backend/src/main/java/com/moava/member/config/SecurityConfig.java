@@ -6,9 +6,6 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.http.HttpMethod;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -24,11 +21,6 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtFilter;
     public SecurityConfig(JwtAuthenticationFilter jwtFilter) {
         this.jwtFilter = jwtFilter;
-    }
-
-    @Bean 
-    PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
     }
 
     @Bean
@@ -50,20 +42,29 @@ public class SecurityConfig {
                     "/assets/**",
                     "/favicon.ico",
                     //test용 API
-                    "/api/test"
+                    "/api/test",
+                    // F34 채팅 웹소켓 연결. 브라우저는 여기에 토큰 헤더를 못 붙이므로
+                    // 로그인 확인은 com.moava.chat.config.ChatChannelInterceptor 가 STOMP CONNECT 때 한다.
+                    "/ws/**"
                 ).permitAll()
                 .requestMatchers(
                     "/api/auth/signup",
                     "/api/auth/login",
-                    "/api/auth/admin/login"
+                    "/api/auth/admin/login",
+                    "/api/auth/check-email"
                 ).permitAll()
-                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                // F29 관리자 면제는 ADMIN 전용으로 제한하고, 대상 조회는 인증된 회원·관리자에게 허용한다.
-                .requestMatchers(HttpMethod.POST,
-                    "/api/v1/groups/*/withdrawals/*/consent-targets/*/exemption").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.GET,
-                    "/api/v1/groups/*/withdrawals/*/consent-targets").hasAnyRole("ADMIN", "MEMBER")
-                .requestMatchers("/api/v1/groups/**", "/api/groups/**", "/api/auth/me").hasRole("MEMBER")
+                .requestMatchers(
+                    "/api/admin/**"
+                ).hasRole("ADMIN")
+                .requestMatchers(
+                    "/api/member/**"
+                ).hasAnyRole("ADMIN", "MEMBER")
+                .requestMatchers(
+                    "/api/auth/me",
+                    "/api/auth/password"
+                ).hasRole("MEMBER")
+                .requestMatchers("/api/**")
+                .authenticated()
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
             .build();
