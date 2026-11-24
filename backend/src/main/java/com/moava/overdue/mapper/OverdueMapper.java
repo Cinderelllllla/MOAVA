@@ -31,4 +31,36 @@ public interface OverdueMapper {
     // ACTIVE 관리자인지 (1이면 관리자)
     int countActiveAdmin(@Param("adminId") Long adminId);
 
+    // 조치 대상 미납 건 1건 (모임 미납 정책·회원 채팅 제한 여부 포함)
+    OverdueCaseDto findOverdueCaseById(@Param("overdueCaseId") Long overdueCaseId);
+
+    // 경고: DETECTED일 때만 WARNED로 (0건이면 이미 경고했거나 상태가 바뀜)
+    int updateCaseWarned(@Param("overdueCaseId") Long overdueCaseId);
+
+    // 채팅 제한: DETECTED·WARNED → RESTRICTED (이미 RESTRICTED면 0건, 그대로 둠)
+    int updateCaseRestricted(@Param("overdueCaseId") Long overdueCaseId);
+
+    // 회원 채팅 제한 여부 변경 — 지금 값이 from일 때만 to로 (0건이면 이미 그 상태이거나 모임 회원이 아님)
+    int updateChatRestricted(@Param("groupId") Long groupId,
+                             @Param("memberId") Long memberId,
+                             @Param("from") String from,
+                             @Param("to") String to);
+
+    // 제재 이력 번호 미리 받기 (감사 로그에 'SANCTION #번호'로 남기려고)
+    Long nextSanctionId();
+
+    // 관리자 제재 이력 (CHAT_RESTRICT / CHAT_RELEASE / ORDER_REVIEW)
+    int insertSanction(@Param("sanctionId") Long sanctionId,
+                       @Param("sanctionType") String sanctionType,
+                       @Param("memberId") Long memberId,
+                       @Param("groupId") Long groupId,
+                       @Param("adminId") Long adminId,
+                       @Param("reason") String reason);
+
+    // 관리자 행위 감사 로그 (ACTOR_ADMIN_ID 기록)
+    int insertAdminAuditLog(@Param("groupId") Long groupId,
+                            @Param("adminId") Long adminId,
+                            @Param("targetMemberId") Long targetMemberId,
+                            @Param("eventType") String eventType,
+                            @Param("description") String description);
 }

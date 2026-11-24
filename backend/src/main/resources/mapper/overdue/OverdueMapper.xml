@@ -81,15 +81,22 @@
         )
     </insert>
 
-    <!-- A06 관리자 미납 목록. 경과일은 컬럼 없이 조회 시 계산 (DDL: TRUNC(SYSDATE) - DUE_DATE) -->
-    <select id="findOverdueCases" resultType="com.moava.overdue.dto.OverdueCaseDto">
+    <!-- A06 미납 건 조회 공통 (목록·조치 대상 1건). 경과일은 컬럼 없이 조회 시 계산 (DDL: TRUNC(SYSDATE) - DUE_DATE)
+     회원 채팅 제한 여부는 GYE_MEMBER에서 (탈퇴 등으로 행이 없어도 미납 건은 보이도록 LEFT JOIN) -->
+    <sql id="overdueCaseSelect">
         SELECT o.OVERDUE_CASE_ID, o.GROUP_ID, g.TITLE AS GROUP_TITLE,
         o.MEMBER_ID, mb.NAME AS MEMBER_NAME,
         o.PAY_MONTH, o.DUE_DATE, TRUNC(SYSDATE) - o.DUE_DATE AS ELAPSED_DAYS,
-        o.STATUS, g.OVERDUE_POLICY, o.WARNED_AT, o.RESOLVED_AT
+        o.STATUS, g.OVERDUE_POLICY, gm.CHAT_RESTRICTED_YN, o.WARNED_AT, o.RESOLVED_AT
         FROM OVERDUE_CASE o
-        JOIN GYE_GROUP g ON g.GROUP_ID = o.GROUP_ID
-        JOIN MEMBER mb   ON mb.MEMBER_ID = o.MEMBER_ID
+        JOIN GYE_GROUP g       ON g.GROUP_ID = o.GROUP_ID
+        JOIN MEMBER mb         ON mb.MEMBER_ID = o.MEMBER_ID
+        LEFT JOIN GYE_MEMBER gm ON gm.GROUP_ID = o.GROUP_ID AND gm.MEMBER_ID = o.MEMBER_ID
+    </sql>
+
+    <!-- A06 관리자 미납 목록 — status: OPEN(미해소) / RESOLVED(해소) / ALL -->
+    <select id="findOverdueCases" resultType="com.moava.overdue.dto.OverdueCaseDto">
+        <include refid="overdueCaseSelect"/>
         <where>
             <if test="status == 'OPEN'">o.STATUS &lt;&gt; 'RESOLVED'</if>
             <if test="status == 'RESOLVED'">o.STATUS = 'RESOLVED'</if>
@@ -97,7 +104,57 @@
         ORDER BY o.DUE_DATE, o.GROUP_ID, o.MEMBER_ID
     </select>
 
-    <select id="countActiveAdmin" resultType="int">
-        SELECT COUNT(*) FROM ADMIN WHERE ADMIN_ID = #{adminId} AND STATUS = 'ACTIVE'
+    <!-- 조치 대상 1건 -->
+    <select id="findOverdueCaseById" resultType="com.moava.overdue.dto.OverdueCaseDto">
+        <include refid="overdueCaseSelect"/>
+        WHERE o.OVERDUE_CASE_ID = #{overdueCaseId}
     </select>
+
+    <!-- 경고: DETECTED일 때만 (동시에 두 관리자가 눌러도 한 번만 성공) -->
+    <update id="updateCaseWarned">
+        UPDATE OVERDUE_CASE
+        SET STATUS = 'WARNED', WARNED_AT = SYSDATE
+        WHERE OVERDUE_CASE_ID = #{overdueCaseId}
+        AND STATUS = 'DETECTED'
+    </update>
+
+    <!-- 채팅 제한: DETECTED·WARNED → RESTRICTED -->
+    <update id="updateCaseRestricted">
+        UPDATE OVERDUE_CASE
+        SET STATUS = 'RESTRICTED'
+        WHERE OVERDUE_CASE_ID = #{overdueCaseId}
+        AND STATUS IN ('DETECTED', 'WARNED')
+    </update>
+
+    <!-- 회원 채팅 제한 여부: 지금 값이 from인 ACTIVE 회원만 to로 -->
+    <update id="updateChatRestricted">
+        UPDATE GYE_MEMBER
+        SET CHAT_RESTRICTED_YN = #{to}
+        WHERE GROUP_ID = #{groupId}
+        AND MEMBER_ID = #{memberId}
+        AND STATUS = 'ACTIVE'
+        AND CHAT_RESTRICTED_YN = #{from}
+    </update>
+
+    <select id="nextSanctionId" resultType="long">
+        SELECT SEQ_SANCTION.NEXTVAL FROM DUAL
+    </select>
+
+    <!-- 관리자 제재 이력: ISSUED_ADMIN_ID만 채움 (CK_SANCTION_2: 모임장·관리자 중 하나만) -->
+    <insert id="insertSanction">
+        INSERT INTO SANCTION (
+        SANCTION_ID, SANCTION_TYPE, MEMBER_ID, GROUP_ID, ISSUED_ADMIN_ID, REASON
+        ) VALUES (
+        #{sanctionId}, #{sanctionType}, #{memberId}, #{groupId}, #{adminId}, #{reason}
+        )
+    </insert>
+
+    <!-- 관리자 감사 로그: ACTOR_ADMIN_ID만 채움 (CK_AUDIT_LOG_1: 회원·관리자 중 하나만) -->
+    <insert id="insertAdminAuditLog">
+        INSERT INTO AUDIT_LOG (
+        AUDIT_LOG_ID, GROUP_ID, ACTOR_ADMIN_ID, TARGET_MEMBER_ID, EVENT_TYPE, DESCRIPTION
+        ) VALUES (
+        SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, #{adminId}, #{targetMemberId}, #{eventType}, #{description}
+        )
+    </insert>
 </mapper>
