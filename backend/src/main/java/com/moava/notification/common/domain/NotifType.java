@@ -36,7 +36,7 @@ public enum NotifType {
     RISK_UP(Receiver.MEMBER, "납입 부담 신호가 높아졌어요", "최근 금융 정보 기준으로 납입 부담이 커졌어요. 추천 납입액을 다시 확인해 보세요.", "/finance", true),
 
     // ── 유저(모임장) ──────────────────────────────────────────
-    JOIN_REQUEST(Receiver.LEADER, "새 가입 신청이 있어요", "{member}님이 {group} 가입을 신청했어요. 7일 안에 처리하지 않으면 자동 만료돼요.", "/operations?groupId={groupId}", false),
+    JOIN_REQUEST(Receiver.LEADER, "새 가입 신청이 있어요", "{member}님이 {group} 가입을 신청했어요. 7일 안에 처리하지 않으면 자동 만료돼요.", "/my-groups?groupId={groupId}&tab=joinRequests", false),
     /** 같은 모임 하루 1건 */
     PROOF_PENDING(Receiver.LEADER, "확인할 납입 증빙이 있어요", "{group}에 새 납입 증빙이 올라왔어요. 증빙 화면에서 확인해 주세요.", "/evidence?groupId={groupId}", false),
     /** stage: 신청 / 수정 */
