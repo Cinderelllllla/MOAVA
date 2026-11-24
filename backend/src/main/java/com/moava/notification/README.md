@@ -159,7 +159,7 @@ API 명세서 v0.5 F35 기준. **회원(S13)·관리자(A07) 공용** — 로그
 - 삭제는 실제 DELETE가 아니라 `DELETED_YN='Y'` (숨김)
 - 남의 알림 ID → 읽음은 404, 숨김은 해당 건 무시
 
-**받는 사람 판별 (JWT)**: 로그인 토큰(JWT)의 subject(MEMBER_ID)로 받는 사람을 정합니다. 요청 헤더나 파라미터로 회원 ID를 받지 않으며, 로그인하지 않은 요청은 401입니다. `NotificationController.resolveReceiver()` 참고. 관리자 알림함은 관리자 전용 JWT claim이 생긴 뒤 연결합니다(현재 화면에서는 "준비 중" 안내).
+**받는 사람 판별 (JWT)**: 로그인 토큰(JWT)의 subject로 받는 사람을 정합니다. 토큰 권한이 `ROLE_ADMIN`(관리자 로그인, role=ADMIN)이면 관리자 알림함(`ADMIN_ID`), 그 외는 회원 알림함(`MEMBER_ID`)입니다. 회원·관리자 번호가 겹칠 수 있어 반드시 권한으로 구분합니다. 요청 헤더나 파라미터로 ID를 받지 않으며, 로그인하지 않은 요청은 401입니다. `NotificationController.resolveReceiver()` 참고.
 
 ### 오래된 알림 정리 배치
 
@@ -208,7 +208,8 @@ backend/src/main/resources/mapper/notification/common/
 
 - [x] 알림함 API PR (PR #17, #33)
 - [x] JWT 연동 후 임시 헤더 방식 제거 (PR #33)
-- [ ] 관리자 JWT 로그인(관리자 전용 claim) 후 관리자 알림함 연결
+- [x] 관리자 JWT(role=ADMIN) 기준 관리자 알림함 API 구분
+- [ ] 프론트 관리자 로그인 연결 후 관리자 알림 화면("준비 중") 실제 API 연결
 - [ ] SMS 규칙 v0.5 반영 — 자동 미납 안내 SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 시 SMS (코드표 v3.1)
 - [x] 배치: 오래된 알림 정리(읽음 14일·안 읽음 30일)
 - [ ] 배치: 납입 3일 전·미납 안내
