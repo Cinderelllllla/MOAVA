@@ -1,81 +1,87 @@
--- 1. 모의 은행: 사용자 인증서 (공개키만 저장)
-CREATE TABLE MOCK_CERTIFICATES (
-                                   CERT_ID        NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                                   USER_ID        NUMBER        NOT NULL,
-                                   SERIAL_NO      VARCHAR2(64)  NOT NULL UNIQUE,
-                                   PUBLIC_KEY     CLOB          NOT NULL, -- SPKI Base64
-                                   STATUS         VARCHAR2(20)  DEFAULT 'ACTIVE' NOT NULL, -- ACTIVE, REVOKED
-                                   ISSUED_AT      TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
-                                   EXPIRES_AT     TIMESTAMP     NOT NULL
-);
+-- =====================================================================
+-- [KFTC v2.0 모의 오픈뱅킹 독립 가상 원장 및 OAuth 2.0 DDL]
+-- Oracle 21c XE 기준. 기존 MOAVA 테이블(01_moava_ddl.sql)과 완전 분리
+-- =====================================================================
 
--- 2. 모의 은행: 1회용 서명 Challenge (재전송 공격 방지)
-CREATE TABLE MOCK_CHALLENGES (
-                                 NONCE          VARCHAR2(64)  PRIMARY KEY,
-                                 USER_ID        NUMBER        NOT NULL,
-                                 ACCOUNT_NO     VARCHAR2(30)  NOT NULL,
-                                 SCOPE          VARCHAR2(30)  NOT NULL, -- CREDIT_ONCE, GROUP_LEDGER_READ
-                                 CONSENT_TEXT   VARCHAR2(500) NOT NULL,
-                                 USED_YN        CHAR(1)       DEFAULT 'N' NOT NULL,
-                                 EXPIRES_AT     TIMESTAMP     NOT NULL,
-                                 CONSTRAINT CK_MOCK_CHALLENGE_SCOPE CHECK (SCOPE IN ('CREDIT_ONCE', 'GROUP_LEDGER_READ')),
-                                 CONSTRAINT CK_MOCK_CHALLENGE_USED CHECK (USED_YN IN ('Y', 'N'))
+-- 1. 모의 금결원 계좌 마스터 (핀테크이용번호 기준 원장)
+CREATE TABLE MOCK_KFTC_ACCOUNT (
+    FINTECH_USE_NUM  VARCHAR2(24)  NOT NULL,
+    BANK_CODE        VARCHAR2(10)  NOT NULL, -- 예: 004(국민), 088(신한), 090(카카오), 099(모의)
+    BANK_NAME        VARCHAR2(50)  NOT NULL,
+    ACCOUNT_NO       VARCHAR2(30)  NOT NULL,
+    HOLDER_NAME      VARCHAR2(50)  NOT NULL, -- 예금주 실명
+    USER_SEQ_NO      VARCHAR2(20)  NOT NULL, -- 오픈뱅킹 사용자 일련번호
+    BALANCE          NUMBER(15)    DEFAULT 0 NOT NULL,
+    LEADER_YN        CHAR(1)       DEFAULT 'N' NOT NULL, -- Y: 모임장 수취 허용 계좌, N: 일반 회원 계좌
+    STATUS           VARCHAR2(20)  DEFAULT 'ACTIVE' NOT NULL, -- ACTIVE, FROZEN, CLOSED
+    CREATED_AT       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    UPDATED_AT       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT PK_MOCK_KFTC_ACCOUNT PRIMARY KEY (FINTECH_USE_NUM),
+    CONSTRAINT UK_MOCK_KFTC_ACC_NO UNIQUE (BANK_CODE, ACCOUNT_NO),
+    CONSTRAINT CK_MOCK_KFTC_ACC_BAL CHECK (BALANCE >= 0),
+    CONSTRAINT CK_MOCK_KFTC_ACC_LEADER CHECK (LEADER_YN IN ('Y', 'N')),
+    CONSTRAINT CK_MOCK_KFTC_ACC_STATUS CHECK (STATUS IN ('ACTIVE', 'FROZEN', 'CLOSED'))
 );
+COMMENT ON TABLE MOCK_KFTC_ACCOUNT IS '모의 금융결제원 오픈뱅킹 계좌 마스터 원장';
+COMMENT ON COLUMN MOCK_KFTC_ACCOUNT.FINTECH_USE_NUM IS '24자리 핀테크이용번호';
+COMMENT ON COLUMN MOCK_KFTC_ACCOUNT.BANK_CODE IS '금융결제원 표준 은행코드';
+COMMENT ON COLUMN MOCK_KFTC_ACCOUNT.HOLDER_NAME IS '예금주 실명';
+COMMENT ON COLUMN MOCK_KFTC_ACCOUNT.BALANCE IS '현재 계좌 잔액 (원, 0 이상)';
+COMMENT ON COLUMN MOCK_KFTC_ACCOUNT.LEADER_YN IS '모임장 수취 가능 계좌 여부 (Y/N)';
 
--- 3. 모의 은행: 용도별 접근 토큰 (핵심 제어 테이블)
-CREATE TABLE MOCK_CONSENT_TOKENS (
-                                     TOKEN_ID        VARCHAR2(64)  PRIMARY KEY,
-                                     USER_ID         NUMBER        NOT NULL,
-                                     ACCOUNT_NO      VARCHAR2(30)  NOT NULL,
-                                     SCOPE           VARCHAR2(30)  NOT NULL, -- CREDIT_ONCE, GROUP_LEDGER_READ
-                                     VALID_FROM      TIMESTAMP     NULL,     -- 모임장 계좌일 때만 세팅 (활동 시작 시점)
-                                     USED_YN         CHAR(1)       DEFAULT 'N' NOT NULL, -- CREDIT_ONCE 소진 여부
-                                     SIGNATURE_HASH  VARCHAR2(128) NOT NULL, -- 감사 추적용 전자서명 해시
-                                     CREATED_AT      TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
-                                     EXPIRES_AT      TIMESTAMP     NOT NULL,
-                                     CONSTRAINT CK_MOCK_TOKEN_SCOPE CHECK (SCOPE IN ('CREDIT_ONCE', 'GROUP_LEDGER_READ')),
-                                     CONSTRAINT CK_MOCK_TOKEN_USED CHECK (USED_YN IN ('Y', 'N'))
+-- 2. 모의 금결원 거래내역 원장 (은행거래고유번호 멱등성 보장)
+CREATE TABLE MOCK_KFTC_TRANSACTION (
+    TX_ID                 NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    BANK_TRAN_ID          VARCHAR2(20)  NOT NULL, -- 이용기관코드(10) + U + 고유난수(9)
+    FINTECH_USE_NUM       VARCHAR2(24)  NOT NULL,
+    INOUT_TYPE            VARCHAR2(10)  NOT NULL, -- 입금 / 출금
+    TRAN_AMT              NUMBER(15)    NOT NULL,
+    AFTER_BALANCE_AMT     NUMBER(15)    NOT NULL,
+    PRINT_CONTENT         VARCHAR2(100) NOT NULL, -- 통장 적요(인자 내역)
+    COUNTERPARTY_NAME     VARCHAR2(50)  NOT NULL,
+    COUNTERPARTY_FIN_NUM  VARCHAR2(24)  NULL,
+    BRANCH_NAME           VARCHAR2(50)  DEFAULT '모아바모의점' NOT NULL,
+    TRAN_AT               TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT FK_MOCK_KFTC_TX_ACC FOREIGN KEY (FINTECH_USE_NUM) REFERENCES MOCK_KFTC_ACCOUNT (FINTECH_USE_NUM),
+    CONSTRAINT UK_MOCK_KFTC_TX_IDEMPOTENT UNIQUE (BANK_TRAN_ID, INOUT_TYPE),
+    CONSTRAINT CK_MOCK_KFTC_TX_INOUT CHECK (INOUT_TYPE IN ('입금', '출금')),
+    CONSTRAINT CK_MOCK_KFTC_TX_AMT CHECK (TRAN_AMT > 0),
+    CONSTRAINT CK_MOCK_KFTC_TX_BAL CHECK (AFTER_BALANCE_AMT >= 0)
 );
+COMMENT ON TABLE MOCK_KFTC_TRANSACTION IS '모의 금융결제원 오픈뱅킹 거래내역 원장';
+COMMENT ON COLUMN MOCK_KFTC_TRANSACTION.BANK_TRAN_ID IS '20자리 은행거래고유번호 (이중 출금 방지 멱등성 키)';
+COMMENT ON COLUMN MOCK_KFTC_TRANSACTION.INOUT_TYPE IS '입출금 구분 (입금/출금)';
+COMMENT ON COLUMN MOCK_KFTC_TRANSACTION.PRINT_CONTENT IS '통장 적요 (인자 내역)';
 
--- 4. 모의 은행: 원장 거래내역 (더미 데이터 적재용)
-CREATE TABLE MOCK_TRANSACTIONS (
-                                   BANK_TX_ID     VARCHAR2(64)  PRIMARY KEY,
-                                   ACCOUNT_NO     VARCHAR2(30)  NOT NULL,
-                                   TX_TYPE        VARCHAR2(10)  NOT NULL, -- DEPOSIT, WITHDRAW
-                                   AMOUNT         NUMBER(15)    NOT NULL,
-                                   BALANCE_AFTER  NUMBER(15)    NOT NULL,
-                                   COUNTERPARTY   VARCHAR2(100) NOT NULL,
-                                   TX_AT          TIMESTAMP     NOT NULL,
-                                   CONSTRAINT CK_MOCK_TX_TYPE CHECK (TX_TYPE IN ('DEPOSIT', 'WITHDRAW')),
-                                   CONSTRAINT CK_MOCK_TX_AMOUNT CHECK (AMOUNT > 0),
-                                   CONSTRAINT CK_MOCK_TX_BALANCE CHECK (BALANCE_AFTER >= 0)
+-- 3. 모의 OAuth 2.0 인가 코드 (1회성, 3분 만료)
+CREATE TABLE MOCK_KFTC_OAUTH_CODE (
+    AUTH_CODE     VARCHAR2(64)  NOT NULL,
+    CLIENT_ID     VARCHAR2(64)  NOT NULL,
+    USER_SEQ_NO   VARCHAR2(20)  NOT NULL,
+    SCOPE         VARCHAR2(100) NOT NULL,
+    REDIRECT_URI  VARCHAR2(300) NOT NULL,
+    USED_YN       CHAR(1)       DEFAULT 'N' NOT NULL,
+    EXPIRES_AT    TIMESTAMP     NOT NULL,
+    CREATED_AT    TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT PK_MOCK_KFTC_OAUTH_CODE PRIMARY KEY (AUTH_CODE),
+    CONSTRAINT CK_MOCK_KFTC_CODE_USED CHECK (USED_YN IN ('Y', 'N'))
 );
+COMMENT ON TABLE MOCK_KFTC_OAUTH_CODE IS '모의 OAuth 2.0 1회성 인가 코드';
 
--- 5. 서비스 DB: 모임장 계좌 연동 및 증분 동기화 관리
-CREATE TABLE GROUP_ACCOUNT_SYNC (
-                                    GROUP_ID            NUMBER       PRIMARY KEY,
-                                    LEADER_ACCOUNT_NO   VARCHAR2(30) NOT NULL,
-                                    CONSENT_TOKEN       VARCHAR2(64) NOT NULL,
-                                    ACTIVITY_STARTED_AT TIMESTAMP    NOT NULL,
-                                    LAST_SYNCED_AT      TIMESTAMP    NULL,
-                                    OPENING_BALANCE     NUMBER(15)   DEFAULT 0 NOT NULL
+-- 4. 모의 OAuth 2.0 Access Token (SHA-256 해시만 저장)
+CREATE TABLE MOCK_KFTC_OAUTH_TOKEN (
+    TOKEN_HASH    VARCHAR2(64)  NOT NULL,
+    CLIENT_ID     VARCHAR2(64)  NOT NULL,
+    USER_SEQ_NO   VARCHAR2(20)  NULL, -- scope=oob일 경우 NULL
+    SCOPE         VARCHAR2(100) NOT NULL,
+    REVOKED_YN    CHAR(1)       DEFAULT 'N' NOT NULL,
+    EXPIRES_AT    TIMESTAMP     NOT NULL,
+    CREATED_AT    TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT PK_MOCK_KFTC_OAUTH_TOKEN PRIMARY KEY (TOKEN_HASH),
+    CONSTRAINT CK_MOCK_KFTC_TOK_REVOKED CHECK (REVOKED_YN IN ('Y', 'N'))
 );
+COMMENT ON TABLE MOCK_KFTC_OAUTH_TOKEN IS '모의 OAuth 2.0 접근 토큰 (원문 대신 SHA-256 해시 저장)';
 
--- 6. 서비스 DB: 모임 장부 (모임 활동 시작 이후 거래내역만 저장)
-CREATE TABLE GROUP_LEDGER (
-                              LEDGER_ID      NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                              GROUP_ID       NUMBER        NOT NULL,
-                              BANK_TX_ID     VARCHAR2(64)  NOT NULL,
-                              TX_TYPE        VARCHAR2(10)  NOT NULL,
-                              AMOUNT         NUMBER(15)    NOT NULL,
-                              COUNTERPARTY   VARCHAR2(100) NOT NULL,
-                              TX_AT          TIMESTAMP     NOT NULL,
-                               CONSTRAINT UK_GROUP_LEDGER_TX UNIQUE (GROUP_ID, BANK_TX_ID), -- 중복 적재 방지
-                               CONSTRAINT CK_GROUP_LEDGER_TYPE CHECK (TX_TYPE IN ('DEPOSIT', 'WITHDRAW')),
-                               CONSTRAINT CK_GROUP_LEDGER_AMOUNT CHECK (AMOUNT > 0)
-);
-
-CREATE INDEX IDX_MOCK_CHALLENGES_USER ON MOCK_CHALLENGES (USER_ID);
-CREATE INDEX IDX_MOCK_TOKENS_USER ON MOCK_CONSENT_TOKENS (USER_ID);
-CREATE INDEX IDX_MOCK_TOKENS_ACCOUNT ON MOCK_CONSENT_TOKENS (ACCOUNT_NO);
-CREATE INDEX IDX_MOCK_TX_ACCOUNT_AT ON MOCK_TRANSACTIONS (ACCOUNT_NO, TX_AT);
+CREATE INDEX IDX_MOCK_KFTC_ACC_USER ON MOCK_KFTC_ACCOUNT (USER_SEQ_NO);
+CREATE INDEX IDX_MOCK_KFTC_TX_FIN_AT ON MOCK_KFTC_TRANSACTION (FINTECH_USE_NUM, TRAN_AT);
+CREATE INDEX IDX_MOCK_KFTC_TOK_USER ON MOCK_KFTC_OAUTH_TOKEN (USER_SEQ_NO);

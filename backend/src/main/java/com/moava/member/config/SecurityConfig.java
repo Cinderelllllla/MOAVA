@@ -51,7 +51,9 @@ public class SecurityConfig {
                     "/favicon.ico",
                     //test용 API
                     "/api/test",
-                        "/api/mock-bank/**"
+                    // 모의 금융결제원 오픈뱅킹 v2.0 API (자체 OAuth 2.0 Bearer 토큰 검증)
+                    "/oauth/2.0/**",
+                    "/v2.0/**"
                 ).permitAll()
                 .requestMatchers(
                     "/api/auth/signup",

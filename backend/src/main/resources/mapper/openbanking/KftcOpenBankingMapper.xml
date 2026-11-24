@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.openbanking.mapper.KftcOpenBankingMapper">
+
+    <!-- ==================== OAuth 2.0 ==================== -->
+
+    <insert id="insertAuthCode" parameterType="com.moava.openbanking.dto.KftcRecordDto$OAuthCodeRecord">
+        INSERT INTO MOCK_KFTC_OAUTH_CODE (
+            AUTH_CODE, CLIENT_ID, USER_SEQ_NO, SCOPE, REDIRECT_URI, USED_YN, EXPIRES_AT, CREATED_AT
+        ) VALUES (
+            #{authCode}, #{clientId}, #{userSeqNo}, #{scope}, #{redirectUri},
+            #{usedYn}, #{expiresAt, jdbcType=TIMESTAMP}, #{createdAt, jdbcType=TIMESTAMP}
+        )
+    </insert>
+
+    <select id="findAuthCode" resultType="com.moava.openbanking.dto.KftcRecordDto$OAuthCodeRecord">
+        SELECT
+            AUTH_CODE    AS authCode,
+            CLIENT_ID    AS clientId,
+            USER_SEQ_NO  AS userSeqNo,
+            SCOPE        AS scope,
+            REDIRECT_URI AS redirectUri,
+            USED_YN      AS usedYn,
+            EXPIRES_AT   AS expiresAt,
+            CREATED_AT   AS createdAt
+        FROM MOCK_KFTC_OAUTH_CODE
+        WHERE AUTH_CODE = #{authCode}
+    </select>
+
+    <update id="consumeAuthCode">
+        UPDATE MOCK_KFTC_OAUTH_CODE
+        SET USED_YN = 'Y'
+        WHERE AUTH_CODE = #{authCode}
+          AND USED_YN = 'N'
+          AND EXPIRES_AT &gt;= #{now, jdbcType=TIMESTAMP}
+    </update>
+
+    <insert id="insertOAuthToken" parameterType="com.moava.openbanking.dto.KftcRecordDto$OAuthTokenRecord">
+        INSERT INTO MOCK_KFTC_OAUTH_TOKEN (
+            TOKEN_HASH, CLIENT_ID, USER_SEQ_NO, SCOPE, REVOKED_YN, EXPIRES_AT, CREATED_AT
+        ) VALUES (
+            #{tokenHash}, #{clientId}, #{userSeqNo, jdbcType=VARCHAR}, #{scope},
+            #{revokedYn}, #{expiresAt, jdbcType=TIMESTAMP}, #{createdAt, jdbcType=TIMESTAMP}
+        )
+    </insert>
+
+    <select id="findOAuthTokenByHash" resultType="com.moava.openbanking.dto.KftcRecordDto$OAuthTokenRecord">
+        SELECT
+            TOKEN_HASH  AS tokenHash,
+            CLIENT_ID   AS clientId,
+            USER_SEQ_NO AS userSeqNo,
+            SCOPE       AS scope,
+            REVOKED_YN  AS revokedYn,
+            EXPIRES_AT  AS expiresAt,
+            CREATED_AT  AS createdAt
+        FROM MOCK_KFTC_OAUTH_TOKEN
+        WHERE TOKEN_HASH = #{tokenHash}
+    </select>
+
+    <update id="revokeOAuthToken">
+        UPDATE MOCK_KFTC_OAUTH_TOKEN
+        SET REVOKED_YN = 'Y'
+        WHERE TOKEN_HASH = #{tokenHash}
+          AND REVOKED_YN = 'N'
+    </update>
+
+    <!-- ==================== 가상 원장 계좌 (MOCK_KFTC_ACCOUNT) ==================== -->
+
+    <sql id="accountColumns">
+        FINTECH_USE_NUM AS fintechUseNum,
+        BANK_CODE       AS bankCode,
+        BANK_NAME       AS bankName,
+        ACCOUNT_NO      AS accountNo,
+        HOLDER_NAME     AS holderName,
+        USER_SEQ_NO     AS userSeqNo,
+        BALANCE         AS balance,
+        LEADER_YN       AS leaderYn,
+        STATUS          AS status,
+        CREATED_AT      AS createdAt,
+        UPDATED_AT      AS updatedAt
+    </sql>
+
+    <select id="findAccountByBankAndNo" resultType="com.moava.openbanking.dto.KftcRecordDto$AccountRecord">
+        SELECT <include refid="accountColumns"/>
+        FROM MOCK_KFTC_ACCOUNT
+        WHERE BANK_CODE = #{bankCode}
+          AND ACCOUNT_NO = #{accountNo}
+    </select>
+
+    <select id="findAccountByFintechUseNum" resultType="com.moava.openbanking.dto.KftcRecordDto$AccountRecord">
+        SELECT <include refid="accountColumns"/>
+        FROM MOCK_KFTC_ACCOUNT
+        WHERE FINTECH_USE_NUM = #{fintechUseNum}
+    </select>
+
+    <!-- 비관적 락: 동시 이체 시 잔액 정합성 보장 (서비스에서 FINTECH_USE_NUM 오름차순으로 호출) -->
+    <select id="findAccountForUpdate" resultType="com.moava.openbanking.dto.KftcRecordDto$AccountRecord">
+        SELECT <include refid="accountColumns"/>
+        FROM MOCK_KFTC_ACCOUNT
+        WHERE FINTECH_USE_NUM = #{fintechUseNum}
+        FOR UPDATE
+    </select>
+
+    <update id="debitAccountBalance">
+        UPDATE MOCK_KFTC_ACCOUNT
+        SET BALANCE = BALANCE - #{amount},
+            UPDATED_AT = #{now, jdbcType=TIMESTAMP}
+        WHERE FINTECH_USE_NUM = #{fintechUseNum}
+          AND STATUS = 'ACTIVE'
+          AND BALANCE &gt;= #{amount}
+    </update>
+
+    <update id="creditAccountBalance">
+        UPDATE MOCK_KFTC_ACCOUNT
+        SET BALANCE = BALANCE + #{amount},
+            UPDATED_AT = #{now, jdbcType=TIMESTAMP}
+        WHERE FINTECH_USE_NUM = #{fintechUseNum}
+          AND STATUS = 'ACTIVE'
+    </update>
+
+    <!-- ==================== 가상 원장 거래내역 (MOCK_KFTC_TRANSACTION) ==================== -->
+
+    <select id="countByBankTranId" resultType="int">
+        SELECT COUNT(*)
+        FROM MOCK_KFTC_TRANSACTION
+        WHERE BANK_TRAN_ID = #{bankTranId}
+    </select>
+
+    <insert id="insertTransaction" parameterType="com.moava.openbanking.dto.KftcRecordDto$TransactionRecord">
+        INSERT INTO MOCK_KFTC_TRANSACTION (
+            BANK_TRAN_ID, FINTECH_USE_NUM, INOUT_TYPE, TRAN_AMT, AFTER_BALANCE_AMT,
+            PRINT_CONTENT, COUNTERPARTY_NAME, COUNTERPARTY_FIN_NUM, BRANCH_NAME, TRAN_AT
+        ) VALUES (
+            #{bankTranId}, #{fintechUseNum}, #{inoutType}, #{tranAmt}, #{afterBalanceAmt},
+            #{printContent}, #{counterpartyName}, #{counterpartyFinNum, jdbcType=VARCHAR},
+            #{branchName}, #{tranAt, jdbcType=TIMESTAMP}
+        )
+    </insert>
+
+    <select id="findTransactions" resultType="com.moava.openbanking.dto.KftcRecordDto$TransactionRecord">
+        SELECT
+            TX_ID                AS txId,
+            BANK_TRAN_ID         AS bankTranId,
+            FINTECH_USE_NUM      AS fintechUseNum,
+            INOUT_TYPE           AS inoutType,
+            TRAN_AMT             AS tranAmt,
+            AFTER_BALANCE_AMT    AS afterBalanceAmt,
+            PRINT_CONTENT        AS printContent,
+            COUNTERPARTY_NAME    AS counterpartyName,
+            COUNTERPARTY_FIN_NUM AS counterpartyFinNum,
+            BRANCH_NAME          AS branchName,
+            TRAN_AT              AS tranAt
+        FROM MOCK_KFTC_TRANSACTION
+        WHERE FINTECH_USE_NUM = #{fintechUseNum}
+          <if test="inoutType != null and inoutType != ''">
+              AND INOUT_TYPE = #{inoutType}
+          </if>
+          <if test="from != null">
+              AND TRAN_AT &gt;= #{from, jdbcType=TIMESTAMP}
+          </if>
+          <if test="to != null">
+              AND TRAN_AT &lt;= #{to, jdbcType=TIMESTAMP}
+          </if>
+        <choose>
+            <when test="sortOrder == 'A'">
+                ORDER BY TRAN_AT ASC, TX_ID ASC
+            </when>
+            <otherwise>
+                ORDER BY TRAN_AT DESC, TX_ID DESC
+            </otherwise>
+        </choose>
+        FETCH FIRST #{limit} ROWS ONLY
+    </select>
+
+</mapper>
