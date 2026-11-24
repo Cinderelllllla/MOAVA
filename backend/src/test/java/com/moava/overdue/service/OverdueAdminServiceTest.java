@@ -113,6 +113,7 @@ class OverdueAdminServiceTest {
     }
 
     @Test
+    @DisplayName("채팅 제한: 회원 N→Y, 미납 건 RESTRICTED, SANCTION(CHAT_RESTRICT·사유), 감사 로그, 알림 없음")
     void restrict_success() {
         givenAdmin();
         when(overdueMapper.findOverdueCaseById(CASE_ID)).thenReturn(overdueCase("WARNED", "ALERT_RESTRICT"));
@@ -154,7 +155,7 @@ class OverdueAdminServiceTest {
     }
 
     @Test
-    @DisplayName("해소된 건이라도 제한 해제는 가능: 회원 Y→N, SANCTION(CHAT_RELEASE), 회원 알림")
+    @DisplayName("해소된 건이라도 제한 해제는 가능: 회원 Y→N, SANCTION(CHAT_RELEASE), 알림 없음")
     void release_onResolvedCase_ok() {
         givenAdmin();
         when(overdueMapper.findOverdueCaseById(CASE_ID)).thenReturn(overdueCase("RESOLVED", "ALERT_RESTRICT"));
