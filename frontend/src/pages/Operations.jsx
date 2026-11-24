@@ -1,10 +1,11 @@
-
 /* S10 운영 홈 — /operations · F20 F28 F33 F18 */
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useInitialGroupId } from '../common/useInitialGroupId';
+
+import PaymentStatusPanel from '../components/PaymentStatusPanel';
+import GroupManagementPanel from '../components/GroupManagementPanel';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import useMyGroups from '../common/useMyGroups';
 import { useApp } from '../common/store';
+
 import {
   groups,
   proofs,
@@ -17,8 +18,10 @@ import {
   ensureJoinCode,
   db
 } from '../api';
+
 import { PageHead, Card, Empty } from '../components/ui';
 import { useOpGroup, GroupSelect, LoadState } from '../components/shared';
+
 import {
   won,
   wonFromKrw,
@@ -35,26 +38,57 @@ export default function Operations() {
 
 function ServerOperations() {
   const nav = useNavigate();
-  const pickGroup = useInitialGroupId();
+  const [params] = useSearchParams();
+
   const myGroups = useMyGroups();
-  const items = myGroups.items;
+  const items = myGroups.items || [];
 
-  const [selectedId, setSelectedId] = useState('');
+  const requestedGroupId = params.get('groupId');
 
-  // 목록을 다시 받으면 선택 모임을 정한다.
-  useEffect(() => {
-    if (myGroups.status === 'ready') {
-      setSelectedId(pickGroup(items));
-    }
-  }, [myGroups.status, items, pickGroup]);
+  // URL에 지정된 모임을 선택하고,
+  // 해당 모임이 없으면 첫 번째 모임을 선택한다.
+  const g =
+    items.find(
+      item => String(item.groupId) === requestedGroupId
+    ) || items[0] || null;
 
-  const g = items.find(
-    x => String(x.groupId) === selectedId
-  );
+  const selectedId = g ? String(g.groupId) : '';
 
-  // 서버에서 반환한 현재 회원의 모임 역할
   const roleLabel = role =>
     role === 'OWNER' ? '모임장' : '일반 멤버';
+
+  // 모임 선택 시 URL 변경
+  // 기존 가입 신청 알림 탭은 제거한다.
+  const handleSelectGroup = event => {
+    const nextId = event.target.value;
+
+    nav(
+      `/operations?groupId=${encodeURIComponent(nextId)}`,
+      { replace: true }
+    );
+  };
+
+  // 모임 상태 표시 항목
+  const statusRows = g ? [
+    ['내 역할', roleLabel(g.role)],
+    ['모집 상태', groups.groupStatusLabel(g.status)],
+    [
+      '공개 여부',
+      g.visibility === 'PRIVATE'
+        ? '🔒 비공개'
+        : '🌐 공개'
+    ],
+    [
+      '지역',
+      [g.regionSido, g.regionSigungu]
+        .filter(Boolean)
+        .join(' ') || '미등록'
+    ],
+    ['월 납입액', wonFromKrw(g.amount)],
+    ['납입일', `매월 ${g.payDay}일`],
+    ['모집 정원', `최대 ${g.maxMembers}명`],
+    ['운영 기간', `${g.months}개월`]
+  ] : [];
 
   return (
     <>
@@ -64,6 +98,7 @@ function ServerOperations() {
         sub="내가 만든 계모임과 참여 중인 계모임의 운영 정보를 확인합니다."
       >
         <button
+          type="button"
           className="btn soft"
           onClick={() => nav('/my-groups')}
         >
@@ -80,6 +115,7 @@ function ServerOperations() {
             loadingText="계모임을 불러오는 중이에요."
           />
         </Card>
+
       ) : !g ? (
         <Card>
           <Empty>
@@ -87,16 +123,25 @@ function ServerOperations() {
           </Empty>
 
           <button
+            type="button"
             className="btn primary"
             onClick={() => nav('/groups/new')}
           >
             새 계모임 만들기
           </button>
         </Card>
+
       ) : (
         <>
+          {/* 계모임 선택 드롭다운 */}
           <Card>
-            <div className="field" style={{ maxWidth: 420 }}>
+            <div
+              className="field"
+              style={{
+                maxWidth: 420,
+                marginBottom: 0
+              }}
+            >
               <label htmlFor="server-ops-group">
                 계모임 선택
               </label>
@@ -104,114 +149,174 @@ function ServerOperations() {
               <select
                 id="server-ops-group"
                 value={selectedId}
-                onChange={e => setSelectedId(e.target.value)}
+                onChange={handleSelectGroup}
               >
-                {items.map(x => (
+                {items.map(item => (
                   <option
-                    key={x.groupId}
-                    value={String(x.groupId)}
+                    key={item.groupId}
+                    value={String(item.groupId)}
                   >
-                    {x.title} · {roleLabel(x.role)}
+                    {item.title} · {roleLabel(item.role)}
                   </option>
                 ))}
               </select>
             </div>
-
-            <div className="divider" />
-
-            <h2>모임 상태</h2>
-
-            <div className="group-info-rows">
-              <div>
-                <span>내 역할</span>
-                <strong>{roleLabel(g.role)}</strong>
-              </div>
-
-              <div>
-                <span>모집 상태</span>
-                <strong>
-                  {groups.groupStatusLabel(g.status)}
-                </strong>
-              </div>
-
-              <div>
-                <span>공개 여부</span>
-                <strong>
-                  {g.visibility === 'PRIVATE'
-                    ? '🔒 비공개'
-                    : '🌐 공개'}
-                </strong>
-              </div>
-
-              <div>
-                <span>지역</span>
-                <strong>
-                  {[g.regionSido, g.regionSigungu]
-                    .filter(Boolean)
-                    .join(' ') || '미등록'}
-                </strong>
-              </div>
-
-              <div>
-                <span>납입일</span>
-                <strong>매월 {g.payDay}일</strong>
-              </div>
-
-              <div>
-                <span>월 납입액</span>
-                <strong>{wonFromKrw(g.amount)}</strong>
-              </div>
-
-              <div>
-                <span>모집 정원</span>
-                <strong>최대 {g.maxMembers}명</strong>
-              </div>
-
-              <div>
-                <span>운영 기간</span>
-                <strong>{g.months}개월</strong>
-              </div>
-            </div>
           </Card>
 
-          <div className="section">
-            <Card>
-              <h2>모임 정보</h2>
+          {/*
+            선택한 모임 전용 영역
 
-              <p>
-                {g.description ||
-                  '모임 소개가 등록되지 않았습니다.'}
-              </p>
+            모임 ID가 변경되면 기존 영역을 제거하고
+            새 모임의 상태, 관리, 정보 영역을 렌더링한다.
+          */}
+          <div key={`operations-${selectedId}`}>
 
-              <p className="muted mini">
-                목적 {groups.purposeLabel(g.purpose)}
-                {' · '}
-                가정 이율 연 {g.assumedRate ?? '-'}%
-              </p>
+            {/* ========================================= */}
+            {/* 1. 모임 상태 */}
+            {/* ========================================= */}
 
-              <div className="actions">
-                <button
-                  className="btn primary"
-                  onClick={() =>
-                    nav(`/evidence?groupId=${g.groupId}`)
-                  }
+            <div className="section">
+              <Card>
+                <div className="item-head">
+                  <h2>모임 상태</h2>
+
+                  <span className="pill">
+                    {groups.groupStatusLabel(g.status)}
+                  </span>
+                </div>
+
+                <div
+                  className="group-info-rows"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(auto-fit, minmax(240px, 1fr))',
+                    columnGap: 24,
+                    rowGap: 0,
+                    fontSize: 13
+                  }}
                 >
-                  납입 증빙 확인 →
-                </button>
-              </div>
+                  {statusRows.map(([label, value]) => (
+                    <div key={label}>
+                      <span>{label}</span>
+                      <strong>{value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
 
-              {/* TODO(MOA-69): 서버 API 연결 시 안내 제거 */}
-              <div className="info" style={{ marginTop: 12 }}>
-                가입 승인·채팅·계좌 변경·초대코드 관리는
-                아직 준비 중이에요.
-              </div>
-            </Card>
+            {/* ========================================= */}
+            {/* 2. 모임 관리 */}
+            {/* ========================================= */}
+
+            <div className="section">
+              <Card>
+                <div className="item-head">
+                  <h2>모임 관리</h2>
+
+                  <span className="pill">
+                    {roleLabel(g.role)}
+                  </span>
+                </div>
+
+                {/* 공통 관리 기능 */}
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() =>
+                      nav(`/evidence?groupId=${g.groupId}`)
+                    }
+                  >
+                    납입 증빙 확인 →
+                  </button>
+                </div>
+
+                {/* F16, F18 모임장 전용 관리 기능 */}
+                {g.role === 'OWNER' && (
+                  <GroupManagementPanel
+                    key={`management-${g.groupId}`}
+                    g={g}
+                    onReload={myGroups.reload}
+                  />
+                )}
+
+                {/* F25 납입 현황 */}
+                <PaymentStatusPanel
+                  key={`payment-${g.groupId}`}
+                  groupId={g.groupId}
+                />
+
+              </Card>
+            </div>
+
+            {/* ========================================= */}
+            {/* 3. 모임 정보 */}
+            {/* ========================================= */}
+
+            <div className="section">
+              <Card>
+                <h2>모임 정보</h2>
+
+                <div
+                  className="group-info-rows"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(auto-fit, minmax(240px, 1fr))',
+                    columnGap: 24,
+                    rowGap: 0,
+                    fontSize: 13
+                  }}
+                >
+                  <div>
+                    <span>모임명</span>
+                    <strong>{g.title}</strong>
+                  </div>
+
+                  <div>
+                    <span>모임 목적</span>
+                    <strong>
+                      {groups.purposeLabel(g.purpose)}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>가정 이율</span>
+                    <strong>
+                      연 {g.assumedRate ?? '-'}%
+                    </strong>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <h3>모임 소개</h3>
+
+                  <p className="muted">
+                    {g.description ||
+                      '모임 소개가 등록되지 않았습니다.'}
+                  </p>
+                </div>
+
+                <div
+                  className="info"
+                  style={{ marginTop: 12 }}
+                >
+                  채팅·계좌 변경 기능은
+                  운영 홈 연동 준비 중이에요.
+                </div>
+              </Card>
+            </div>
+
           </div>
         </>
       )}
     </>
   );
 }
+
+// eslint-disable-next-line no-unused-vars -- 서버 API 연결 시 참고용 목업 화면
 
 // eslint-disable-next-line no-unused-vars -- 서버 API 연결 시 참고용 목업 화면
 function MockOperations() {
@@ -227,6 +332,7 @@ function MockOperations() {
           title="운영 홈"
           sub="참여 중인 모임이 없습니다."
         />
+
         <button
           className="btn primary"
           onClick={() => nav('/groups')}
@@ -271,6 +377,7 @@ function MockOperations() {
           })
         }
       />
+
       <Todo
         label="증빙 확인 대기"
         n={t.proofs}
@@ -278,12 +385,14 @@ function MockOperations() {
         urgent
         onClick={() => nav('/evidence')}
       />
+
       <Todo
         label="수령 순서 처리"
         n={t.orders}
         ico="◷"
         onClick={() => proc('order')}
       />
+
       <Todo
         label="내 동의 필요"
         n={t.consents}
@@ -301,6 +410,7 @@ function MockOperations() {
         urgent
         onClick={() => proc('withdraw')}
       />
+
       <Todo
         label="수령 순서 신청"
         n={
@@ -314,12 +424,14 @@ function MockOperations() {
         ico="◷"
         onClick={() => proc('order')}
       />
+
       <Todo
         label="나의 누적 경고"
         n={g.warnings[m] || 0}
         ico="⚑"
         onClick={() => proc('rules')}
       />
+
       <Todo
         label="내 증빙 등록"
         n={
@@ -336,6 +448,7 @@ function MockOperations() {
   const joinCard = (
     <Card>
       <h2 id="ops-join">가입 신청 승인</h2>
+
       <p className="muted">
         {g.status} · {g.members.length}/{g.max}명
       </p>
@@ -347,6 +460,7 @@ function MockOperations() {
             <div className="list-item item-head" key={r.id}>
               <div>
                 <b>{memberName(r.userId)}</b>
+
                 <p className="muted mini">
                   {r.codeVerified
                     ? '인증코드 확인됨'
@@ -366,6 +480,7 @@ function MockOperations() {
                 >
                   승인
                 </button>
+
                 <button
                   className="btn small soft"
                   onClick={() =>
@@ -409,7 +524,9 @@ function MockOperations() {
                     <button
                       className="btn small soft"
                       onClick={() =>
-                        confirm('수령 완료를 표시할까요? 실제 송금은 발생하지 않습니다.') &&
+                        confirm(
+                          '수령 완료를 표시할까요? 실제 송금은 발생하지 않습니다.'
+                        ) &&
                         run(() => groups.markReceived(g.id, x))
                       }
                     >
@@ -425,6 +542,7 @@ function MockOperations() {
           <p className="info">
             수령 순서가 아직 확정되지 않은 모임입니다.
           </p>
+
           <div className="actions">
             <button
               className="btn small soft"
@@ -449,16 +567,19 @@ function MockOperations() {
             {g.status} · {g.members.length}/{g.max}명
           </strong>
         </div>
+
         <div>
           <span>납입일</span>
           <strong>매월 {g.payDay}일 (미납 감지 +5일)</strong>
         </div>
+
         <div>
           <span>수령 순서</span>
           <strong>
             {g.orderConfirmed ? '확정' : '협의 중'}
           </strong>
         </div>
+
         <div>
           <span>모임 계좌</span>
           <strong>
@@ -467,12 +588,14 @@ function MockOperations() {
               : '미등록'}
           </strong>
         </div>
+
         <div>
           <span>해산</span>
           <strong>
             {g.dissolution?.status || '운영 중'}
           </strong>
         </div>
+
         <div>
           <span>건강도</span>
           <strong>{groups.healthScore(g)}점</strong>
@@ -486,6 +609,7 @@ function MockOperations() {
         >
           채팅
         </button>
+
         <button
           className="btn small soft"
           onClick={() => proc('order')}
@@ -507,6 +631,7 @@ function MockOperations() {
           logs.map((x, i) => (
             <div key={i}>
               <span className="when">{x.when}</span>
+
               <span className="what">
                 <b>{x.type}</b>
                 {x.desc}
@@ -539,8 +664,11 @@ function MockOperations() {
 
       <Card>
         <GroupSelect value={g.id} onChange={setGroup} />
+
         <div className="divider" />
+
         <h2>처리할 일</h2>
+
         <div className="ops-todo">{todos}</div>
       </Card>
 
@@ -589,6 +717,7 @@ function MockOperations() {
           </p>
 
           <VisibilityPanel g={g} />
+
           <FundsPanel g={g} />
 
           <details className="policy-fold">
@@ -623,6 +752,7 @@ export function VisibilityPanel({ g }) {
     <div className="policy-panel">
       <h3>
         공개 설정
+
         <span className="policy-tag">
           {priv ? '🔒 비공개 모임' : '🌐 공개 모임'}
         </span>
@@ -669,6 +799,7 @@ export function InvitePanel({ g }) {
     <>
       <div className="policy-panel">
         <h3>초대 링크</h3>
+
         <p className="muted mini">
           초대 링크는 모임 ID가 아닌 토큰(INVITE_TOKEN)을 사용합니다.
           링크를 받은 사람도 로그인 후 모임장 승인이 필요합니다.
@@ -796,10 +927,13 @@ export function FundsPanel({ g }) {
           예금주 <b>{a ? maskName(a.holder) : '미등록'}</b>
           {' · '}
           계좌{' '}
+
           <b className="acct-mask">
             {maskAccount(a?.accountNo)}
           </b>
+
           {' '}
+
           <span className="policy-tag">
             {VERIFY_LABEL[a?.verifyStatus] || '인증 정보 없음'}
           </span>
@@ -825,6 +959,7 @@ export function FundsPanel({ g }) {
               {' · '}{p.requestedAt}
               {' · '}동의 {p.consents.length}/{g.members.length}
               {' · '}소유 확인{' '}
+
               {p.verifyStatus === 'VERIFIED'
                 ? '완료'
                 : '관리자 확인 대기'}
@@ -866,6 +1001,7 @@ export function FundsPanel({ g }) {
 
         <details className="policy-fold">
           <summary>계좌 안전 안내</summary>
+
           <p>
             계좌 소유 확인(1원 인증) API는 미연동이며
             VERIFY_STATUS 상태값만 관리합니다.
@@ -994,6 +1130,7 @@ export function FundsPanel({ g }) {
 
         <details className="policy-fold">
           <summary>미납 관리 안내</summary>
+
           <p>
             납입일 + 5일 경과 시 자동 감지되어 관리자에게 알림이 가며,
             경고·채팅 제한·수령 후순위 조정은

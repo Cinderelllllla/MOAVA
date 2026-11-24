@@ -47,7 +47,15 @@ public class SecurityConfig {
                     "/index.html",
                     "/assets/**",
                     "/favicon.ico",
-                    "/api/test"
+
+                    // 테스트용 API
+                    "/api/test",
+
+                    // F34 채팅 웹소켓 연결
+                    // 브라우저는 여기에 토큰 헤더를 못 붙이므로
+                    // 로그인 확인은 ChatChannelInterceptor에서
+                    // STOMP CONNECT 시 수행한다.
+                    "/ws/**"
                 ).permitAll()
 
                 // 인증 관련 공개 API

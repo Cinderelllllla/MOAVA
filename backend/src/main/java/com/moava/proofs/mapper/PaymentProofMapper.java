@@ -1,5 +1,6 @@
 package com.moava.proofs.mapper;
 
+import com.moava.proofs.dto.PaymentStatusResponse;
 import com.moava.proofs.dto.PaymentProofDto;
 import com.moava.proofs.dto.PaymentProofFileDto;
 import com.moava.proofs.dto.PaymentProofListDto;
@@ -92,6 +93,7 @@ public interface PaymentProofMapper {
     // F22 파일 미리보기: 이 증빙에 속한 파일 1건 (없으면 null)
     PaymentProofFileDto findProofFile(@Param("proofId") Long proofId,
                                       @Param("fileId") Long fileId);
-
-
+    // F25: 귀속 월 기준 모임 ACTIVE 회원별 납입 상태 (CONFIRMED / PENDING / REVISION / NONE) + 경고 횟수
+    List<PaymentStatusResponse.MemberStatus> findMemberPaymentStatus(@Param("groupId") Long groupId,
+                                                                     @Param("payMonth") String payMonth);
 }
