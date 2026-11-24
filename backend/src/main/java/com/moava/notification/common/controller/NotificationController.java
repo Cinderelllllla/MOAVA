@@ -24,9 +24,9 @@ import com.moava.notification.common.service.NotificationException;
 import com.moava.notification.common.service.NotificationInboxService;
 
 /**
- * F35 인앱 알림함 API (API 명세서 v0.5). 현재는 회원(S13)만 지원한다.
- * 받는 사람은 로그인 토큰(JWT)으로 정한다. 요청에 회원 ID를 따로 받지 않는다.
- * 관리자(A07) 알림함은 관리자 JWT 로그인(관리자 전용 claim)이 생긴 뒤 별도로 연결한다.
+ * F35 인앱 알림함 API (API 명세서 v0.5). 회원(S13)·관리자(A07) 공용.
+ * 받는 사람은 로그인 토큰(JWT)으로 정한다. 요청에 회원·관리자 ID를 따로 받지 않는다.
+ * 토큰 권한이 ROLE_ADMIN 이면 관리자 알림함, 아니면 회원 알림함.
  *
  * <pre>
  * GET   /api/v1/notifications?read=N&page=0&size=20   목록
@@ -94,9 +94,10 @@ public class NotificationController {
 
     /**
      * 받는 사람 결정: JWT 필터가 넣어 둔 로그인 정보(Authentication)를 파라미터로 받아 쓴다.
-     * - principal 이름 = 토큰 subject = MEMBER_ID (JwtTokenProvider.createToken)
-     * - 지금은 모든 토큰이 회원(ROLE_MEMBER)이므로 항상 회원 알림함으로 본다.
-     *   관리자 알림함은 MEMBER_ID와 ADMIN_ID가 섞이지 않도록 관리자 전용 claim이 생긴 뒤에 추가한다.
+     * - principal 이름 = 토큰 subject (회원 토큰이면 MEMBER_ID, 관리자 토큰이면 ADMIN_ID)
+     * - 회원·관리자 구분은 토큰의 role claim → JwtAuthenticationFilter가 붙인 권한으로 한다.
+     *   ROLE_ADMIN 이면 관리자 알림함(ADMIN_ID), 그 외(ROLE_MEMBER)는 회원 알림함(MEMBER_ID).
+     *   두 ID 체계는 번호가 겹칠 수 있으므로 반드시 권한으로 나눈다.
      * - 익명 사용자, 이름이 양의 정수가 아닌 경우는 명시적으로 401.
      */
     static NotificationReceiver resolveReceiver(Authentication auth) {
@@ -107,13 +108,15 @@ public class NotificationController {
         if (name == null || !name.matches("[1-9][0-9]{0,18}")) {
             throw NotificationException.unauthorized();
         }
-        long memberId;
+        long id;
         try {
-            memberId = Long.parseLong(name);
+            id = Long.parseLong(name);
         } catch (NumberFormatException e) { // 19자리 long 범위 초과
             throw NotificationException.unauthorized();
         }
-        return NotificationReceiver.member(memberId);
+        boolean admin = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        return admin ? NotificationReceiver.admin(id) : NotificationReceiver.member(id);
     }
 
     private static String requestId() {
