@@ -105,7 +105,7 @@ public class OverdueAdminService {
                 "채팅 제한 SANCTION #" + sanctionId + " (미납 #" + c.getOverdueCaseId() + ")");
     }
 
-    // 제한 해제: GYE_MEMBER Y→N, SANCTION, 회원 알림. 미납 건 상태는 그대로 (명세에 상태 변경 없음)
+    // 제한 해제: GYE_MEMBER Y→N, SANCTION, 회원 알림. 미납 건 상태는 그대로 (명세에 상태 변경 없음), 알림 없음 (코드표 v3.1)
     private void releaseChat(Long adminId, OverdueCaseDto c, String reason) {
         if (overdueMapper.updateChatRestricted(c.getGroupId(), c.getMemberId(), "Y", "N") == 0) {
             throw conflict("채팅이 제한된 회원이 아닙니다.");
