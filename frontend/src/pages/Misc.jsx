@@ -140,7 +140,7 @@ function MemberNotifications() {
     if (Number.isSafeInteger(gid) && gid > 0) {
       setUi({ selected: gid, focus: gid });
     }
-    // 기타 알림은 기존 이동 경로 유지
+    // 서버에서 전달한 알림 이동 경로 사용
     nav(n.linkPage);
   };
   const readAll = async () => { const r = await run(() => markAllNotificationsRead(), '모두 읽음으로 표시했어요.'); if (r.ok) afterChange(); };
@@ -149,7 +149,6 @@ function MemberNotifications() {
     if (r.ok) afterChange();
   };
   const toggle = useCallback(id => setSel(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])), []);
-  console.log('[알림 렌더링 데이터]', { unread, read });
   const row = n => <NotificationItem key={n.id} n={n} checked={sel.includes(n.id)} onToggle={toggle} onOpen={open} onRead={markRead} />;
   const moreBtn = (key, list) => list.hasNext && <div className="actions"><button className="btn soft" onClick={() => loadMore(key)} disabled={more === key}>{more === key ? '불러오는 중…' : '이전 알림 더 보기'}</button></div>;
   const empty = !unread.items.length && !read.items.length;
