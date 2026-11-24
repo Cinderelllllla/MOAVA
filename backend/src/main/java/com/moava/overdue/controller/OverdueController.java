@@ -1,16 +1,14 @@
 package com.moava.overdue.controller;
 
 import com.moava.common.response.ApiResponse;
+import com.moava.overdue.dto.OverdueActionRequest;
 import com.moava.overdue.dto.OverdueCaseDto;
 import com.moava.overdue.service.OverdueAdminService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -32,6 +30,16 @@ public class OverdueController {
             @RequestParam(defaultValue = "OPEN") String status,
             Authentication authentication) {
         return ApiResponse.ok(overdueAdminService.getCases(loginAdminId(authentication), status), requestId());
+    }
+    /// A06 조치 — {"action": "WARN" | "CHAT\_RESTRICT" | "CHAT\_RELEASE" | "ORDER\_REVIEW", "reason": "..."}
+    /// 처리 후 바뀐 미납 건을 돌려줌 (화면에서 상태·제한 여부를 바로 갱신)
+    @PostMapping("/{overdueCaseId}/actions")
+    public ApiResponse<OverdueCaseDto> applyAction(
+            @PathVariable Long overdueCaseId,
+            @RequestBody OverdueActionRequest req,
+            Authentication authentication) {
+        return ApiResponse.ok(
+                overdueAdminService.applyAction(loginAdminId(authentication), overdueCaseId, req), requestId());
     }
 
     // ---------- 로그인 관리자 (RefNoController와 같음) ----------

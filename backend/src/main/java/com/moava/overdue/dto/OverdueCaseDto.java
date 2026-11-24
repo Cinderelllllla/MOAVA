@@ -24,4 +24,5 @@ public class OverdueCaseDto {
     private String overduePolicy;       // ALERT_ONLY면 채팅 제한 조치 비활성 (명세 F26-3)
     private LocalDateTime warnedAt;
     private LocalDateTime resolvedAt;
+    private String chatRestrictedYn;    // 회원 채팅 제한 여부 Y/N — A06에서 '제한 해제' 버튼 표시용
 }
