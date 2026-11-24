@@ -66,7 +66,7 @@ public class SecurityConfig {
                     "/api/v1/groups/*/withdrawals/*/consent-targets/*/exemption").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET,
                     "/api/v1/groups/*/withdrawals/*/consent-targets").hasAnyRole("ADMIN", "MEMBER")
-                .requestMatchers("/api/v1/groups/**", "/api/groups/**", "/api/auth/me").hasRole("MEMBER")
+                .requestMatchers("/api/v1/groups/**", "/api/groups/**", "/api/auth/me", "/api/openbanking/codef/**").hasRole("MEMBER")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
             .build();

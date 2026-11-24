@@ -353,3 +353,45 @@ COMMIT;
 1. **회원 실명 / 모임 계좌 교차 검증:** `POST /v2.0/inquiry/real_name` 응답의 `account_holder_name`, `fintech_use_num`을 `MEMBER` 및 `GYE_ACCOUNT`와 대조.
 2. **납입 증빙 이중 납부 방지:** 이체 완료 응답의 20자리 `bank_tran_id`를 `PAYMENT_PROOF.REF_NO` (`VARCHAR2(20) UNIQUE`)에 그대로 기록하여 DB 레벨 이중 납부 차단.
 3. **소비 내역 AI 스크래핑 및 모임 통장 공유:** `GET /v2.0/account/transaction_list/fin_num`의 기본 1개월 기간 조회 결과를 소비 분석(`finance`)과 모임장 거래 공유 화면에 공통 활용.
+
+---
+
+## 7. CODEF 개인 수시입출 실계좌인증 API (`/api/openbanking/codef`)
+
+> **인증 필요:** 모든 `/api/openbanking/codef/**` 엔드포인트는 로그인한 MOAVA 회원의 JWT(`ROLE_MEMBER`)가 필요합니다.
+> **지원 로그인 방식:** CODEF 은행 개인 API 정책상 **공동인증서(`loginType="0"`: DER+KEY 또는 PFX)** 및 **은행 아이디/비밀번호(`loginType="1"`)**만 지원합니다. *(간편인증 `loginType=5/6`은 CODEF 공공기관 API 전용으로 은행 API에서는 미지원)*
+
+| 메서드 | 경로 | 역할 |
+|---|---|---|
+| `GET` | `/api/openbanking/codef/banks` | 지원 은행 및 CODEF 4자리 기관코드 목록 조회 |
+| `GET` | `/api/openbanking/codef/connections` | 내 은행 연결 및 실계좌인증 상태 목록 조회 |
+| `POST` | `/api/openbanking/codef/connect` | 공동인증서(`0`) 또는 은행 ID/PW(`1`)로 CODEF `connectedId` 발급 및 AES-256-GCM 암호화 저장 |
+| `POST` | `/api/openbanking/codef/accounts` | 연결된 은행의 보유 계좌 목록 조회 (`/v1/kr/bank/p/account/account-list`) |
+| `POST` | `/api/openbanking/codef/verify-account` | 수시입출 거래내역 API(`inquiryType=1`) 호출 → `resAccountHolder` ↔ `MEMBER.NAME` 대조로 **실계좌 소유·실명 인증** |
+| `POST` | `/api/openbanking/codef/transactions` | 인증된 계좌의 실제 입출금 거래내역 조회 (`/v1/kr/bank/p/account/transaction-list`) |
+| `DELETE` | `/api/openbanking/codef/connections/{organization}` | 해당 은행 CODEF 연결 해제 |
+
+### 호출 예시: 1단계 은행 연결 (`POST /api/openbanking/codef/connect`)
+```json
+{
+  "organization": "0004",
+  "loginType": "0",
+  "certType": "1",
+  "derFile": "<Base64 signCert.der>",
+  "keyFile": "<Base64 signPri.key>",
+  "password": "<인증서 비밀번호>"
+}
+```
+> PFX 파일 사용 시 `certType: "pfx"`, `certFile: "<Base64 .pfx>"` 입력. 은행 아이디 로그인 시 `loginType: "1"`, `id`, `password` 입력.
+
+### 호출 예시: 2단계 실계좌인증 (`POST /api/openbanking/codef/verify-account`)
+```json
+{
+  "organization": "0004",
+  "account": "123401-04-987654",
+  "accountPassword": "<선택: 계좌 비밀번호 4자리>",
+  "birthDate": "<선택: YYMMDD>"
+}
+```
+> 은행 응답의 `resAccountHolder`가 로그인한 MOAVA 회원의 실명(`MEMBER.NAME`)과 일치하면 `verified: true` 반환 및 `CODEF_CONNECTION`에 암호화 저장, 불일치 시 `403 CODEF_HOLDER_MISMATCH` 차단.
+
