@@ -13,7 +13,9 @@ import org.springframework.web.server.ResponseStatusException;
 import com.moava.member.dto.AuthResponse;
 import com.moava.member.dto.LoginRequest;
 import com.moava.member.dto.MemberResponse;
+import com.moava.member.dto.MemberUpdateRequest;
 import com.moava.member.dto.MemberView;
+import com.moava.member.dto.PasswordChangeRequest;
 import com.moava.member.dto.SignupRequest;
 import com.moava.member.mapper.MemberMapper;
 
@@ -38,26 +40,11 @@ public class MemberService {
     public AuthResponse signup(SignupRequest request) {
         if(request == null) throw bad("회원가입 정보를 입력해주세요.");
 
-        String name = clean(request.name());
-        String email = clean(request.email()).toLowerCase(Locale.ROOT);
-        String phone = clean(request.phone()).replace("-", "");
-        String sido = clean(request.regionSido());
-        String sigungu = clean(request.regionSigungu());
-        String password = request.password() == null ? "" : request.password();
-        if (name.length() < 2 || name.length() > 50) {
-            throw bad("이름은 2~50자 사이여야 합니다.");
-        }
-        if (!EMAIL.matcher(email).matches() || email.length() > 100 || email.isBlank()) {
-            throw bad("올바른 이메일 주소를 입력해주세요.");
-        }
-        if (password.length() < 8 || password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw bad("비밀번호를 올바르게 입력해주세요.");
-        }
-        if (!PHONE.matcher(phone).matches()) {
-            throw bad("올바른 전화번호를 입력해주세요.");
-        }
-        if (sido.isBlank() || sido.length() > 30 || sigungu.isBlank() || sigungu.length() > 30) {
-            throw bad("활동 지역을 올바르게 입력해주세요.");
+        MemberProfile profile = prepareProfile(request.name(), request.email(), request.phone(), request.regionSido(), request.regionSigungu());
+
+        validatePassword((request.password()));
+        if(memberMapper.existsByEmail(profile.email()) > 0){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이미 존재하는 이메일입니다.");
         }
         if(request.termsAgreed() == null || !request.termsAgreed()) {
             throw bad("이용약관에 동의해주세요.");
@@ -65,15 +52,19 @@ public class MemberService {
         if(request.privacyAgreed() == null || !request.privacyAgreed()) {
             throw bad("개인정보 처리방침에 동의해주세요.");
         }
-        if(memberMapper.existsByEmail(email) > 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이미 존재하는 이메일입니다.");
         
-        String passwordHash = passwordEncoder.encode(password);
+        
+        String passwordHash = passwordEncoder.encode(request.password());
         int keyVer = phoneCryptoService.currentKeyVersion();
-        String phoneEnc = phoneCryptoService.encrypt(phone, keyVer);
+        String phoneEnc = phoneCryptoService.encrypt(profile.phone(), keyVer);
 
-        memberMapper.insertUser(name, email, passwordHash, phoneEnc, keyVer, sido, sigungu);
-        MemberResponse member = memberMapper.findByEmail(email);
+        int inserted = memberMapper.insertUser(profile.name(), profile.email(), passwordHash, phoneEnc, keyVer, profile.regionSido(), profile.regionSigungu());
+        if(inserted != 1){
+            throw new IllegalStateException("회원가입 처리에 실패했습니다.");
+        }
+        MemberResponse member = memberMapper.findByEmail(profile.email());
         if(member == null) throw new IllegalStateException("회원가입 후 회원 정보를 조회할 수 없습니다.");
+        ensureCanUse(member);
         return response(member);
     }
 
@@ -86,7 +77,114 @@ public class MemberService {
         return response(member);
     }
 
-    
+    public MemberView getActiveMember(Long memberId) {
+        MemberResponse user = memberMapper.findById(memberId);
+        if (user == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "회원 정보를 찾을 수 없습니다.");
+        ensureCanUse(user);
+        String phone = phoneCryptoService.decrypt(user.phoneEnc(), user.keyVer());
+        return toView(user, phone);
+    }
+
+    public boolean checkEmail(String email){
+        String normalizedEmail = clean(email).toLowerCase(Locale.ROOT);
+
+        if(!EMAIL.matcher(normalizedEmail).matches() || normalizedEmail.length() > 100){
+            throw bad("올바른 이메일 주소를 입력해주세요.");
+        }
+        return memberMapper.existsByEmail(normalizedEmail) == 0;
+    }
+
+    @Transactional
+    public MemberView updateProfile(Long memberId, MemberUpdateRequest request){
+        if(request == null){
+            throw bad("수정할 회원 정보를 입력해주세요.");
+        }
+
+        MemberResponse member = memberMapper.findById(memberId);
+
+        if(member == null){
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 정보를 찾을 수 없습니다.");
+        }
+        ensureCanUse(member);
+
+        MemberProfile profile = prepareProfile(request.name(), request.email(), request.phone(), request.regionSido(), request.regionSigungu());
+
+        if(memberMapper.existsByEmailExceptMember(profile.email(), memberId) > 0){
+            throw bad("이미 사용중인 이메일 입니다.");
+        }
+        
+        int keyVer = phoneCryptoService.currentKeyVersion();
+
+        String phoneEnc = phoneCryptoService.encrypt(profile.phone(), keyVer);
+
+        int update = memberMapper.updateProfile(memberId, profile.name(), profile.email(), phoneEnc, keyVer, profile.regionSido(), profile.regionSigungu());
+        if(update != 1){
+            throw new IllegalStateException("회원 정보 수정에 실패했습니다.");
+        }
+
+        MemberResponse updateMember = memberMapper.findById(memberId);
+        return toView(updateMember, profile.phone());
+    }
+
+    @Transactional 
+    public void changePassword(Long memberId, PasswordChangeRequest request){
+        if(request == null || request.currentPassword() == null || request.newPassword() == null){
+            throw bad("현재 비밀번호와 새 비밀번호를 입력해주세요.");
+        }
+        MemberResponse member = memberMapper.findById(memberId);
+
+        if(member == null){
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "회원정보를 찾을 수 없습니다.");
+        }
+        ensureCanUse(member);
+
+        String currentHash = memberMapper.findPasswordHashById(memberId);
+
+        if(currentHash == null || !passwordEncoder.matches(request.currentPassword(), currentHash)){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "현재 비밀번호가 일치하지 않습니다.");
+        }
+        validatePassword(request.newPassword());
+
+        if(passwordEncoder.matches(request.newPassword(), currentHash)){
+            throw bad("현재 비밀번호와 다른 비밀번호를 입력해주세요.");
+        }
+
+        String newHash = passwordEncoder.encode(request.newPassword());
+        memberMapper.updatePassword(memberId, newHash);
+    }
+
+    @Transactional 
+    public void withdraw(Long memberId, String password){
+        if(password == null || password.isBlank()){
+            throw bad("탈퇴를 위해 비밀번호를 입력해주세요.");
+        }
+        MemberResponse member = memberMapper.findById(memberId);
+
+        if(member == null){
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 정보를 찾을 수 없습니다.");
+        }
+        ensureCanUse(member);
+        String currentHash = memberMapper.findPasswordHashById(memberId);
+
+        if(currentHash == null || !passwordEncoder.matches(password, currentHash)){
+            throw bad("비밀번호가 일치하지 않습니다.");
+        }
+
+        int activeMemberships = memberMapper.countActiveGroupMemberships(memberId);
+        int ownedGroups = memberMapper.countOwnedActiveGroups(memberId);
+        if(activeMemberships > 0 || ownedGroups > 0){
+            throw bad("참여 중인 모임을 먼저 정리해 주세요.");
+        }
+        String randomPassword = java.util.UUID.randomUUID().toString();
+        String randomPasswordHash = passwordEncoder.encode(randomPassword);
+        
+        int result = memberMapper.withdraw(memberId, randomPasswordHash);
+
+        if(result != 1){
+            throw new IllegalStateException("회원 탈퇴 처리에 실패했습니다.");
+        }
+    }
+
     private AuthResponse response(MemberResponse member) {
         String phone = null;
         if(member.phoneEnc() != null){
@@ -110,17 +208,41 @@ public class MemberService {
         return input == null ? "" : input.trim();
     }
 
-        public MemberView getActiveMember(Long memberId) {
-        MemberResponse user = memberMapper.findById(memberId);
-        if (user == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "회원 정보를 찾을 수 없습니다.");
-        ensureCanUse(user);
-        return toView(user, null);
-    }
-
     private void ensureCanUse(MemberResponse user) {
         if (!"ACTIVE".equals(user.status()))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "탈퇴했거나 이용할 수 없는 회원입니다.");
         if (!"N".equals(user.bannedYn()))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "이용 정지된 회원입니다.");
+    }
+
+    private record MemberProfile(String name, String email, String phone, String regionSido, String regionSigungu) {
+    }
+
+    private MemberProfile prepareProfile(String name, String email, String phone, String regionSido, String regionSigungu){
+        name = clean(name);
+        email = clean(email).toLowerCase(Locale.ROOT);
+        phone = clean(phone).replace("-", "");
+        regionSido = clean(regionSido);
+        regionSigungu = clean(regionSigungu);
+        
+        if (name.length() < 2 || name.length() > 50) {
+            throw bad("이름은 2~50자 사이여야 합니다.");
+        }
+        if (!EMAIL.matcher(email).matches() || email.length() > 100 || email.isBlank()) {
+            throw bad("올바른 이메일 주소를 입력해주세요.");
+        }
+        if (!PHONE.matcher(phone).matches()) {
+            throw bad("올바른 전화번호를 입력해주세요.");
+        }
+        if (regionSido.isBlank() || regionSido.length() > 30 || regionSigungu.isBlank() || regionSigungu.length() > 30) {
+            throw bad("활동 지역을 올바르게 입력해주세요.");
+        }
+        return new MemberProfile(name, email, phone, regionSido, regionSigungu);
+    }
+
+    private void validatePassword(String password){
+        if(password == null || password.length() < 8 || password.getBytes(StandardCharsets.UTF_8).length > 72){
+            throw bad("비밀번호는 8자 이상 입력해주세요.");
+        }
     }
 }

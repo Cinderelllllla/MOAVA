@@ -1,7 +1,10 @@
 package com.moava.notification.common.domain;
 
 /**
- * 알림 코드표 v3 (MOAVA_알림코드표_v3.xlsx, 2026-11-09 프론트 대조 반영: 21개).
+ * 알림 코드표 v3.1 (v3 21개 + OVERDUE_WARNED = 22개, 2026-11-24).
+ * v3.1 변경: SMS 대상을 기능명세서 v3.1 F36 · API 명세서 7.4 기준으로 통일
+ *   - SMS 대상: PAY_DUE_3D(납입 3일 전), RISK_UP(위험 등급 전환), OVERDUE_WARNED(관리자 미납 경고)
+ *   - PAY_OVERDUE(자동 감지 배치의 회원 안내)는 인앱만, SMS 없음
  *
  * <p>이동 경로는 프론트 라우트 기준. 모임 화면은 ?groupId= 로 선택 모임을 넘긴다.
  *
@@ -21,8 +24,10 @@ public enum NotifType {
     CONSENT_RESULT(Receiver.MEMBER, "{item} 결과 안내", "{group} {item} 요청이 {result}됐어요. {detail}", "/procedures?groupId={groupId}", false),
     PROOF_REVISION(Receiver.MEMBER, "증빙 보완이 필요해요", "{group} {round}회차 증빙 보완 요청: {reason}", "/evidence?groupId={groupId}", false),
     PAY_DUE_3D(Receiver.MEMBER, "납입일이 3일 남았어요", "{group} {month} 납입일은 {payDate}이에요. 약정액 {amount}원.", "/evidence?groupId={groupId}", true),
-    /** 미납 1일 차·5일 차 두 번만. guide: 단계별 안내 문구 */
-    PAY_OVERDUE(Receiver.MEMBER, "납입이 확인되지 않았어요", "{group} {month} 납입이 {days}일째 확인되지 않았어요. {guide}", "/evidence?groupId={groupId}", true),
+    /** 미납 1일 차·5일 차 두 번만 (F26 미납 감지 배치 OverdueDetectService가 발송). guide: 단계별 안내 문구. 인앱만, SMS 없음 */
+    PAY_OVERDUE(Receiver.MEMBER, "납입이 확인되지 않았어요", "{group} {month} 납입이 {days}일째 확인되지 않았어요. {guide}", "/evidence?groupId={groupId}", false),
+    /** 관리자가 A06에서 미납 경고 조치(OVERDUE_CASE → WARNED)를 했을 때 해당 회원에게. SMS 발송 대상 */
+    OVERDUE_WARNED(Receiver.MEMBER, "미납 경고 안내", "{group} {month} 납입이 확인되지 않아 관리자 경고가 등록됐어요. 납입 후 증빙을 등록해 주세요.", "/evidence?groupId={groupId}", true),
     /** scope: 모임명 또는 "MOAVA", action: 조치 내용 + 사유 */
     SANCTION(Receiver.MEMBER, "이용 제한 안내", "[{scope}] {action} 문의·이의 신청은 고객센터로 해 주세요.", "/support", false),
     WITHDRAW_DONE(Receiver.MEMBER, "탈퇴가 처리됐어요", "{group} 탈퇴가 정산 확인 후 처리됐어요.", "/my-groups", false),
