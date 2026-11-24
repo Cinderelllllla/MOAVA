@@ -34,40 +34,47 @@ public class JwtTokenProvider {
         return createToken(memberId, "MEMBER");
     }
 
-    // 회원·관리자 주체 구분을 토큰 role claim에 담으며, 허용된 역할만 토큰화한다.
-    public String createToken(Long subjectId, String role) {
-        if (subjectId == null || !("MEMBER".equals(role) || "ADMIN".equals(role))) {
-            throw new IllegalArgumentException("토큰 주체 정보를 확인해 주세요.");
+    public String createToken(Long id, String role) {
+        if(id == null || id <= 0){
+            throw new IllegalArgumentException("올바르지 않은 회원 번호입니다.");
         }
+        if(!"MEMBER".equals(role) && !"ADMIN".equals(role)){
+            throw new IllegalArgumentException("잘못된 사용자 권한입니다.");
+        }
+        // JWT 토큰 생성 로직 구현
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expireMinutes * 60_000L);
         return Jwts.builder()
-                .subject(String.valueOf(subjectId))
-                .claim("role", role)
-                .issuedAt(now)
-                .expiration(expiry)
-                .signWith(key())
-                .compact();
+            .subject(String.valueOf(id))
+            .claim("role", role).
+            issuedAt(now).
+            expiration(expiry).
+            signWith(key()).
+            compact();
     }
 
     public String getId(String token) {
-        Claims claims = Jwts.parser().verifyWith(key()).build().parseSignedClaims(token).getPayload();
+        Claims claims = getClaims(token);
         return claims.getSubject();
     }
 
     public boolean isValid(String token) {
         try {
-            getId(token);
-            String role = getRole(token);
-            return "MEMBER".equals(role) || "ADMIN".equals(role);
+            Claims claims = getClaims(token);
+            String role = claims.get("role", String.class);
+            return claims.getSubject() != null && ("MEMBER".equals(role) || "ADMIN".equals(role));
         } catch (Exception e) {
             return false;
         }
     }
 
-    public String getRole(String token) {
-        Claims claims = Jwts.parser().verifyWith(key()).build().parseSignedClaims(token).getPayload();
-        String role = claims.get("role", String.class);
-        return role == null ? "MEMBER" : role;
+    //사용자 권한
+    public String getRole(String token){
+        return getClaims(token).get("role", String.class);
+    }
+
+    //토큰 전체 정보
+    private Claims getClaims(String token){
+        return Jwts.parser().verifyWith(key()).build().parseSignedClaims(token).getPayload();
     }
 }
