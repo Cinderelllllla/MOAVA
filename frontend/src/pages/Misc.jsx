@@ -140,15 +140,6 @@ function MemberNotifications() {
     if (Number.isSafeInteger(gid) && gid > 0) {
       setUi({ selected: gid, focus: gid });
     }
-    // F16: 가입 신청 알림 → 가입 신청 관리
-    if (
-      n.type === 'JOIN_REQUEST' &&
-      Number.isSafeInteger(gid) &&
-      gid > 0
-    ) {
-      nav(`/my-groups?groupId=${gid}&tab=joinRequests`);
-      return;
-    }
     // 기타 알림은 기존 이동 경로 유지
     nav(n.linkPage);
   };
