@@ -113,7 +113,6 @@ class OverdueAdminServiceTest {
     }
 
     @Test
-    @DisplayName("채팅 제한: 회원 N→Y, 미납 건 RESTRICTED, SANCTION(CHAT_RESTRICT·사유), 회원 알림, 감사 로그")
     void restrict_success() {
         givenAdmin();
         when(overdueMapper.findOverdueCaseById(CASE_ID)).thenReturn(overdueCase("WARNED", "ALERT_RESTRICT"));
@@ -124,7 +123,7 @@ class OverdueAdminServiceTest {
 
         verify(overdueMapper).updateCaseRestricted(CASE_ID);
         verify(overdueMapper).insertSanction(77L, "CHAT_RESTRICT", MEMBER_ID, GROUP_ID, ADMIN_ID, "미납 2개월");  // 앞뒤 공백 제거
-        verify(notificationService).notifyMember(eq(MEMBER_ID), eq(NotifType.SANCTION), eq(77L), any());
+        verify(notificationService, never()).notifyMember(anyLong(), any(), any(), any());   // 채팅 제한은 알림 없음 (코드표 v3.1)
         verify(overdueMapper).insertAdminAuditLog(eq(GROUP_ID), eq(ADMIN_ID), eq(MEMBER_ID), eq("CHAT_RESTRICT"), contains("#77"));
     }
 
@@ -165,7 +164,7 @@ class OverdueAdminServiceTest {
         overdueAdminService.applyAction(ADMIN_ID, CASE_ID, action("CHAT_RELEASE", "납입 확인"));
 
         verify(overdueMapper).insertSanction(78L, "CHAT_RELEASE", MEMBER_ID, GROUP_ID, ADMIN_ID, "납입 확인");
-        verify(notificationService).notifyMember(eq(MEMBER_ID), eq(NotifType.SANCTION), eq(78L), any());
+        verify(notificationService, never()).notifyMember(anyLong(), any(), any(), any());   // 해제도 알림 없음 (코드표 v3.1)
     }
 
     @Test
@@ -192,7 +191,7 @@ class OverdueAdminServiceTest {
 
         verify(overdueMapper).insertSanction(79L, "ORDER_REVIEW", MEMBER_ID, GROUP_ID, ADMIN_ID, "3개월 연속 미납");
         int i = verify(overdueMapper, never()).updateChatRestricted(any(), any(), any(), any());
-        verify(notificationService, never()).notifyMember(anyLong(), any(), any(), any());
+        verify(notificationService, never()).notifyMember(anyLong(), any(), any(), any());   // 채팅 제한은 알림 없음 (코드표 v3.1)
     }
 
     // ===================== 조치 테스트 도우미 =====================

@@ -91,7 +91,7 @@ public class OverdueAdminService {
                 "미납 경고 #" + c.getOverdueCaseId() + " (" + c.getPayMonth() + ")");
     }
 
-    // 채팅 제한: 모임 규칙이 ALERT_ONLY면 불가. GYE_MEMBER N→Y, 미납 건 RESTRICTED, SANCTION, 회원 알림
+    // 채팅 제한: 모임 규칙이 ALERT_ONLY면 불가. GYE_MEMBER N→Y, 미납 건 RESTRICTED, SANCTION
     private void restrictChat(Long adminId, OverdueCaseDto c, String reason) {
         if ("ALERT_ONLY".equals(c.getOverduePolicy())) {
             throw conflict("이 모임은 미납 시 알림만 보내는 규칙이라 채팅을 제한할 수 없습니다.");
@@ -101,8 +101,6 @@ public class OverdueAdminService {
         }
         overdueMapper.updateCaseRestricted(c.getOverdueCaseId());   // 해제 후 다시 제한하면 이미 RESTRICTED라 0건 — 그대로 둠
         Long sanctionId = saveSanction("CHAT_RESTRICT", adminId, c, reason);
-        notificationService.notifyMember(c.getMemberId(), NotifType.SANCTION, sanctionId,
-                Map.of("scope", c.getGroupTitle(), "action", "미납으로 모임 채팅이 제한됐어요."));
         overdueMapper.insertAdminAuditLog(c.getGroupId(), adminId, c.getMemberId(), "CHAT_RESTRICT",
                 "채팅 제한 SANCTION #" + sanctionId + " (미납 #" + c.getOverdueCaseId() + ")");
     }
@@ -113,8 +111,6 @@ public class OverdueAdminService {
             throw conflict("채팅이 제한된 회원이 아닙니다.");
         }
         Long sanctionId = saveSanction("CHAT_RELEASE", adminId, c, reason);
-        notificationService.notifyMember(c.getMemberId(), NotifType.SANCTION, sanctionId,
-                Map.of("scope", c.getGroupTitle(), "action", "모임 채팅 제한이 해제됐어요."));
         overdueMapper.insertAdminAuditLog(c.getGroupId(), adminId, c.getMemberId(), "CHAT_RELEASE",
                 "채팅 제한 해제 SANCTION #" + sanctionId + " (미납 #" + c.getOverdueCaseId() + ")");
     }
