@@ -1,6 +1,7 @@
 package com.moava.proofs.controller;
 
 import com.moava.common.response.ApiResponse;
+import com.moava.overdue.controller.OverdueController;
 import com.moava.references.controller.RefNoController;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,7 +22,8 @@ import java.util.UUID;
 @RestControllerAdvice(assignableTypes = {
         PaymentProofController.class,     // F22·F23 증빙 등록·조회·심사
         PaymentStatusController.class,    // F25 납입 현황
-        RefNoController.class             // F24 거래 참조번호
+        RefNoController.class,             // F24 거래 참조번호
+        OverdueController.class           // F26 미납 관리
 })
 public class ProofExceptionHandler {
 
