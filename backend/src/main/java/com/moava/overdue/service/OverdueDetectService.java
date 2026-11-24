@@ -15,6 +15,7 @@ import java.util.Map;
 
 /**
  * F26 미납 자동 감지 (매일 02:00 배치에서 호출)
+ *  * - 납입일 3일 전: 그 달 증빙을 아직 안 올린 회원에게 납입 안내(PAY_DUE_3D) — 알림 담당자와 합의해 미납 배치에서 함께 처리
  * - 미납 1일 차·5일 차: 회원에게 납입 안내(PAY_OVERDUE)
  * - 미납 5일 차 이상 + 아직 감지 안 된 건: OVERDUE_CASE 저장(DETECTED) → 관리자 전원 알림(OVERDUE_5D) → 감사 로그(OVERDUE_DETECT)
  * - 납입 확인(CONFIRMED) 시 해소(RESOLVED)는 F23 ProofReviewService에서 처리
@@ -25,6 +26,7 @@ public class OverdueDetectService {
 
     static final int FIRST_NOTICE_DAYS = 1;   // 미납 1일 차 회원 안내
     static final int ADMIN_ALERT_DAYS = 5;    // 미납 5일 차부터 관리자 알림 + 미납 건 저장 (팀 결정 11/04)
+    static final int DUE_NOTICE_DAYS_BEFORE = 3;   // 납입일 3일 전 안내 (알림 코드표 PAY_DUE_3D)
 
     private final OverdueMapper overdueMapper;
     private final NotificationService notificationService;
@@ -33,6 +35,12 @@ public class OverdueDetectService {
     @Transactional
     public DetectResult detect(LocalDate today) {
         // 1. 회원 납입 안내 — 1일 차, 5일 차 두 번만 (알림 코드표: PAY_OVERDUE "미납 1일 차·5일 차")
+        // 0. 납입일 3일 전 안내 — 그 달 증빙을 아직 안 올린 회원만 (승인·대기 제외)
+        int dueNotices = 0;
+        for (OverdueTargetDto t : overdueMapper.findDueNoticeTargets(today, DUE_NOTICE_DAYS_BEFORE)) {
+            notifyDue(t);
+            dueNotices++;
+        }
         int memberNotices = 0;
         for (OverdueTargetDto t : overdueMapper.findUnpaidOnDay(today, FIRST_NOTICE_DAYS)) {
             notifyMember(t, "납입 후 증빙을 등록해 주세요.");
@@ -60,13 +68,26 @@ public class OverdueDetectService {
                     "미납 감지 #" + t.getOverdueCaseId() + " (" + t.getPayMonth() + ", " + t.getElapsedDays() + "일 차)");
             newCases++;
         }
-        return new DetectResult(newCases, memberNotices);
+        return new DetectResult(newCases, memberNotices, dueNotices);
     }
 
     /** 배치 결과 (로그용) */
-    public record DetectResult(int newCases, int memberNotices) {}
+    public record DetectResult(int newCases, int memberNotices, int dueNotices) {}
 
     // ---------- 내부 도우미 ----------
+    private void notifyDue(OverdueTargetDto t) {
+        notificationService.notifyMember(t.getMemberId(), NotifType.PAY_DUE_3D, null, Map.of(
+                "groupId", t.getGroupId(),
+                "group", t.getGroupTitle(),
+                "month", monthLabel(t.getPayMonth()),
+                "payDate", payDateLabel(t.getDueDate()),
+                "amount", String.format("%,d", t.getAmount())));   // 100000 → "100,000"
+    }
+
+    // 2026-12-01 → "12월 1일"
+    private static String payDateLabel(LocalDate date) {
+        return date.getMonthValue() + "월 " + date.getDayOfMonth() + "일";
+    }
 
     private void notifyMember(OverdueTargetDto t, String guide) {
         notificationService.notifyMember(t.getMemberId(), NotifType.PAY_OVERDUE, null, Map.of(
