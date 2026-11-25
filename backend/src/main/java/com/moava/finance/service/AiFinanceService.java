@@ -5,6 +5,7 @@ import com.moava.finance.mapper.AiPayoutMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +32,15 @@ public class AiFinanceService {
         this.mapper = mapper;
     }
 
-    /** 추천 납입액. ML 응답을 그대로 돌려준다 (프론트 파싱 코드 유지). */
+    /**
+     * 위험 정보 중 회원에게 보여도 되는 항목 (명세서 F09: 연체 확률은 관리자·등급 산출에만, 회원 API 는 등급만).
+     * 안전계수는 등급마다 정해진 정책 값(/policy 에도 공개)이라 본인 화면에서 계산 근거로 보여 준다.
+     */
+    static final List<String> OWN_RISK_KEYS = List.of("risk_level", "risk_label", "safety_factor");
+    /** 다른 회원 위험 정보는 등급만 */
+    static final List<String> OTHERS_RISK_KEYS = List.of("risk_level", "risk_label");
+
+    /** 추천 납입액. 응답 모양은 ML 과 같게 두되, risk 에서 연체 확률 등은 뺀다. */
     public Map<String, Object> contribution(long memberId, AiContributionRequest req) {
         if (req == null) {
             throw invalidAmount();
@@ -42,7 +51,9 @@ public class AiFinanceService {
         body.put("monthly_expense", required(req.monthlyExpense()));
         body.put("monthly_saving", optional(req.monthlySaving()));
         body.put("emergency_fund", optional(req.emergencyFund()));
-        return ml.contribution(body);
+        Map<String, Object> result = new LinkedHashMap<>(ml.contribution(body));
+        result.put("risk", pick(result.get("risk"), OWN_RISK_KEYS));
+        return result;
     }
 
     /** 화면 정책 값: round_unit(원), income_cap_ratio, risk_levels */
@@ -70,7 +81,37 @@ public class AiFinanceService {
         if (members == null || members.size() < 2) {
             throw new FinanceException(HttpStatus.BAD_REQUEST, "NOT_ENOUGH_MEMBERS", "추천하려면 회원이 2명 이상 필요해요");
         }
-        return ml.payoutOrder(members);
+        Map<String, Object> result = ml.payoutOrder(members);
+        // 모임장에게 다른 회원의 연체 확률이 보이지 않도록 순서·회원 번호·등급만 남긴다
+        List<Map<String, Object>> order = new ArrayList<>();
+        if (result.get("order") instanceof List<?> items) {
+            for (Object item : items) {
+                if (item instanceof Map<?, ?> m) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("order", m.get("order"));
+                    row.put("member_id", m.get("member_id"));
+                    row.put("risk", pick(m.get("risk"), OTHERS_RISK_KEYS));
+                    order.add(row);
+                }
+            }
+        }
+        Map<String, Object> safe = new LinkedHashMap<>();
+        safe.put("order", order);
+        safe.put("rule", result.get("rule"));
+        return safe;
+    }
+
+    /** risk 객체에서 허용된 항목만 골라 새 Map 으로 (없으면 빈 Map) */
+    private static Map<String, Object> pick(Object risk, List<String> keys) {
+        Map<String, Object> picked = new LinkedHashMap<>();
+        if (risk instanceof Map<?, ?> m) {
+            for (String key : keys) {
+                if (m.containsKey(key)) {
+                    picked.put(key, m.get(key));
+                }
+            }
+        }
+        return picked;
     }
 
     private static long required(Long amount) {

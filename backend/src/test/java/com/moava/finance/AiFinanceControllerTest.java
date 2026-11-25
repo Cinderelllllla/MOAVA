@@ -73,6 +73,24 @@ class AiFinanceControllerTest {
     }
 
     @Test
+    void 추천_납입액_응답에서_본인_연체_확률은_빼고_등급만_준다() throws Exception {
+        when(ml.contribution(anyMap())).thenReturn(Map.of(
+                "recommended_amount", 150000, "available_amount", 520000,
+                "risk", Map.of("default_probability", 0.123, "risk_level", "SAFE", "risk_label", "안정",
+                        "safety_factor", 0.5, "source", "persona")));
+
+        mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
+                        .contentType(MediaType.APPLICATION_JSON).content(BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.recommended_amount").value(150000))
+                .andExpect(jsonPath("$.data.risk.risk_level").value("SAFE"))
+                .andExpect(jsonPath("$.data.risk.risk_label").value("안정"))
+                .andExpect(jsonPath("$.data.risk.safety_factor").value(0.5))
+                .andExpect(jsonPath("$.data.risk.default_probability").doesNotExist())
+                .andExpect(jsonPath("$.data.risk.source").doesNotExist());
+    }
+
+    @Test
     void 관리자_토큰은_403() throws Exception {
         mvc.perform(post("/api/v1/finance/ai/contribution").principal(auth("7", "ROLE_ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
@@ -132,6 +150,32 @@ class AiFinanceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rule").value("r"));
         verify(ml).payoutOrder(List.of(7L, 8L, 9L));
+    }
+
+    @Test
+    void 수령_순서_응답에는_다른_회원의_연체_확률이_없다() throws Exception {
+        when(mapper.selectOwnerId(101L)).thenReturn(7L);
+        when(mapper.selectActiveMemberIds(101L)).thenReturn(List.of(7L, 8L));
+        when(ml.payoutOrder(anyList())).thenReturn(Map.of(
+                "rule", "r",
+                "order", List.of(
+                        Map.of("order", 1, "member_id", 8, "risk", Map.of("default_probability", 0.41,
+                                "risk_level", "DANGER", "risk_label", "위험", "safety_factor", 0.2, "source", "persona")),
+                        Map.of("order", 2, "member_id", 7, "risk", Map.of("default_probability", 0.05,
+                                "risk_level", "SAFE", "risk_label", "안정", "safety_factor", 0.5, "source", "persona")))));
+
+        mvc.perform(post("/api/v1/groups/101/ai/payout-order").principal(member(7)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rule").value("r"))
+                .andExpect(jsonPath("$.data.order[0].order").value(1))
+                .andExpect(jsonPath("$.data.order[0].member_id").value(8))
+                .andExpect(jsonPath("$.data.order[0].risk.risk_level").value("DANGER"))
+                .andExpect(jsonPath("$.data.order[0].risk.risk_label").value("위험"))
+                .andExpect(jsonPath("$.data.order[0].risk.default_probability").doesNotExist())
+                .andExpect(jsonPath("$.data.order[0].risk.safety_factor").doesNotExist())
+                .andExpect(jsonPath("$.data.order[0].risk.source").doesNotExist())
+                .andExpect(jsonPath("$.data.order[1].member_id").value(7))
+                .andExpect(jsonPath("$.data.order[1].risk.default_probability").doesNotExist());
     }
 
     @Test
