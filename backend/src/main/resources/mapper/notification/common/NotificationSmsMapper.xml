@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.notification.common.mapper.NotificationSmsMapper">
+
+    <!-- 문자 받을 회원의 암호화 번호. 복호화는 발송 직전 서비스에서만 -->
+    <select id="findSmsTarget" resultType="map">
+        SELECT PHONE_ENC AS "phoneEnc",
+               KEY_VER   AS "keyVer",
+               STATUS    AS "status"
+          FROM MEMBER
+         WHERE MEMBER_ID = #{memberId}
+    </select>
+
+    <!-- 발송 성공 기록 (이미 Y면 그대로) -->
+    <update id="markSmsSent">
+        UPDATE NOTIFICATION
+           SET SMS_SENT_YN = 'Y'
+         WHERE NOTIFICATION_ID = #{notificationId}
+           AND SMS_SENT_YN = 'N'
+    </update>
+</mapper>
