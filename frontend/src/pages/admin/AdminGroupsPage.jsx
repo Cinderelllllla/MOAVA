@@ -569,12 +569,12 @@ export default function AdminGroupsPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>일시</th>
-                      <th>모임</th>
-                      <th>이벤트 유형</th>
-                      <th>구분</th>
-                      <th>행위자</th>
-                      <th>대상 회원</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>일시</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>모임</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>이벤트 유형</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>구분</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>행위자</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>대상 회원</th>
                       <th>상세 내용</th>
                     </tr>
                   </thead>
@@ -589,18 +589,18 @@ export default function AdminGroupsPage() {
                           <span className="pill">{EVENT_TYPE_LABEL[log.eventType] || log.eventType}</span>
                           <div className="muted mini" style={{ marginTop: 3 }}>{log.eventType}</div>
                         </td>
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           <span className={`pill ${log.reviewCategory === 'REVIEW' ? 'warn' : ''}`}>
                             {log.reviewCategory === 'REVIEW' ? '검토·감지' : '완료'}
                           </span>
                         </td>
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           <span className={`pill ${log.actorType === 'ADMIN' ? 'mine' : ''}`}>
                             {ACTOR_TYPE_LABEL[log.actorType] || log.actorType}
                           </span>{' '}
                           {log.actorLabel || '-'}
                         </td>
-                        <td className="muted mini">{log.targetMemberLabel || '-'}</td>
+                        <td className="muted mini" style={{ whiteSpace: 'nowrap' }}>{log.targetMemberLabel || '-'}</td>
                         <td>{log.description || '-'}</td>
                       </tr>
                     ))}

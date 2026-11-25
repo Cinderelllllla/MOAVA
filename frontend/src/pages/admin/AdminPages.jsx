@@ -103,10 +103,10 @@ export function AdminDashboard() {
               <table>
                 <thead>
                   <tr>
-                    <th>일시</th>
-                    <th>모임</th>
-                    <th>유형</th>
-                    <th>행위자</th>
+                    <th style={{ whiteSpace: 'nowrap' }}>일시</th>
+                    <th style={{ whiteSpace: 'nowrap' }}>모임</th>
+                    <th style={{ whiteSpace: 'nowrap' }}>유형</th>
+                    <th style={{ whiteSpace: 'nowrap' }}>행위자</th>
                     <th>내용</th>
                   </tr>
                 </thead>
@@ -116,7 +116,7 @@ export function AdminDashboard() {
                       <td className="muted mini">{log.createdAt || '-'}</td>
                       <td>{log.groupTitle || '공통'}</td>
                       <td><span className="pill">{log.eventType}</span></td>
-                      <td>{log.actorLabel || '-'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{log.actorLabel || '-'}</td>
                       <td>{log.description || '-'}</td>
                     </tr>
                   ))}
