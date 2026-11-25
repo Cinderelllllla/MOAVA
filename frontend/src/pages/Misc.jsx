@@ -15,8 +15,17 @@ const EMPTY_LIST = { items: [], page: -1, hasNext: false };
 /** 최신순(createdAt, id 내림차순) 정렬 + id 중복 제거 */
 const mergeById = (...lists) => {
   const map = new Map();
-  lists.flat().forEach(n => { if (!map.has(n.id)) map.set(n.id, n); });
-  return [...map.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id - a.id);
+
+  lists.flat(Infinity).forEach(n => {
+    if (!n || n.id == null) return;
+    if (!map.has(n.id)) map.set(n.id, n);
+  });
+
+  return [...map.values()].sort(
+    (a, b) =>
+      String(b.createdAt).localeCompare(String(a.createdAt)) ||
+      b.id - a.id
+  );
 };
 /** 서버 시각("2026-11-19T10:24:00") → "11.19 10:24" (올해가 아니면 연도 포함) */
 const fmtTime = v => {
@@ -98,6 +107,8 @@ export function Notifications() {
     try {
       const r = await run(() => markNotificationRead(n.id));
       if (!r.ok) return false;
+      // 읽음 처리된 알림의 삭제 선택 상태 해제
+      setSel(prev => prev.filter(id => id !== n.id));
       setUnread(prev => ({ ...prev, items: prev.items.filter(x => x.id !== n.id) }));
       setRead(prev => ({ ...prev, items: mergeById([{ ...n, read: true }], prev.items) }));
       setUnreadTotal(c => Math.max(0, c - 1));
@@ -110,8 +121,15 @@ export function Notifications() {
   const open = async n => {
     if (!isInternalLink(n.linkPage)) return;
     if (!(await markRead(n))) return;
-    const gid = Number(new URLSearchParams(n.linkPage.split('?')[1] || '').get('groupId'));
-    if (Number.isSafeInteger(gid) && gid > 0) setUi({ selected: gid, focus: gid });
+    const params = new URLSearchParams(
+      n.linkPage.split('?')[1] || ''
+    );
+    const gid = Number(params.get('groupId'));
+
+    if (Number.isSafeInteger(gid) && gid > 0) {
+      setUi({ selected: gid, focus: gid });
+    }
+    // 서버에서 전달한 알림 이동 경로 사용
     nav(n.linkPage);
   };
   const readAll = async () => { const r = await run(() => markAllNotificationsRead(), '모두 읽음으로 표시했어요.'); if (r.ok) afterChange(); };

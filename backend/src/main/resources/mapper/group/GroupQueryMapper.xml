@@ -5,27 +5,124 @@
 
 <mapper namespace="com.moava.group.query.mapper.GroupQueryMapper">
 
+    <!-- 내가 모임장인 모임 조회 -->
     <select id="findMyOwnedGroups"
             resultType="com.moava.group.query.dto.GroupListResponse">
 
         SELECT
-            GROUP_ID AS "groupId",
-            TITLE AS "title",
-            OWNER_ID AS "ownerId",
-            STATUS AS "status",
-            PURPOSE AS "purpose",
-            REGION_SIDO AS "regionSido",
-            REGION_SIGUNGU AS "regionSigungu",
-            AMOUNT AS "amount",
-            MAX_MEMBERS AS "maxMembers",
-            MONTHS AS "months",
-            PAY_DAY AS "payDay",
-            ASSUMED_RATE AS "assumedRate",
-            VISIBILITY AS "visibility",
-            DESCRIPTION AS "description"
+            G.GROUP_ID AS "groupId",
+            G.TITLE AS "title",
+            G.OWNER_ID AS "ownerId",
+            G.STATUS AS "status",
+            G.PURPOSE AS "purpose",
+            G.REGION_SIDO AS "regionSido",
+            G.REGION_SIGUNGU AS "regionSigungu",
+            G.AMOUNT AS "amount",
+            G.MAX_MEMBERS AS "maxMembers",
+            (
+                SELECT COUNT(DISTINCT GM.MEMBER_ID)
+                FROM GYE_MEMBER GM
+                WHERE GM.GROUP_ID = G.GROUP_ID
+                  AND GM.STATUS = 'ACTIVE'
+                  AND GM.MEMBER_ID != G.OWNER_ID
+            ) + 1 AS "currentMembers",
+            G.MONTHS AS "months",
+            G.PAY_DAY AS "payDay",
+            G.ASSUMED_RATE AS "assumedRate",
+            G.VISIBILITY AS "visibility",
+            G.DESCRIPTION AS "description",
+            'OWNER' AS "role"
+        FROM GYE_GROUP G
+        WHERE G.OWNER_ID = #{memberId}
+        ORDER BY G.GROUP_ID DESC
+
+    </select>
+
+
+    <!-- 내가 일반 회원으로 참여 중인 모임 조회 -->
+    <select id="findMyJoinedGroups"
+            resultType="com.moava.group.query.dto.GroupListResponse">
+
+        SELECT
+            G.GROUP_ID AS "groupId",
+            G.TITLE AS "title",
+            G.OWNER_ID AS "ownerId",
+            G.STATUS AS "status",
+            G.PURPOSE AS "purpose",
+            G.REGION_SIDO AS "regionSido",
+            G.REGION_SIGUNGU AS "regionSigungu",
+            G.AMOUNT AS "amount",
+            G.MAX_MEMBERS AS "maxMembers",
+            (
+                SELECT COUNT(DISTINCT GM.MEMBER_ID)
+                FROM GYE_MEMBER GM
+                WHERE GM.GROUP_ID = G.GROUP_ID
+                  AND GM.STATUS = 'ACTIVE'
+                  AND GM.MEMBER_ID != G.OWNER_ID
+            ) + 1 AS "currentMembers",
+            G.MONTHS AS "months",
+            G.PAY_DAY AS "payDay",
+            G.ASSUMED_RATE AS "assumedRate",
+            G.VISIBILITY AS "visibility",
+            G.DESCRIPTION AS "description",
+            'MEMBER' AS "role"
+        FROM GYE_GROUP G
+        WHERE EXISTS (
+            SELECT 1
+            FROM GYE_MEMBER GM
+            WHERE GM.GROUP_ID = G.GROUP_ID
+              AND GM.MEMBER_ID = #{memberId}
+              AND GM.STATUS = 'ACTIVE'
+        )
+          AND G.OWNER_ID != #{memberId}
+        ORDER BY G.GROUP_ID DESC
+
+    </select>
+
+
+    <!-- F16: 로그인 회원이 해당 모임의 모임장인지 확인 -->
+    <select id="countOwnedGroup"
+            resultType="int">
+
+        SELECT COUNT(*)
         FROM GYE_GROUP
-        WHERE OWNER_ID = #{memberId}
-        ORDER BY GROUP_ID DESC
+        WHERE GROUP_ID = #{groupId}
+          AND OWNER_ID = #{memberId}
+
+    </select>
+
+
+    <!-- F16: 해당 모임의 ACTIVE 참여 회원 목록 조회 -->
+    <select id="findActiveGroupMembers"
+            resultType="com.moava.group.query.dto.GroupMemberResponse">
+
+        SELECT
+            GM.GYE_MEMBER_ID AS "gyeMemberId",
+            GM.GROUP_ID AS "groupId",
+            GM.MEMBER_ID AS "memberId",
+            M.NAME AS "memberName",
+            CASE
+                WHEN G.OWNER_ID = GM.MEMBER_ID
+                THEN 'OWNER'
+                ELSE 'MEMBER'
+            END AS "role",
+            GM.STATUS AS "status",
+            GM.JOINED_AT AS "joinedAt",
+            GM.WARNING_COUNT AS "warningCount"
+        FROM GYE_MEMBER GM
+        JOIN MEMBER M
+          ON GM.MEMBER_ID = M.MEMBER_ID
+        JOIN GYE_GROUP G
+          ON GM.GROUP_ID = G.GROUP_ID
+        WHERE GM.GROUP_ID = #{groupId}
+          AND GM.STATUS = 'ACTIVE'
+        ORDER BY
+            CASE
+                WHEN GM.MEMBER_ID = G.OWNER_ID THEN 0
+                ELSE 1
+            END,
+            GM.JOINED_AT ASC,
+            GM.GYE_MEMBER_ID ASC
 
     </select>
 

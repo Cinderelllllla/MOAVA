@@ -20,4 +20,14 @@
 
     </select>
 
+    <!-- [F18 추가] 모임장 전용 초대 토큰 조회 -->
+    <select id="findInviteCodeForOwner"
+            resultType="java.lang.String">
+        SELECT INVITE_CODE
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        AND OWNER_ID = #{ownerId}
+        AND VISIBILITY = 'PRIVATE'
+    </select>
+
 </mapper>
