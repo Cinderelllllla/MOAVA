@@ -32,7 +32,7 @@ class Subject(BaseModel):
 
 class RiskResult(BaseModel):
     default_probability: float = Field(description="향후 12개월 내 연체 1회 이상 확률 (0~1)")
-    risk_level: str = Field(description="SAFE / CAUTION / DANGER")
+    risk_level: str = Field(description="STABLE / CAUTION / RISK (DB RISK_SCORE.TIER 와 같은 코드)")
     risk_label: str = Field(description="안정 / 주의 / 위험")
     safety_factor: float = Field(description="추천 납입액 계산에 쓰는 안전계수")
     source: str = Field(description="persona(사전 계산 점수) 또는 features(실시간 예측)")
