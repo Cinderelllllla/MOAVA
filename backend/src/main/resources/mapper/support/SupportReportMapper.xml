@@ -21,6 +21,21 @@
         <result property="updatedAt" column="updatedAt"/>
     </resultMap>
 
+    <!-- selectReportForUpdate 전용 (단일 테이블 FOR UPDATE 11컬럼만 매핑) -->
+    <resultMap id="supportReportLockRowMap" type="com.moava.support.dto.SupportReportDTO$SupportReportRow">
+        <id property="supportReportId" column="supportReportId"/>
+        <result property="memberId" column="memberId"/>
+        <result property="groupId" column="groupId"/>
+        <result property="category" column="category"/>
+        <result property="detailEnc" column="detailEnc" jdbcType="CLOB"/>
+        <result property="keyVer" column="keyVer"/>
+        <result property="status" column="status"/>
+        <result property="adminMemo" column="adminMemo"/>
+        <result property="handledBy" column="handledBy"/>
+        <result property="createdAt" column="createdAt"/>
+        <result property="updatedAt" column="updatedAt"/>
+    </resultMap>
+
     <!-- ==================== 0. 계정 활성 검증 ==================== -->
 
     <select id="countActiveMember" resultType="int">
@@ -133,7 +148,7 @@
     </select>
 
     <!-- 상태 변경 시 동시 수정 방지용 행 잠금 조회 (Oracle FOR UPDATE는 단일 테이블에 수행) -->
-    <select id="selectReportForUpdate" resultMap="supportReportRowMap">
+    <select id="selectReportForUpdate" resultMap="supportReportLockRowMap">
         SELECT
             SUPPORT_REPORT_ID                         AS supportReportId,
             MEMBER_ID                                 AS memberId,
@@ -267,7 +282,7 @@
         ORDER BY l.CREATED_AT DESC, l.AUDIT_LOG_ID DESC
     </select>
 
-    <select id="selectAllReportStatusHistory"
+    <select id="selectAdminReportStatusHistory"
             resultType="com.moava.support.dto.SupportReportDTO$StatusHistoryRow">
         SELECT
             l.AUDIT_LOG_ID                              AS auditLogId,
@@ -278,6 +293,14 @@
         FROM AUDIT_LOG l
                  LEFT JOIN ADMIN a ON a.ADMIN_ID = l.ACTOR_ADMIN_ID
         WHERE l.EVENT_TYPE = 'REPORT_STATUS'
+        <if test="status != null and status != ''">
+          AND EXISTS (
+              SELECT 1
+              FROM SUPPORT_REPORT sr
+              WHERE sr.STATUS = #{status}
+                AND l.DESCRIPTION LIKE 'REPORT #' || sr.SUPPORT_REPORT_ID || ' · %'
+          )
+        </if>
         ORDER BY l.CREATED_AT DESC, l.AUDIT_LOG_ID DESC
     </select>
 

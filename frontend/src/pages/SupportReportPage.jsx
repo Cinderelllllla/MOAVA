@@ -1,5 +1,5 @@
 /* S15 고객센터 · 신고 접수 및 나의 신고 내역 (F40 회원 전용 · 서버 API 연동) */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
 import {
@@ -44,6 +44,7 @@ export default function SupportReportPage() {
   });
   const [reloadKey, setReloadKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const groupInitializedRef = useRef(false);
 
   const [form, setForm] = useState({
     groupId: '',
@@ -61,12 +62,15 @@ export default function SupportReportPage() {
       .then(items => {
         if (!alive) return;
         setGroupsState({ status: 'ready', items, error: '' });
-        setForm(prev => {
-          if (prev.groupId) return prev;
-          const matchedSelected = items.find(g => Number(g.groupId) === Number(ui?.selected));
-          const initialId = matchedSelected?.groupId ?? items[0]?.groupId ?? '';
-          return { ...prev, groupId: initialId ? String(initialId) : '' };
-        });
+        if (!groupInitializedRef.current) {
+          groupInitializedRef.current = true;
+          setForm(prev => {
+            if (prev.groupId) return prev;
+            const matchedSelected = items.find(g => Number(g.groupId) === Number(ui?.selected));
+            const initialId = matchedSelected?.groupId ?? items[0]?.groupId ?? '';
+            return { ...prev, groupId: initialId ? String(initialId) : '' };
+          });
+        }
       })
       .catch(err => {
         if (!alive) return;

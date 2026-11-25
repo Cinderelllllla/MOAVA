@@ -186,7 +186,7 @@ class SupportReportServiceTest {
                         "2026-11-25 13:00", "2026-11-25 13:10"
                 )
         ));
-        when(mapper.selectAllReportStatusHistory()).thenReturn(List.of(
+        when(mapper.selectAdminReportStatusHistory("REVIEWING")).thenReturn(List.of(
                 historyRow(901L, 1L, "운영팀", "REPORT #701 · 접수 → 검토 중 · 사유: 증빙 대조 중", "2026-11-25 13:10")
         ));
         when(mapper.selectStatusCounts()).thenReturn(List.of(
@@ -211,6 +211,21 @@ class SupportReportServiceTest {
         assertEquals("접수", item.getHistory().get(0).getFromStatusLabel());
         assertEquals("검토 중", item.getHistory().get(0).getToStatusLabel());
         assertEquals("증빙 대조 중", item.getHistory().get(0).getMemo());
+    }
+
+    @Test
+    @DisplayName("관리자 조회: 조건에 맞는 신고가 0건이면 상태 변경 이력 조회를 생략")
+    void getAdminReports_emptyResultSkipsHistoryQuery() {
+        when(mapper.countActiveAdmin(1L)).thenReturn(1);
+        when(mapper.selectAdminReports("REJECTED")).thenReturn(List.of());
+        when(mapper.selectStatusCounts()).thenReturn(List.of(countRow("RECEIVED", 2)));
+
+        SupportReportDTO.AdminReportListResponse res = service.getAdminReports(1L, "REJECTED");
+
+        assertEquals("REJECTED", res.getStatusFilter());
+        assertEquals(0, res.getTotalCount());
+        assertTrue(res.getItems().isEmpty());
+        verify(mapper, never()).selectAdminReportStatusHistory(any());
     }
 
     @Test

@@ -67,5 +67,5 @@ public interface SupportReportMapper {
 
     List<SupportReportDTO.StatusHistoryRow> selectReportStatusHistoryByMemberId(@Param("memberId") Long memberId);
 
-    List<SupportReportDTO.StatusHistoryRow> selectAllReportStatusHistory();
+    List<SupportReportDTO.StatusHistoryRow> selectAdminReportStatusHistory(@Param("status") String status);
 }

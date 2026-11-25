@@ -10,6 +10,8 @@ import {
 import { PageHead, Card, Empty } from '../../components/ui';
 import { LoadState } from '../../components/shared';
 
+const MAX_ADMIN_MEMO_LENGTH = 260;
+
 function statusPillKind(status) {
   switch (status) {
     case 'RECEIVED':
@@ -38,7 +40,7 @@ export default function AdminSupportReportsPage() {
     error: '',
   });
 
-  // 신고별 상태 변경 초안 { [reportId]: { status, memo } }
+  // 신고별 상태 변경 초안 { [reportId]: { baseStatus, status, memo } }
   const [drafts, setDrafts] = useState({});
   const [savingId, setSavingId] = useState(null);
 
@@ -62,8 +64,11 @@ export default function AdminSupportReportsPage() {
         setDrafts(prev => {
           const next = { ...prev };
           data.items.forEach(item => {
-            if (!next[item.reportId]) {
-              next[item.reportId] = { status: item.status, memo: '' };
+            const existing = prev[item.reportId];
+            if (existing && existing.baseStatus === item.status) {
+              next[item.reportId] = existing;
+            } else {
+              next[item.reportId] = { baseStatus: item.status, status: item.status, memo: '' };
             }
           });
           return next;
@@ -85,6 +90,7 @@ export default function AdminSupportReportsPage() {
     setDrafts(prev => ({
       ...prev,
       [reportId]: {
+        baseStatus: prev[reportId]?.baseStatus ?? currentStatus,
         status: prev[reportId]?.status ?? currentStatus,
         memo: prev[reportId]?.memo ?? '',
         [field]: value,
@@ -93,7 +99,7 @@ export default function AdminSupportReportsPage() {
   };
 
   const handleSaveStatus = async item => {
-    const draft = drafts[item.reportId] || { status: item.status, memo: '' };
+    const draft = drafts[item.reportId] || { baseStatus: item.status, status: item.status, memo: '' };
     if (draft.status === item.status) {
       toast('변경할 처리 상태를 선택해 주세요.');
       return;
@@ -115,7 +121,7 @@ export default function AdminSupportReportsPage() {
       if (res.ok) {
         setDrafts(prev => ({
           ...prev,
-          [item.reportId]: { status: draft.status, memo: '' },
+          [item.reportId]: { baseStatus: draft.status, status: draft.status, memo: '' },
         }));
         reload();
       }
@@ -248,10 +254,13 @@ export default function AdminSupportReportsPage() {
                           </div>
 
                           <div className="field" style={{ marginBottom: 0 }}>
-                            <label htmlFor={`report-memo-${item.reportId}`}>처리 메모 (필수)</label>
+                            <label htmlFor={`report-memo-${item.reportId}`}>
+                              처리 메모 (필수 · {draft.memo.length}/{MAX_ADMIN_MEMO_LENGTH}자)
+                            </label>
                             <input
                               id={`report-memo-${item.reportId}`}
                               type="text"
+                              maxLength={MAX_ADMIN_MEMO_LENGTH}
                               value={draft.memo}
                               onChange={e => setDraftField(item.reportId, item.status, 'memo', e.target.value)}
                               placeholder="처리 사유 또는 안내 메모를 입력해 주세요. (필수)"

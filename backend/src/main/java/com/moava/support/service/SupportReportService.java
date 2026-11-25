@@ -168,8 +168,9 @@ public class SupportReportService {
     public SupportReportDTO.MemberReportListResponse getMyReports(Long memberId) {
         requireActiveMember(memberId);
         List<SupportReportDTO.SupportReportRow> rows = mapper.selectReportsByMemberId(memberId);
-        Map<Long, List<SupportReportDTO.StatusHistoryItem>> historyByReport =
-                groupHistoryByReportId(mapper.selectReportStatusHistoryByMemberId(memberId));
+        Map<Long, List<SupportReportDTO.StatusHistoryItem>> historyByReport = rows.isEmpty()
+                ? Map.of()
+                : groupHistoryByReportId(mapper.selectReportStatusHistoryByMemberId(memberId));
 
         List<SupportReportDTO.ReportItem> items = rows.stream()
                 .map(row -> toReportItem(row, historyByReport.getOrDefault(row.getSupportReportId(), List.of())))
@@ -210,8 +211,9 @@ public class SupportReportService {
         String normalizedFilter = normalizeStatusFilter(statusFilter);
 
         List<SupportReportDTO.SupportReportRow> rows = mapper.selectAdminReports(normalizedFilter);
-        Map<Long, List<SupportReportDTO.StatusHistoryItem>> historyByReport =
-                groupHistoryByReportId(mapper.selectAllReportStatusHistory());
+        Map<Long, List<SupportReportDTO.StatusHistoryItem>> historyByReport = rows.isEmpty()
+                ? Map.of()
+                : groupHistoryByReportId(mapper.selectAdminReportStatusHistory(normalizedFilter));
 
         List<SupportReportDTO.ReportItem> items = rows.stream()
                 .map(row -> toReportItem(row, historyByReport.getOrDefault(row.getSupportReportId(), List.of())))
