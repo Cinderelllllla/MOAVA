@@ -72,7 +72,7 @@ public class RefNoController {
 
     /**
      * JWT에서 ADMIN_ID 꺼내기 — 관리자 로그인(POST /api/auth/admin/login) 토큰: subject=ADMIN_ID, 권한 ROLE_ADMIN
-     * SecurityConfig가 /api/v1/admin/** 를 ADMIN만 통과시키지만, 설정이 바뀌어도 회원 토큰이 못 들어오게 한 번 더 확인
+     * 관리자 전용 확인은 여기(ROLE_ADMIN)와 서비스(ACTIVE 관리자)에서 함 — SecurityConfig URL 규칙에 기대지 않음
      * (ACTIVE 관리자인지는 RefNoService.checkAdmin에서 DB로 확인)
      */
     private static Long loginAdminId(Authentication authentication) {

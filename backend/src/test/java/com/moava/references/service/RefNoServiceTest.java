@@ -237,7 +237,27 @@ class RefNoServiceTest {
         assertEquals("정정 사유에 계좌번호·연락처 같은 긴 숫자는 입력할 수 없습니다.", e.getReason());
         verify(refNoMapper, never()).findProof(any());
     }
+    @Test
+    @DisplayName("정정: 사유에 날짜+시각(2026-11-24 10시)이 있어도 계좌번호로 보지 않고 정정됨")
+    void correct_reasonWithDate_ok() {
+        when(refNoMapper.findProof(PROOF_ID)).thenReturn(confirmedProof("MOAVA-00001"));
+        when(refNoMapper.countRefNo("MOAVA-00009")).thenReturn(0);
+        when(refNoMapper.correctRefNo(PROOF_ID, "MOAVA-00001", "MOAVA-00009")).thenReturn(1);
 
+        RefNoResponse res = refNoService.correctRefNo(ADMIN_ID, PROOF_ID, request("MOAVA-00009", "2026-11-24 10시 입금 건 오기입"));
+
+        assertEquals("MOAVA-00009", res.getRefNo());
+    }
+
+    @Test
+    @DisplayName("정정: 날짜처럼 보이는 부분이 섞인 계좌번호(123456-78-901234)는 그대로 400")
+    void correct_reasonWithAccountLikeDate_400() {
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> refNoService.correctRefNo(ADMIN_ID, PROOF_ID, request("MOAVA-00009", "계좌 123456-78-901234 확인")));
+
+        assertEquals(400, e.getStatusCode().value());
+        verify(refNoMapper, never()).findProof(any());
+    }
     @Test
     @DisplayName("정정: 번호가 아직 없는 증빙이면 409")
     void correct_notAssigned_409() {
