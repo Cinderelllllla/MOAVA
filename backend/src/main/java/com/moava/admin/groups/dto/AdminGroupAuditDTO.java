@@ -93,12 +93,14 @@ public class AdminGroupAuditDTO {
         private int openOverdueCaseCount;
     }
 
-    /** 모임 계좌 요약 DB 조회용 원시 행 (암호문 미조회, 뒤 4자리·등록자 이름만 사용) */
+    /** 모임 계좌 요약 DB 조회용 원시 행 (예금주 암호문 복호화 후 마스킹, 계좌번호 뒤 4자리만 사용) */
     @Getter
     @Setter
     public static class GroupAccountRow {
         private Long gyeAccountId;
         private String bankName;
+        private String holderNameEnc;
+        private Integer keyVer;
         private String registeredByName;
         private String accountNoLast4;
         private String verifyStatus;

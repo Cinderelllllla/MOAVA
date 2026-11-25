@@ -81,6 +81,8 @@ const EVENT_TYPE_LABEL = {
   JOIN_CODE_VERIFY: '인증코드 검증',
   JOIN_CODE_LOCK: '인증코드 잠금',
   JOIN_CODE_REISSUE: '인증코드 재발급',
+  DEMO_TEST_MEMBERS: '시연 테스트 회원 생성',
+  DEMO_RESET: '시연 데이터 초기화',
 };
 
 const ACTOR_TYPE_LABEL = {
@@ -105,7 +107,8 @@ function formatEventLabel(code) {
 }
 
 function buildPageNumbers(currentPage, totalPages) {
-  if (totalPages <= 1) return [0];
+  if (totalPages <= 0) return [];
+  if (totalPages === 1) return [0];
   const windowSize = 5;
   let start = Math.max(0, currentPage - Math.floor(windowSize / 2));
   let end = Math.min(totalPages - 1, start + windowSize - 1);
@@ -252,7 +255,7 @@ export default function AdminGroupsPage() {
   const auditData = auditState.data || {};
   const auditItems = auditData.items || [];
   const totalCount = Number(auditData.totalCount || 0);
-  const totalPages = Math.max(1, Number(auditData.totalPages || 0));
+  const totalPages = Number(auditData.totalPages || 0);
   const currentPage = Number(auditData.page ?? filter.page);
   const pageNumbers = buildPageNumbers(currentPage, totalPages);
 
@@ -555,7 +558,7 @@ export default function AdminGroupsPage() {
           </div>
 
           <div className="policy-history-summary">
-            조회 결과 <b>{totalCount}건</b> · 페이지 <b>{currentPage + 1} / {totalPages}</b> (페이지당 {PAGE_SIZE}건)
+            조회 결과 <b>{totalCount}건</b> · 페이지 <b>{totalPages > 0 ? currentPage + 1 : 0} / {totalPages}</b> (페이지당 {PAGE_SIZE}건)
           </div>
 
           <LoadState
