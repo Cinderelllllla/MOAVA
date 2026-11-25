@@ -229,6 +229,35 @@ class SupportReportServiceTest {
     }
 
     @Test
+    @DisplayName("복호화 1건 실패 시 전체 조회가 실패하지 않고 해당 건만 '복호화 오류'로 반환")
+    void getAdminReports_decryptFailureReturnsFallbackWithoutFailingList() {
+        when(mapper.countActiveAdmin(1L)).thenReturn(1);
+        when(mapper.selectAdminReports(null)).thenReturn(List.of(
+                reportRow(
+                        701L, 10L, "김하늘", 101L, "마포 저축 모임",
+                        "ACCOUNT_CHANGE", "BROKEN_ENC==", 3, "RECEIVED", null, null, null,
+                        "2026-11-25 13:00", null
+                ),
+                reportRow(
+                        702L, 11L, "이솔", 102L, "서초 저축 모임",
+                        "OTHER", "VALID_ENC==", 1, "RECEIVED", null, null, null,
+                        "2026-11-25 13:05", null
+                )
+        ));
+        when(mapper.selectAdminReportStatusHistory(null)).thenReturn(List.of());
+        when(mapper.selectStatusCounts()).thenReturn(List.of(countRow("RECEIVED", 2)));
+        when(cryptoKeyService.decrypt("BROKEN_ENC==", 3))
+                .thenThrow(new IllegalStateException("암호화 키를 찾을 수 없습니다. KEY_VER=3"));
+        when(cryptoKeyService.decrypt("VALID_ENC==", 1)).thenReturn("정상 복호화 내용");
+
+        SupportReportDTO.AdminReportListResponse res = service.getAdminReports(1L, "ALL");
+
+        assertEquals(2, res.getTotalCount());
+        assertEquals("복호화 오류", res.getItems().get(0).getDetail());
+        assertEquals("정상 복호화 내용", res.getItems().get(1).getDetail());
+    }
+
+    @Test
     @DisplayName("관리자 상태 변경 성공: STATUS·ADMIN_MEMO·HANDLED_BY 갱신, AUDIT_LOG(REPORT_STATUS) 이력, 신고자 알림")
     void updateReportStatus_success() {
         when(mapper.countActiveAdmin(1L)).thenReturn(1);

@@ -6,6 +6,8 @@ import com.moava.notification.common.domain.NotifType;
 import com.moava.notification.common.service.NotificationService;
 import com.moava.support.dto.SupportReportDTO;
 import com.moava.support.mapper.SupportReportMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,10 +37,13 @@ import java.util.regex.Pattern;
 @Service
 public class SupportReportService {
 
+    private static final Logger log = LoggerFactory.getLogger(SupportReportService.class);
+
     public static final String GUIDANCE_NOTICE =
             "MOAVA는 실제 계좌 동결 및 피해 구제를 수행할 수 없습니다. 사기 피해가 의심되는 경우 해당 은행 및 경찰(112) 등 공식 기관에 즉시 신고해 주세요.";
     public static final String ADMIN_SUBMIT_FORBIDDEN_MESSAGE = "관리자는 신고 처리 메뉴를 이용해 주세요";
     public static final String MEMO_REQUIRED_MESSAGE = "처리 메모가 필요합니다";
+    public static final String DECRYPT_ERROR_MESSAGE = "복호화 오류";
 
     public static final int MAX_DETAIL_LENGTH = 4000;
     public static final int MAX_ADMIN_MEMO_BYTES = 800;
@@ -342,7 +347,7 @@ public class SupportReportService {
             List<SupportReportDTO.StatusHistoryItem> history
     ) {
         int keyVer = row.getKeyVer() == null ? 1 : row.getKeyVer();
-        String decryptedDetail = cryptoKeyService.decrypt(row.getDetailEnc(), keyVer);
+        String decryptedDetail = decryptDetail(row.getSupportReportId(), row.getDetailEnc(), keyVer);
         String groupTitle = trimToNull(row.getGroupTitle());
 
         return SupportReportDTO.ReportItem.builder()
@@ -363,6 +368,15 @@ public class SupportReportService {
                 .updatedAt(row.getUpdatedAt())
                 .history(history == null ? List.of() : history)
                 .build();
+    }
+
+    private String decryptDetail(Long reportId, String detailEnc, int keyVer) {
+        try {
+            return cryptoKeyService.decrypt(detailEnc, keyVer);
+        } catch (RuntimeException e) {
+            log.warn("신고 상세 복호화 실패 (reportId={}, keyVer={})", reportId, keyVer);
+            return DECRYPT_ERROR_MESSAGE;
+        }
     }
 
     private Map<Long, List<SupportReportDTO.StatusHistoryItem>> groupHistoryByReportId(
