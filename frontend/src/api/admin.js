@@ -1,5 +1,6 @@
 /* F26 F32 F37 F39 F40 F41 — 관리자: 해산 승인 · 제재 · 참조번호 · 미납 조치 · 계좌 확인 · 신고 처리 · 알림 */
 import * as D from './mock/db';
+import { apiFetch } from './client';
 const { db, save, fail } = D;
 const needAdmin = () => { if (!D.isAdmin()) fail('관리자만 처리할 수 있습니다.'); };
 
@@ -73,3 +74,55 @@ export const myNotices = () => db.notices.filter(n => !n.deleted && (D.isAdmin()
 export async function readNotice(id) { const n = myNotices().find(x => x.id === id); if (n) n.read = true; save(); }
 export async function readAllNotices() { myNotices().forEach(x => x.read = true); save(); }
 export async function deleteNotices(ids) { if (!ids.length) fail('삭제할 알림을 선택해 주세요.'); myNotices().filter(n => ids.includes(n.id)).forEach(n => n.deleted = true); save(); }
+
+/* ============================================================
+   실제 서버 연동 API — 참조번호 (F24, A05) · 미납 조치 (F26, A06)
+   RefNoController · OverdueController
+   ============================================================ */
+
+/** A05 참조번호 대상 증빙 목록 (ref: 'UNASSIGNED' 미지정 | 'ASSIGNED' 지정 완료) */
+export async function fetchAdminRefProofs(ref = 'UNASSIGNED') {
+  const data = await apiFetch(`/api/v1/admin/payment-proofs?ref=${encodeURIComponent(ref)}`, { method: 'GET' });
+  return Array.isArray(data) ? data : [];
+}
+
+/** A05 다음 참조번호 미리 보기 (번호를 소모하지 않음) */
+export async function fetchRefNoSuggestion() {
+  const data = await apiFetch('/api/v1/admin/payment-proofs/ref-no/suggestion', { method: 'GET' });
+  return data?.refNo ?? null;
+}
+
+/** A05 참조번호 지정 (refNo 를 비우면 서버가 다음 번호로 지정) */
+export async function assignAdminRefNo(proofId, refNo) {
+  const value = refNo?.trim();
+  return apiFetch(`/api/v1/admin/payment-proofs/${Number(proofId)}/ref-no`, {
+    method: 'PATCH',
+    body: JSON.stringify({ refNo: value || null }),
+  });
+}
+
+/** A05 참조번호 정정 (새 번호·사유 필수) */
+export async function correctAdminRefNo(proofId, refNo, reason) {
+  if (!refNo?.trim()) throw new Error('변경할 참조번호를 입력해 주세요.');
+  if (!reason?.trim()) throw new Error('정정 사유를 입력해 주세요.');
+  return apiFetch(`/api/v1/admin/payment-proofs/${Number(proofId)}/ref-no/correction`, {
+    method: 'PATCH',
+    body: JSON.stringify({ refNo: refNo.trim(), reason: reason.trim() }),
+  });
+}
+
+/** A06 미납 목록 (status: 'OPEN' 미해소 | 'RESOLVED' 해소 | 'ALL') */
+export async function fetchAdminOverdueCases(status = 'OPEN') {
+  const data = await apiFetch(`/api/v1/admin/overdue-cases?status=${encodeURIComponent(status)}`, { method: 'GET' });
+  return Array.isArray(data) ? data : [];
+}
+
+/** A06 미납 조치 (action: 'WARN' | 'CHAT_RESTRICT' | 'CHAT_RELEASE' | 'ORDER_REVIEW') — WARN 외에는 사유 필수 */
+export async function applyOverdueAction(overdueCaseId, action, reason) {
+  const text = reason?.trim();
+  if (action !== 'WARN' && !text) throw new Error('조치 사유를 입력해 주세요.');
+  return apiFetch(`/api/v1/admin/overdue-cases/${Number(overdueCaseId)}/actions`, {
+    method: 'POST',
+    body: JSON.stringify(text ? { action, reason: text } : { action }),
+  });
+}
