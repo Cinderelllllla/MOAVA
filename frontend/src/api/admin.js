@@ -5,7 +5,7 @@ const { db, save, fail } = D;
 const needAdmin = () => { if (!D.isAdmin()) fail('관리자만 처리할 수 있습니다.'); };
 
 /* ============================================================
-   실제 서버 연동 API (AdminDashboardController · AdminDemoController · AdminGroupAuditController · DissolutionController)
+   실제 서버 연동 API (AdminDashboardController · AdminDemoController · AdminGroupAuditController · AdminSanctionController · DissolutionController)
    ============================================================ */
 
 export {
@@ -14,6 +14,16 @@ export {
   fetchAdminAuditLogs,
   fetchAdminAuditFilterOptions,
 } from './adminGroups';
+
+export {
+  fetchAdminSanctionOverview,
+  fetchBanCandidates,
+  fetchBannedMembers,
+  banMember,
+  releaseMemberBan,
+  fetchMemberWarnings,
+  fetchSanctionHistory,
+} from './adminSanctions';
 
 /** A01 관리자 대시보드 통계 + 최근 운영 이력 7건 + 시연 초기화 가능 여부 */
 export async function fetchDashboardSummary() {
