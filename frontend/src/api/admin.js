@@ -4,6 +4,66 @@ import { apiFetch } from './client';
 const { db, save, fail } = D;
 const needAdmin = () => { if (!D.isAdmin()) fail('관리자만 처리할 수 있습니다.'); };
 
+/* ============================================================
+   실제 서버 연동 API (AdminDashboardController · AdminDemoController · AdminGroupAuditController · AdminSanctionController · DissolutionController)
+   ============================================================ */
+
+export {
+  fetchAdminGroups,
+  fetchAdminGroupDetail,
+  fetchAdminAuditLogs,
+  fetchAdminAuditFilterOptions,
+} from './adminGroups';
+
+export {
+  fetchAdminSanctionOverview,
+  fetchBanCandidates,
+  fetchBannedMembers,
+  banMember,
+  releaseMemberBan,
+  fetchMemberWarnings,
+  fetchSanctionHistory,
+} from './adminSanctions';
+
+/** A01 관리자 대시보드 통계 + 최근 운영 이력 7건 + 시연 초기화 가능 여부 */
+export async function fetchDashboardSummary() {
+  return apiFetch('/api/v1/admin/dashboard', { method: 'GET' });
+}
+
+/** A01 시연용 테스트 회원 5명 생성 (비밀번호 Test1234!) */
+export async function createDemoTestMembers() {
+  return apiFetch('/api/v1/admin/demo/test-members', { method: 'POST' });
+}
+
+/** A01 시연 데이터 초기화 (운영 환경에서는 비활성화) */
+export async function resetDemoData() {
+  return apiFetch('/api/v1/admin/demo/reset', { method: 'POST' });
+}
+
+/** A04 관리자 해산 신청/완료 목록 조회 (status 생략 시 전체) */
+export async function fetchAdminDissolutions(status) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  const data = await apiFetch(`/api/v1/admin/dissolutions${qs}`, { method: 'GET' });
+  return Array.isArray(data) ? data : [];
+}
+
+/** A04 관리자 해산 최종 승인 */
+export async function approveAdminDissolution(groupId) {
+  return apiFetch(`/api/v1/admin/groups/${Number(groupId)}/dissolution/approve`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+/** A04 관리자 해산 신청 반려 */
+export async function rejectAdminDissolution(groupId, rejectReason) {
+  if (!rejectReason?.trim()) throw new Error('반려 사유를 입력해 주세요.');
+  return apiFetch(`/api/v1/admin/groups/${Number(groupId)}/dissolution/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ rejectReason: rejectReason.trim() }),
+  });
+}
+
 export const members = () => db.members;
 export const history = () => db.history;
 export const sanctions = () => db.sanctions;

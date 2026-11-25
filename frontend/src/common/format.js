@@ -2,6 +2,7 @@
 export const won = n => Number(n || 0).toLocaleString('ko-KR') + '만 원';
 export const wonFromKrw = n => won(Number(n || 0) / 10000);
 export const krw = man => Math.round(Number(man || 0) * 10000).toLocaleString('ko-KR') + '원';
+export const formatKrw = n => Math.round(Number(n || 0)).toLocaleString('ko-KR') + '원';
 export const signed = (n, fmt) => (n > 0 ? '+' : '') + fmt(n);
 export function maskName(name) { name = String(name || '회원'); if (name.length === 1) return name + '○'; if (name.length === 2) return name[0] + '○'; return name[0] + '○'.repeat(name.length - 2) + name.slice(-1); }
 export const maskAccount = a => { a = String(a || ''); return a ? a.replace(/.(?=.{4})/g, '*') : '미등록'; };

@@ -21,7 +21,7 @@ import java.util.List;
  * <ul>
  *   <li>읽기(구독·이전 메시지): 그 모임의 승인된(GYE_MEMBER ACTIVE) 회원. 해산 완료 모임도 읽기는 가능.</li>
  *   <li>보내기: 위 조건 + 해산 완료 아님 + 채팅 제한 아님(미납 제재 CHAT_RESTRICTED_YN 또는 관리자 CHAT_RESTRICT).</li>
- *   <li>본문: 빈 메시지 거부, 500자 이하, 암호화 후 BODY_ENC(2000) 에 들어가는 길이.</li>
+ *   <li>본문: 빈 메시지 거부, 500자 이하, 암호화 후 BODY_ENC(2800) 에 들어가는 길이.</li>
  *   <li>저장 후 방송: DB 에 저장된 메시지만 방송한다 (메시지 번호 포함).</li>
  * </ul>
  * 채팅 본문은 로그·AUDIT_LOG 에 남기지 않는다 (C 등급 개인정보).
@@ -32,8 +32,12 @@ public class ChatService {
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
     public static final int MAX_LENGTH = 500;
-    /** BODY_ENC VARCHAR2(2000) = Base64(IV 12B + 본문 + 태그 16B) → 본문은 UTF-8 로 1472바이트까지 */
-    static final int MAX_BODY_BYTES = 2000 / 4 * 3 - 12 - 16;
+    /**
+     * BODY_ENC VARCHAR2(2800) = Base64(IV 12B + 본문 + 태그 16B) → 본문은 UTF-8 로 2072바이트까지.
+     * 500자는 한 글자가 최대 4바이트(이모지)여도 2000바이트라 항상 들어간다. 컬럼이 다시 줄어들 때를 대비한 안전장치로 둔다.
+     */
+    static final int BODY_ENC_COLUMN = 2800;
+    static final int MAX_BODY_BYTES = BODY_ENC_COLUMN / 4 * 3 - 12 - 16;
     static final int DEFAULT_PAGE = 30;
     static final int MAX_PAGE = 100;
 

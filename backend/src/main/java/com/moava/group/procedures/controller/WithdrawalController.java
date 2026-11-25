@@ -27,7 +27,7 @@ public class WithdrawalController {
     @GetMapping
     public ResponseEntity<List<WithdrawalDTO.StatusResponse>> getWithdrawalList(
             @PathVariable Long groupId, Authentication authentication) {
-        return ResponseEntity.ok(withdrawalService.getWithdrawalList(groupId, loginMemberId(authentication)));
+        return ResponseEntity.ok(withdrawalService.getWithdrawalList(groupId, requireMemberId(authentication)));
     }
 
     // 1. [신청] 일반 회원의 중도 탈퇴 신청 (SETTLEMENT_PENDING)
@@ -36,7 +36,7 @@ public class WithdrawalController {
             @PathVariable Long groupId,
             Authentication authentication,
             @RequestBody WithdrawalDTO.ApplyForm form) {
-        String message = withdrawalService.requestWithdrawal(groupId, loginMemberId(authentication), form);
+        String message = withdrawalService.requestWithdrawal(groupId, requireMemberId(authentication), form);
         return ResponseEntity.ok(Map.of("message", message));
     }
 
@@ -47,7 +47,7 @@ public class WithdrawalController {
             @PathVariable Long withdrawalId,
             Authentication authentication,
             @RequestBody WithdrawalDTO.SettlementForm form) {
-        withdrawalService.registerSettlementPlan(groupId, withdrawalId, loginMemberId(authentication), form);
+        withdrawalService.registerSettlementPlan(groupId, withdrawalId, requireMemberId(authentication), form);
         return ResponseEntity.ok(Map.of("message", "정산안이 등록되었으며 나머지 회원 전원에게 동의 요청 알림을 발송했습니다."));
     }
 
@@ -59,7 +59,7 @@ public class WithdrawalController {
             Authentication authentication,
             @RequestBody WithdrawalDTO.ConsentForm form) {
         String message = withdrawalService.submitSettlementConsent(
-                groupId, withdrawalId, loginMemberId(authentication), form);
+                groupId, withdrawalId, requireMemberId(authentication), form);
         return ResponseEntity.ok(Map.of("message", message));
     }
 
@@ -69,7 +69,7 @@ public class WithdrawalController {
             @PathVariable Long groupId,
             @PathVariable Long withdrawalId,
             Authentication authentication) {
-        withdrawalService.reconfirmWithdrawal(groupId, withdrawalId, loginMemberId(authentication));
+        withdrawalService.reconfirmWithdrawal(groupId, withdrawalId, requireMemberId(authentication));
         return ResponseEntity.ok(Map.of("message", "모임장에게 탈퇴 재확인 요청 알림을 발송했습니다."));
     }
 
@@ -79,7 +79,7 @@ public class WithdrawalController {
             @PathVariable Long groupId,
             @PathVariable Long withdrawalId,
             Authentication authentication) {
-        withdrawalService.approveWithdrawal(groupId, withdrawalId, loginMemberId(authentication));
+        withdrawalService.approveWithdrawal(groupId, withdrawalId, requireMemberId(authentication));
         return ResponseEntity.ok(Map.of("message", "중도 탈퇴가 최종 승인되었습니다."));
     }
 
@@ -88,11 +88,18 @@ public class WithdrawalController {
             @PathVariable Long groupId,
             @PathVariable Long withdrawalId,
             Authentication authentication) {
-        Long requesterId = loginMemberId(authentication);
-        List<WithdrawalDTO.ConsentTargetResponse> targets = isAdmin(authentication)
-                ? withdrawalService.getSettlementConsentTargetsForAdmin(groupId, withdrawalId, requesterId)
-                : withdrawalService.getSettlementConsentTargets(groupId, withdrawalId, requesterId);
-        return ResponseEntity.ok(targets);
+        requireAuthenticated(authentication);
+        if (hasAuthority(authentication, "ROLE_ADMIN")) {
+            Long adminId = parseSubjectId(authentication);
+            return ResponseEntity.ok(
+                    withdrawalService.getSettlementConsentTargetsForAdmin(groupId, withdrawalId, adminId));
+        }
+        if (hasAuthority(authentication, "ROLE_MEMBER")) {
+            Long memberId = parseSubjectId(authentication);
+            return ResponseEntity.ok(
+                    withdrawalService.getSettlementConsentTargets(groupId, withdrawalId, memberId));
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "동의 대상자 현황을 조회할 권한이 없습니다.");
     }
 
     @PostMapping("/{withdrawalId}/consent-targets/{memberId}/exemption")
@@ -102,31 +109,47 @@ public class WithdrawalController {
             @PathVariable Long memberId,
             Authentication authentication,
             @RequestBody WithdrawalDTO.ConsentExemptionForm form) {
-        requireAdmin(authentication);
+        Long adminId = requireAdminId(authentication);
         withdrawalService.exemptSettlementConsentTarget(
-                groupId, withdrawalId, memberId, loginMemberId(authentication), form == null ? null : form.getReason());
+                groupId, withdrawalId, memberId, adminId, form == null ? null : form.getReason());
         return ResponseEntity.ok(Map.of("message", "해당 회원의 정산안 동의 의무를 면제하고 감사 기록을 남겼습니다."));
     }
 
-    private static void requireAdmin(Authentication authentication) {
-        if (!isAdmin(authentication)) {
+    private static Long requireMemberId(Authentication authentication) {
+        requireAuthenticated(authentication);
+        if (!hasAuthority(authentication, "ROLE_MEMBER")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "일반 회원만 이용할 수 있습니다.");
+        }
+        return parseSubjectId(authentication);
+    }
+
+    private static Long requireAdminId(Authentication authentication) {
+        requireAuthenticated(authentication);
+        if (!hasAuthority(authentication, "ROLE_ADMIN")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "플랫폼 관리자만 동의 의무를 면제할 수 있습니다.");
         }
+        return parseSubjectId(authentication);
     }
 
-    private static boolean isAdmin(Authentication authentication) {
-        return authentication != null && !(authentication instanceof AnonymousAuthenticationToken)
-                && authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch("ROLE_ADMIN"::equals);
-    }
-
-    private static Long loginMemberId(Authentication authentication) {
+    private static void requireAuthenticated(Authentication authentication) {
         if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
         }
+    }
+
+    private static boolean hasAuthority(Authentication authentication, String role) {
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role::equals);
+    }
+
+    private static Long parseSubjectId(Authentication authentication) {
         try {
-            return Long.valueOf(authentication.getName());
+            long id = Long.parseLong(authentication.getName());
+            if (id <= 0) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인 정보가 올바르지 않습니다.");
+            }
+            return id;
         } catch (NumberFormatException e) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인 정보가 올바르지 않습니다.");
         }
