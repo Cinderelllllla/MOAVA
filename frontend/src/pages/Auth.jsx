@@ -110,10 +110,7 @@ export function Login() {
 
     try {
       const r = await run(() =>
-        auth.loginWithServer(
-          f.email.trim(),
-          f.password
-        )
+        auth.loginWithServer(f.email.trim(), f.password)
       );
 
       if (r.ok) {

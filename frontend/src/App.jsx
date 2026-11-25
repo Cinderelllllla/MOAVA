@@ -16,8 +16,11 @@ import Operations from './pages/Operations';
 import Procedures from './pages/Procedures';
 import Chat from './pages/Chat';
 import Evidence from './pages/Evidence';
-import { Notifications, Account, Support } from './pages/Misc';
+import { Notifications, Account } from './pages/Misc';
+import SupportReportPage from './pages/SupportReportPage';
 import { AdminDashboard, AdminGroups, AdminSanctions, AdminDissolve, AdminRefs, AdminOverdue } from './pages/admin/AdminPages';
+import AdminLoginPage from './pages/admin/AdminLoginPage';
+import AdminSupportReportsPage from './pages/admin/AdminSupportReportsPage';
 
 export default function App() {
   return <BrowserRouter><Routes>
@@ -26,6 +29,7 @@ export default function App() {
     <Route path="/login" element={<Login />} />
     <Route path="/signup" element={<Signup />} />
     <Route path="/invite" element={<InviteRoute />} />
+    <Route path="/admin/login" element={<AdminLoginPage />} />
     {/* 회원 (S02~S15) */}
     <Route element={<Shell role="MEMBER" />}>
       <Route path="/dashboard" element={<Dashboard />} />
@@ -42,7 +46,7 @@ export default function App() {
       <Route path="/evidence" element={<Evidence />} />
       <Route path="/notifications" element={<Notifications />} />
       <Route path="/account" element={<Account />} />
-      <Route path="/support" element={<Support />} />
+      <Route path="/support" element={<SupportReportPage />} />
     </Route>
     {/* 관리자 (A01~A08) */}
     <Route element={<Shell role="ADMIN" />}>
@@ -52,7 +56,7 @@ export default function App() {
       <Route path="/admin/dissolve" element={<AdminDissolve />} />
       <Route path="/admin/refs" element={<AdminRefs />} />
       <Route path="/admin/overdue" element={<AdminOverdue />} />
-      <Route path="/admin/support" element={<Support />} />
+      <Route path="/admin/support" element={<AdminSupportReportsPage />} />
       <Route path="/admin/notifications" element={<Notifications />} />
     </Route>
     <Route path="*" element={<Navigate to="/" replace />} />

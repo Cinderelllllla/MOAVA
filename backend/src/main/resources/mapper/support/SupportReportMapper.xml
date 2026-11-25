@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.support.mapper.SupportReportMapper">
+
+    <resultMap id="supportReportRowMap" type="com.moava.support.dto.SupportReportDTO$SupportReportRow">
+        <id property="supportReportId" column="supportReportId"/>
+        <result property="memberId" column="memberId"/>
+        <result property="reporterName" column="reporterName"/>
+        <result property="groupId" column="groupId"/>
+        <result property="groupTitle" column="groupTitle"/>
+        <result property="category" column="category"/>
+        <result property="detailEnc" column="detailEnc" jdbcType="CLOB"/>
+        <result property="keyVer" column="keyVer"/>
+        <result property="status" column="status"/>
+        <result property="adminMemo" column="adminMemo"/>
+        <result property="handledBy" column="handledBy"/>
+        <result property="handledByName" column="handledByName"/>
+        <result property="createdAt" column="createdAt"/>
+        <result property="updatedAt" column="updatedAt"/>
+    </resultMap>
+
+    <!-- selectReportForUpdate 전용 (단일 테이블 FOR UPDATE 11컬럼만 매핑) -->
+    <resultMap id="supportReportLockRowMap" type="com.moava.support.dto.SupportReportDTO$SupportReportRow">
+        <id property="supportReportId" column="supportReportId"/>
+        <result property="memberId" column="memberId"/>
+        <result property="groupId" column="groupId"/>
+        <result property="category" column="category"/>
+        <result property="detailEnc" column="detailEnc" jdbcType="CLOB"/>
+        <result property="keyVer" column="keyVer"/>
+        <result property="status" column="status"/>
+        <result property="adminMemo" column="adminMemo"/>
+        <result property="handledBy" column="handledBy"/>
+        <result property="createdAt" column="createdAt"/>
+        <result property="updatedAt" column="updatedAt"/>
+    </resultMap>
+
+    <!-- ==================== 0. 계정 활성 검증 ==================== -->
+
+    <select id="countActiveMember" resultType="int">
+        SELECT COUNT(*)
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+          AND STATUS = 'ACTIVE'
+    </select>
+
+    <select id="countActiveAdmin" resultType="int">
+        SELECT COUNT(*)
+        FROM ADMIN
+        WHERE ADMIN_ID = #{adminId}
+          AND STATUS = 'ACTIVE'
+    </select>
+
+    <!-- ==================== 1. 신고 대상 모임 조회 ==================== -->
+
+    <select id="selectMemberGroups"
+            resultType="com.moava.support.dto.SupportReportDTO$MemberGroupOptionRow">
+        SELECT
+            g.GROUP_ID                                                       AS groupId,
+            g.TITLE                                                          AS title,
+            g.STATUS                                                         AS status,
+            CASE WHEN g.OWNER_ID = #{memberId} THEN 'OWNER' ELSE 'MEMBER' END AS role
+        FROM GYE_GROUP g
+        WHERE g.OWNER_ID = #{memberId}
+           OR EXISTS (
+               SELECT 1
+               FROM GYE_MEMBER gm
+               WHERE gm.GROUP_ID = g.GROUP_ID
+                 AND gm.MEMBER_ID = #{memberId}
+                 AND gm.STATUS = 'ACTIVE'
+           )
+        ORDER BY g.GROUP_ID DESC
+    </select>
+
+    <select id="selectGroupById"
+            resultType="com.moava.support.dto.SupportReportDTO$GroupBasicRow">
+        SELECT
+            GROUP_ID AS groupId,
+            TITLE    AS title,
+            STATUS   AS status
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+    </select>
+
+    <!-- ==================== 2. 신고 접수 저장 ==================== -->
+
+    <select id="nextSupportReportId" resultType="long">
+        SELECT SEQ_SUPPORT_REPORT.NEXTVAL FROM DUAL
+    </select>
+
+    <!-- 상세 내용(DETAIL_ENC)은 반드시 AES-256-GCM 암호문 CLOB으로 저장 (평문 저장 금지) -->
+    <insert id="insertSupportReport">
+        INSERT INTO SUPPORT_REPORT (
+            SUPPORT_REPORT_ID,
+            MEMBER_ID,
+            GROUP_ID,
+            CATEGORY,
+            DETAIL_ENC,
+            KEY_VER,
+            STATUS,
+            ADMIN_MEMO,
+            HANDLED_BY,
+            CREATED_AT,
+            UPDATED_AT
+        ) VALUES (
+            #{reportId},
+            #{memberId},
+            #{groupId, jdbcType=NUMERIC},
+            #{category},
+            #{detailEnc, jdbcType=CLOB},
+            #{keyVer},
+            'RECEIVED',
+            NULL,
+            NULL,
+            SYSDATE,
+            NULL
+        )
+    </insert>
+
+    <!-- ==================== 3. 신고 조회 ==================== -->
+
+    <sql id="supportReportSelectColumns">
+        SELECT
+            r.SUPPORT_REPORT_ID                         AS supportReportId,
+            r.MEMBER_ID                                 AS memberId,
+            m.NAME                                      AS reporterName,
+            r.GROUP_ID                                  AS groupId,
+            g.TITLE                                     AS groupTitle,
+            r.CATEGORY                                  AS category,
+            r.DETAIL_ENC                                AS detailEnc,
+            r.KEY_VER                                   AS keyVer,
+            r.STATUS                                    AS status,
+            r.ADMIN_MEMO                                AS adminMemo,
+            r.HANDLED_BY                                AS handledBy,
+            a.NAME                                      AS handledByName,
+            TO_CHAR(r.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt,
+            TO_CHAR(r.UPDATED_AT, 'YYYY-MM-DD HH24:MI') AS updatedAt
+        FROM SUPPORT_REPORT r
+                 JOIN MEMBER m         ON m.MEMBER_ID = r.MEMBER_ID
+                 LEFT JOIN GYE_GROUP g ON g.GROUP_ID = r.GROUP_ID
+                 LEFT JOIN ADMIN a     ON a.ADMIN_ID = r.HANDLED_BY
+    </sql>
+
+    <select id="selectReportById" resultMap="supportReportRowMap">
+        <include refid="supportReportSelectColumns"/>
+        WHERE r.SUPPORT_REPORT_ID = #{reportId}
+    </select>
+
+    <!-- 상태 변경 시 동시 수정 방지용 행 잠금 조회 (Oracle FOR UPDATE는 단일 테이블에 수행) -->
+    <select id="selectReportForUpdate" resultMap="supportReportLockRowMap">
+        SELECT
+            SUPPORT_REPORT_ID                         AS supportReportId,
+            MEMBER_ID                                 AS memberId,
+            GROUP_ID                                  AS groupId,
+            CATEGORY                                  AS category,
+            DETAIL_ENC                                AS detailEnc,
+            KEY_VER                                   AS keyVer,
+            STATUS                                    AS status,
+            ADMIN_MEMO                                AS adminMemo,
+            HANDLED_BY                                AS handledBy,
+            TO_CHAR(CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt,
+            TO_CHAR(UPDATED_AT, 'YYYY-MM-DD HH24:MI') AS updatedAt
+        FROM SUPPORT_REPORT
+        WHERE SUPPORT_REPORT_ID = #{reportId}
+        FOR UPDATE
+    </select>
+
+    <select id="selectReportsByMemberId" resultMap="supportReportRowMap">
+        <include refid="supportReportSelectColumns"/>
+        WHERE r.MEMBER_ID = #{memberId}
+        ORDER BY r.CREATED_AT DESC, r.SUPPORT_REPORT_ID DESC
+    </select>
+
+    <select id="selectAdminReports" resultMap="supportReportRowMap">
+        <include refid="supportReportSelectColumns"/>
+        <where>
+            <if test="status != null and status != ''">
+                AND r.STATUS = #{status}
+            </if>
+        </where>
+        ORDER BY r.CREATED_AT DESC, r.SUPPORT_REPORT_ID DESC
+    </select>
+
+    <select id="selectStatusCounts"
+            resultType="com.moava.support.dto.SupportReportDTO$StatusCountRow">
+        SELECT
+            STATUS   AS status,
+            COUNT(*) AS count
+        FROM SUPPORT_REPORT
+        GROUP BY STATUS
+    </select>
+
+    <!-- ==================== 4. 관리자 신고 상태 변경 ==================== -->
+
+    <update id="updateReportStatus">
+        UPDATE SUPPORT_REPORT
+        SET STATUS     = #{status},
+            ADMIN_MEMO = #{adminMemo},
+            HANDLED_BY = #{handledBy},
+            UPDATED_AT = SYSDATE
+        WHERE SUPPORT_REPORT_ID = #{reportId}
+    </update>
+
+    <!-- ==================== 5. 감사 로그 (Append-only) ==================== -->
+
+    <!-- 신고 접수 감사 로그 및 모임 변경 기록 (유형·대상 모임만, 상세 평문 절대 금지) -->
+    <insert id="insertMemberAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            ACTOR_ADMIN_ID,
+            TARGET_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        ) VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId, jdbcType=NUMERIC},
+            #{actorMemberId},
+            NULL,
+            NULL,
+            #{eventType},
+            #{description},
+            SYSDATE
+        )
+    </insert>
+
+    <!-- 신고 상태 변경 감사 로그 (ACTOR_ADMIN_ID, TARGET_MEMBER_ID=신고자, 이전·이후 상태·사유 이력) -->
+    <insert id="insertAdminAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            ACTOR_ADMIN_ID,
+            TARGET_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        ) VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId, jdbcType=NUMERIC},
+            NULL,
+            #{actorAdminId},
+            #{targetMemberId, jdbcType=NUMERIC},
+            #{eventType},
+            #{description},
+            SYSDATE
+        )
+    </insert>
+
+    <!-- ==================== 6. 신고 상태 변경 이력 조회 ==================== -->
+
+    <select id="selectReportStatusHistoryByReportId"
+            resultType="com.moava.support.dto.SupportReportDTO$StatusHistoryRow">
+        SELECT
+            l.AUDIT_LOG_ID                              AS auditLogId,
+            l.ACTOR_ADMIN_ID                            AS actorAdminId,
+            a.NAME                                      AS actorAdminName,
+            l.DESCRIPTION                               AS description,
+            TO_CHAR(l.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt
+        FROM AUDIT_LOG l
+                 LEFT JOIN ADMIN a ON a.ADMIN_ID = l.ACTOR_ADMIN_ID
+        WHERE l.EVENT_TYPE = 'REPORT_STATUS'
+          AND l.DESCRIPTION LIKE 'REPORT #' || #{reportId} || ' · %'
+        ORDER BY l.CREATED_AT DESC, l.AUDIT_LOG_ID DESC
+    </select>
+
+    <select id="selectReportStatusHistoryByMemberId"
+            resultType="com.moava.support.dto.SupportReportDTO$StatusHistoryRow">
+        SELECT
+            l.AUDIT_LOG_ID                              AS auditLogId,
+            l.ACTOR_ADMIN_ID                            AS actorAdminId,
+            a.NAME                                      AS actorAdminName,
+            l.DESCRIPTION                               AS description,
+            TO_CHAR(l.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt
+        FROM AUDIT_LOG l
+                 LEFT JOIN ADMIN a ON a.ADMIN_ID = l.ACTOR_ADMIN_ID
+        WHERE l.EVENT_TYPE = 'REPORT_STATUS'
+          AND l.TARGET_MEMBER_ID = #{memberId}
+        ORDER BY l.CREATED_AT DESC, l.AUDIT_LOG_ID DESC
+    </select>
+
+    <select id="selectAdminReportStatusHistory"
+            resultType="com.moava.support.dto.SupportReportDTO$StatusHistoryRow">
+        SELECT
+            l.AUDIT_LOG_ID                              AS auditLogId,
+            l.ACTOR_ADMIN_ID                            AS actorAdminId,
+            a.NAME                                      AS actorAdminName,
+            l.DESCRIPTION                               AS description,
+            TO_CHAR(l.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt
+        FROM AUDIT_LOG l
+                 LEFT JOIN ADMIN a ON a.ADMIN_ID = l.ACTOR_ADMIN_ID
+        WHERE l.EVENT_TYPE = 'REPORT_STATUS'
+        <if test="status != null and status != ''">
+          AND EXISTS (
+              SELECT 1
+              FROM SUPPORT_REPORT sr
+              WHERE sr.STATUS = #{status}
+                AND l.DESCRIPTION LIKE 'REPORT #' || sr.SUPPORT_REPORT_ID || ' · %'
+          )
+        </if>
+        ORDER BY l.CREATED_AT DESC, l.AUDIT_LOG_ID DESC
+    </select>
+
+</mapper>

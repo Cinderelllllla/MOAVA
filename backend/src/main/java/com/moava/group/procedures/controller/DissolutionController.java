@@ -25,7 +25,7 @@ public class DissolutionController {
     public ResponseEntity<DissolutionDTO.StatusResponse> getGroupDissolution(
             @PathVariable Long groupId, Authentication authentication) {
         DissolutionDTO.StatusResponse status =
-                dissolutionService.getGroupDissolutionStatus(groupId, loginMemberId(authentication));
+                dissolutionService.getGroupDissolutionStatus(groupId, requireMemberId(authentication));
         if (status == null) {
             return ResponseEntity.noContent().build();
         }
@@ -38,7 +38,7 @@ public class DissolutionController {
             @PathVariable Long groupId,
             Authentication authentication,
             @RequestBody DissolutionDTO.RequestForm form) {
-        String message = dissolutionService.requestDissolution(groupId, loginMemberId(authentication), form);
+        String message = dissolutionService.requestDissolution(groupId, requireMemberId(authentication), form);
         return ResponseEntity.ok(Map.of("message", message));
     }
 
@@ -47,8 +47,7 @@ public class DissolutionController {
     public ResponseEntity<List<DissolutionDTO.StatusResponse>> getAdminDissolutionList(
             Authentication authentication,
             @RequestParam(required = false) String status) {
-        requireAdmin(authentication);
-        Long adminId = loginMemberId(authentication);
+        Long adminId = requireAdminId(authentication);
         return ResponseEntity.ok(dissolutionService.getAdminDissolutionList(adminId, status));
     }
 
@@ -58,8 +57,7 @@ public class DissolutionController {
             @PathVariable Long groupId,
             Authentication authentication,
             @RequestBody(required = false) DissolutionDTO.AdminDecisionForm form) {
-        requireAdmin(authentication);
-        Long adminId = loginMemberId(authentication);
+        Long adminId = requireAdminId(authentication);
         String message = dissolutionService.approveDissolutionByAdmin(groupId, adminId);
         return ResponseEntity.ok(Map.of("message", message));
     }
@@ -70,32 +68,47 @@ public class DissolutionController {
             @PathVariable Long groupId,
             Authentication authentication,
             @RequestBody(required = false) DissolutionDTO.AdminDecisionForm form) {
-        requireAdmin(authentication);
-        Long adminId = loginMemberId(authentication);
+        Long adminId = requireAdminId(authentication);
         String reason = form == null ? null : form.getRejectReason();
         String message = dissolutionService.rejectDissolutionByAdmin(groupId, adminId, reason);
         return ResponseEntity.ok(Map.of("message", message));
     }
 
-    private static void requireAdmin(Authentication authentication) {
-        if (!isAdmin(authentication)) {
+    private static Long requireMemberId(Authentication authentication) {
+        requireAuthenticated(authentication);
+        if (!hasAuthority(authentication, "ROLE_MEMBER")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "일반 회원만 이용할 수 있습니다.");
+        }
+        return parseSubjectId(authentication);
+    }
+
+    private static Long requireAdminId(Authentication authentication) {
+        requireAuthenticated(authentication);
+        if (!hasAuthority(authentication, "ROLE_ADMIN")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "플랫폼 관리자만 해산을 처리할 수 있습니다.");
         }
+        return parseSubjectId(authentication);
     }
 
-    private static boolean isAdmin(Authentication authentication) {
-        return authentication != null && !(authentication instanceof AnonymousAuthenticationToken)
-                && authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch("ROLE_ADMIN"::equals);
-    }
-
-    private static Long loginMemberId(Authentication authentication) {
+    private static void requireAuthenticated(Authentication authentication) {
         if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
         }
+    }
+
+    private static boolean hasAuthority(Authentication authentication, String role) {
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role::equals);
+    }
+
+    private static Long parseSubjectId(Authentication authentication) {
         try {
-            return Long.valueOf(authentication.getName());
+            long id = Long.parseLong(authentication.getName());
+            if (id <= 0) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인 정보가 올바르지 않습니다.");
+            }
+            return id;
         } catch (NumberFormatException e) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인 정보가 올바르지 않습니다.");
         }
