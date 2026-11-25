@@ -125,11 +125,15 @@ export default function AdminSanctionsPage() {
   };
 
   const handleRelease = async item => {
-    if (!confirm(`${item.memberName} 회원의 가입 제한을 해제할까요?\n이전 제재 기록은 감사 이력에 보존되며, 해제 후 모임 가입 신청이 다시 가능합니다.`)) {
+    const input = prompt(
+      `${item.memberName} 회원의 가입 제한을 해제할까요?\n이전 제재 기록은 감사 이력에 보존되며, 해제 후 모임 가입 신청이 다시 가능합니다.\n\n해제 사유를 입력하세요 (비워 두면 기본 문구로 기록됩니다).`,
+      ''
+    );
+    if (input === null) {
       return;
     }
     const res = await run(
-      () => releaseMemberBan(item.memberId),
+      () => releaseMemberBan(item.memberId, input),
       data => data?.message || '플랫폼 가입 제한을 해제했어요.'
     );
     if (res.ok) {
