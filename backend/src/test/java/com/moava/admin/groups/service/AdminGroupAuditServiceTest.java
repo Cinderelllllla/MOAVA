@@ -2,6 +2,7 @@ package com.moava.admin.groups.service;
 
 import com.moava.admin.groups.dto.AdminGroupAuditDTO;
 import com.moava.admin.groups.mapper.AdminGroupAuditMapper;
+import com.moava.crypto.service.CryptoKeyService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +37,9 @@ class AdminGroupAuditServiceTest {
 
     @Mock
     AdminGroupAuditMapper mapper;
+
+    @Mock
+    CryptoKeyService cryptoKeyService;
 
     @InjectMocks
     AdminGroupAuditService service;
@@ -125,6 +129,8 @@ class AdminGroupAuditServiceTest {
         AdminGroupAuditDTO.GroupAccountRow currentAcc = new AdminGroupAuditDTO.GroupAccountRow();
         currentAcc.setGyeAccountId(501L);
         currentAcc.setBankName("국민은행");
+        currentAcc.setHolderNameEnc("ENC_HOLDER_NAME");
+        currentAcc.setKeyVer(1);
         currentAcc.setRegisteredByName("김하늘");
         currentAcc.setAccountNoLast4("6789");
         currentAcc.setVerifyStatus("VERIFIED");
@@ -133,6 +139,7 @@ class AdminGroupAuditServiceTest {
         when(mapper.selectAdminGroupDetail(101L)).thenReturn(detailRow);
         when(mapper.selectGroupAccountByStatus(101L, "CURRENT")).thenReturn(currentAcc);
         when(mapper.selectGroupAccountByStatus(101L, "PENDING")).thenReturn(null);
+        when(cryptoKeyService.decrypt("ENC_HOLDER_NAME", 1)).thenReturn("박예금");
 
         AdminGroupAuditDTO.GroupDetailResponse res = service.getGroupDetail(1L, 101L);
 
@@ -145,9 +152,44 @@ class AdminGroupAuditServiceTest {
         assertEquals(2, res.getOverdueCaseCount());
         assertNotNull(res.getCurrentAccount());
         assertEquals("****6789", res.getCurrentAccount().getMaskedAccountNo());
-        assertEquals("김○늘", res.getCurrentAccount().getMaskedHolderName());
+        assertEquals("박○금", res.getCurrentAccount().getMaskedHolderName());
         assertNull(res.getPendingAccount());
         assertEquals(AdminGroupAuditService.READ_ONLY_NOTICE, res.getReadOnlyNotice());
+        verify(cryptoKeyService).decrypt("ENC_HOLDER_NAME", 1);
+    }
+
+    @Test
+    @DisplayName("계모임 상세 조회: 예금주 복호화 실패 또는 미존재 시 등록자명으로 안전 대체")
+    void getGroupDetail_fallsBackToRegisteredByNameWhenDecryptFails() {
+        when(mapper.countActiveAdmin(1L)).thenReturn(1);
+
+        AdminGroupAuditDTO.GroupDetailRow detailRow = new AdminGroupAuditDTO.GroupDetailRow();
+        detailRow.setGroupId(102L);
+        detailRow.setTitle("서초 모임");
+        detailRow.setOwnerId(10L);
+        detailRow.setOwnerName("김하늘");
+        detailRow.setStatus("ACTIVE");
+
+        AdminGroupAuditDTO.GroupAccountRow currentAcc = new AdminGroupAuditDTO.GroupAccountRow();
+        currentAcc.setGyeAccountId(502L);
+        currentAcc.setBankName("신한은행");
+        currentAcc.setHolderNameEnc("INVALID_CIPHER");
+        currentAcc.setKeyVer(2);
+        currentAcc.setRegisteredByName("최등록");
+        currentAcc.setAccountNoLast4("1234");
+        currentAcc.setVerifyStatus("VERIFIED");
+        currentAcc.setAccountStatus("CURRENT");
+
+        when(mapper.selectAdminGroupDetail(102L)).thenReturn(detailRow);
+        when(mapper.selectGroupAccountByStatus(102L, "CURRENT")).thenReturn(currentAcc);
+        when(mapper.selectGroupAccountByStatus(102L, "PENDING")).thenReturn(null);
+        when(cryptoKeyService.decrypt("INVALID_CIPHER", 2))
+                .thenThrow(new IllegalStateException("decrypt failed"));
+
+        AdminGroupAuditDTO.GroupDetailResponse res = service.getGroupDetail(1L, 102L);
+
+        assertNotNull(res.getCurrentAccount());
+        assertEquals("최○록", res.getCurrentAccount().getMaskedHolderName());
     }
 
     @Test

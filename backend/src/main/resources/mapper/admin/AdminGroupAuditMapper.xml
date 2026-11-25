@@ -160,6 +160,8 @@
             SELECT
                 a.GYE_ACCOUNT_ID                            AS gyeAccountId,
                 a.BANK_NAME                                 AS bankName,
+                a.HOLDER_NAME_ENC                           AS holderNameEnc,
+                a.KEY_VER                                   AS keyVer,
                 m.NAME                                      AS registeredByName,
                 a.ACCOUNT_NO_LAST4                          AS accountNoLast4,
                 a.VERIFY_STATUS                             AS verifyStatus,

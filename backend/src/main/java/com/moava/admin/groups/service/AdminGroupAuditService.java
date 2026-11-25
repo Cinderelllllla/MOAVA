@@ -3,6 +3,9 @@ package com.moava.admin.groups.service;
 import com.moava.admin.groups.dto.AdminGroupAuditDTO;
 import com.moava.admin.groups.mapper.AdminGroupAuditMapper;
 import com.moava.common.util.NameMasker;
+import com.moava.crypto.service.CryptoKeyService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,15 +23,19 @@ import java.util.Locale;
 @Service
 public class AdminGroupAuditService {
 
+    private static final Logger log = LoggerFactory.getLogger(AdminGroupAuditService.class);
+
     public static final int DEFAULT_PAGE_SIZE = 8;
     public static final int MAX_PAGE_SIZE = 50;
     public static final String READ_ONLY_NOTICE =
             "가입 승인 및 납입 증빙 승인은 모임장 전용입니다. 관리자는 조회·감사만 가능합니다.";
 
     private final AdminGroupAuditMapper mapper;
+    private final CryptoKeyService cryptoKeyService;
 
-    public AdminGroupAuditService(AdminGroupAuditMapper mapper) {
+    public AdminGroupAuditService(AdminGroupAuditMapper mapper, CryptoKeyService cryptoKeyService) {
         this.mapper = mapper;
+        this.cryptoKeyService = cryptoKeyService;
     }
 
     /** 전체 계모임 목록 조회 (모임장 마스킹·상태·활성 회원 수·납입일·계좌 인증 상태) */
@@ -219,7 +226,7 @@ public class AdminGroupAuditService {
         }
         String last4 = trimToNull(row.getAccountNoLast4());
         String maskedAccountNo = last4 == null ? "미등록" : "****" + last4;
-        String holder = trimToNull(row.getRegisteredByName());
+        String holder = resolveHolderName(row);
         return AdminGroupAuditDTO.GroupAccountSummary.builder()
                 .gyeAccountId(row.getGyeAccountId())
                 .bankName(row.getBankName())
@@ -231,6 +238,23 @@ public class AdminGroupAuditService {
                 .requestedAt(row.getRequestedAt())
                 .verifiedAt(row.getVerifiedAt())
                 .build();
+    }
+
+    private String resolveHolderName(AdminGroupAuditDTO.GroupAccountRow row) {
+        String holderEnc = trimToNull(row.getHolderNameEnc());
+        if (holderEnc != null) {
+            int keyVer = row.getKeyVer() == null ? 1 : row.getKeyVer();
+            try {
+                String decrypted = trimToNull(cryptoKeyService.decrypt(holderEnc, keyVer));
+                if (decrypted != null) {
+                    return decrypted;
+                }
+            } catch (RuntimeException e) {
+                log.warn("GYE_ACCOUNT 예금주 복호화 실패 (gyeAccountId={}, keyVer={}): 등록자명으로 대체",
+                        row.getGyeAccountId(), keyVer);
+            }
+        }
+        return trimToNull(row.getRegisteredByName());
     }
 
     private AdminGroupAuditDTO.AuditLogItem toAuditLogItem(AdminGroupAuditDTO.AuditLogRow row) {
