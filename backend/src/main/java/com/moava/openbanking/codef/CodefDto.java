@@ -81,8 +81,11 @@ public class CodefDto {
         private String account;            // 계좌번호 (숫자 또는 하이픈 포함 허용, 전송 시 숫자만)
         private String accountPassword;    // 계좌 비밀번호 (은행별 조건부, RSA 암호화 후 폐기)
         private String birthDate;          // 생년월일 YYMMDD (은행별 조건부)
-        private String startDate;          // yyyyMMdd (미입력 시 최근 7일)
+        private String startDate;          // yyyyMMdd (미입력 시 최근 1개월)
         private String endDate;            // yyyyMMdd (미입력 시 오늘)
+        private Boolean syncToMockBank;    // true(기본)/null: 인증 성공 시 모의 은행 원장에 자동 적재, false: CODEF 인증만 수행
+        private Long initialMockBalance;   // 선택: 모의 은행 적재 잔액 지정 (미입력 시 CODEF 실잔액 반영)
+        private Boolean leaderAccount;     // 선택: 모임장 수취 계좌 여부 (미입력 시 GYE_GROUP.OWNER_ID 보유 여부로 자동 판별)
     }
 
     @Getter @Setter
@@ -90,6 +93,7 @@ public class CodefDto {
         private boolean verified;
         private String organization;
         private String bankName;
+        private String accountName;        // CODEF 조회 계좌 상품명 (resAccountName)
         private String accountMasked;
         private String accountLast4;
         private String holderName;         // CODEF 실조회 예금주명 (resAccountHolder)
@@ -97,6 +101,7 @@ public class CodefDto {
         private Long balanceAmt;
         private int recentTransactionCount;
         private LocalDateTime verifiedAt;
+        private com.moava.openbanking.dto.MockBankDto.ProvisionResult mockAccount;
         private String message;
     }
 

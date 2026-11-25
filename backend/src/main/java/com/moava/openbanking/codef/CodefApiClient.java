@@ -115,9 +115,13 @@ public class CodefApiClient {
     }
 
     /**
-     * CODEF API POST 호출 (Bearer 토큰 자동 부착 + URL-Decode + CF-* 결과코드 검증)
+     * CODEF API POST 호출 (Bearer 토큰 자동 부착 + 401/CF-00401 1회 자동 재발급 재시도 + URL-Decode + CF-* 결과코드 검증)
      */
     public JsonNode postApi(String path, Map<String, Object> payload) {
+        return postApiInternal(path, payload, true);
+    }
+
+    private JsonNode postApiInternal(String path, Map<String, Object> payload, boolean allowRetryOnTokenError) {
         String accessToken = getAccessToken();
         try {
             String raw = apiClient.post()
@@ -129,14 +133,23 @@ public class CodefApiClient {
                     .body(String.class);
 
             JsonNode root = parseJsonLenient(raw);
+            String code = root.path("result").path("code").asString("");
+            if ("CF-00401".equals(code) && allowRetryOnTokenError) {
+                log.info("[CODEF] 액세스 토큰 만료 응답(CF-00401) 감지 — 토큰 재발급 후 1회 재시도: path={}", path);
+                invalidateTokenCache();
+                return postApiInternal(path, payload, false);
+            }
             validateCodefResult(root);
             return root.path("data");
         } catch (CodefException e) {
             throw e;
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 401) {
-                // 만료/무효 토큰 캐시 즉시 초기화
                 invalidateTokenCache();
+                if (allowRetryOnTokenError) {
+                    log.info("[CODEF] HTTP 401 응답 감지 — 토큰 재발급 후 1회 재시도: path={}", path);
+                    return postApiInternal(path, payload, false);
+                }
             }
             log.warn("[CODEF] API 호출 HTTP 오류: path={}, status={}", path, e.getStatusCode().value());
             throw CodefException.badGateway("CODEF_HTTP_" + e.getStatusCode().value(),
@@ -184,7 +197,8 @@ public class CodefApiClient {
         }
         if ("CF-00401".equals(code) || "CF-00403".equals(code)) {
             invalidateTokenCache();
-            throw CodefException.unauthorized(code, "CODEF 인증 토큰 또는 접근 권한 오류: " + message);
+            // 프론트 apiFetch의 401 자동 로그아웃(MOAVA JWT 만료)과 혼동되지 않도록 502로 매핑한다.
+            throw CodefException.badGateway(code, "CODEF 인증 토큰 또는 접근 권한 오류: " + message);
         }
         String fullMsg = extra.isBlank() ? message : message + " (" + extra + ")";
         throw CodefException.badRequest(code.isBlank() ? "CODEF_API_ERROR" : code, fullMsg);

@@ -86,6 +86,12 @@ public class CodefBankController {
         if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
             throw CodefException.unauthorized("CODEF_AUTH_REQUIRED", "로그인이 필요합니다.");
         }
+        boolean isMember = authentication.getAuthorities() != null
+                && authentication.getAuthorities().stream()
+                        .anyMatch(a -> "ROLE_MEMBER".equals(a.getAuthority()));
+        if (!isMember) {
+            throw CodefException.forbidden("CODEF_MEMBER_ONLY", "일반 회원 계정으로 로그인한 경우에만 이용할 수 있습니다.");
+        }
         try {
             return Long.valueOf(authentication.getName());
         } catch (NumberFormatException e) {

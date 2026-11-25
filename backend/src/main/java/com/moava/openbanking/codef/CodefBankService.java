@@ -1,9 +1,11 @@
 package com.moava.openbanking.codef;
 
 import com.moava.crypto.service.CryptoKeyService;
+import com.moava.openbanking.dto.MockBankDto;
 import com.moava.openbanking.service.KftcSecurityGuard;
-import lombok.RequiredArgsConstructor;
+import com.moava.openbanking.service.MockBankProvisionService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -25,10 +27,10 @@ import java.util.regex.Pattern;
  * 1) /v1/account/create — 공동인증서(loginType=0) 또는 은행 ID/PW(loginType=1)로 connectedId 발급·암호화 저장
  * 2) /v1/kr/bank/p/account/account-list — 보유 계좌 목록 조회
  * 3) /v1/kr/bank/p/account/transaction-list (inquiryType=1) — 실제 예금주(resAccountHolder) ↔ MEMBER.NAME 대조로 실계좌 소유 인증
+ * 4) 인증 완료 시 MockBankProvisionService와 연계해 모의 은행(MOCK_KFTC_ACCOUNT / MOCK_KFTC_TRANSACTION) 원장 자동 적재
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class CodefBankService {
 
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -41,6 +43,35 @@ public class CodefBankService {
     private final CodefAccountMapper mapper;
     private final CryptoKeyService cryptoKeyService;
     private final KftcSecurityGuard securityGuard;
+    private final MockBankProvisionService mockBankProvisionService;
+
+    @Autowired
+    public CodefBankService(
+            CodefApiClient codefApiClient,
+            CodefProperties properties,
+            CodefAccountMapper mapper,
+            CryptoKeyService cryptoKeyService,
+            KftcSecurityGuard securityGuard,
+            MockBankProvisionService mockBankProvisionService
+    ) {
+        this.codefApiClient = codefApiClient;
+        this.properties = properties;
+        this.mapper = mapper;
+        this.cryptoKeyService = cryptoKeyService;
+        this.securityGuard = securityGuard;
+        this.mockBankProvisionService = mockBankProvisionService;
+    }
+
+    /** 기존 단위 테스트 호환용 생성자 */
+    public CodefBankService(
+            CodefApiClient codefApiClient,
+            CodefProperties properties,
+            CodefAccountMapper mapper,
+            CryptoKeyService cryptoKeyService,
+            KftcSecurityGuard securityGuard
+    ) {
+        this(codefApiClient, properties, mapper, cryptoKeyService, securityGuard, null);
+    }
 
     public List<CodefDto.SupportedBank> getSupportedBanks() {
         return Arrays.stream(CodefBankCode.values())
@@ -140,7 +171,9 @@ public class CodefBankService {
             JsonNode firstErr = errorList.get(0);
             String errCode = firstErr.path("code").asString("CODEF_CONNECT_FAILED");
             String errMsg = firstErr.path("message").asString("은행 계정 등록에 실패했습니다.");
-            throw CodefException.badRequest(errCode, errMsg);
+            String extra = firstErr.path("extraMessage").asString("");
+            String fullMsg = extra.isBlank() ? errMsg : errMsg + " (" + extra + ")";
+            throw CodefException.badRequest(errCode, fullMsg);
         }
 
         String connectedId = data.path("connectedId").asString("");
@@ -234,7 +267,7 @@ public class CodefBankService {
         String connectedId = resolveDecryptedConnectedId(memberId, bank);
 
         LocalDate today = LocalDate.now();
-        LocalDate start = isNotBlank(req.getStartDate()) ? parseDate(req.getStartDate(), "startDate") : today.minusDays(7);
+        LocalDate start = isNotBlank(req.getStartDate()) ? parseDate(req.getStartDate(), "startDate") : today.minusMonths(1);
         LocalDate end = isNotBlank(req.getEndDate()) ? parseDate(req.getEndDate(), "endDate") : today;
         validateDateRange(start, end);
 
@@ -259,8 +292,9 @@ public class CodefBankService {
             );
         }
 
-        Long balanceAmt = parseLongSafe(data.path("resAccountBalance").asString("0"));
-        List<CodefDto.TransactionItem> txList = parseTransactions(data.path("resTrHistoryList"));
+        List<CodefDto.TransactionItem> rawTxList = parseTransactionsRaw(data.path("resTrHistoryList"));
+        Long balanceAmt = resolveBalanceAmt(data, rawTxList);
+        String accountName = data.path("resAccountName").asString("").trim();
 
         int keyVer = cryptoKeyService.getCurrentKeyVersion();
         String accountEnc = cryptoKeyService.encrypt(accountDigits, keyVer);
@@ -269,22 +303,106 @@ public class CodefBankService {
 
         mapper.markAccountVerified(memberId, bank.getCodefOrgCode(), accountEnc, last4, holderName, keyVer, verifiedAt);
 
-        log.info("[CODEF-AUDIT] 실계좌 인증 완료: memberId={}, org={}, account=****{}",
-                memberId, bank.getCodefOrgCode(), last4);
+        MockBankDto.ProvisionResult mockAccount = null;
+        if (mockBankProvisionService != null && !Boolean.FALSE.equals(req.getSyncToMockBank())) {
+            mockAccount = mockBankProvisionService.provisionFromCodef(
+                    memberId,
+                    bank,
+                    accountDigits,
+                    holderName,
+                    balanceAmt,
+                    rawTxList,
+                    req.getInitialMockBalance(),
+                    req.getLeaderAccount(),
+                    true
+            );
+        }
+
+        log.info("[CODEF-AUDIT] 실계좌 인증 완료: memberId={}, org={}, account=****{}, mockSynced={}",
+                memberId, bank.getCodefOrgCode(), last4, mockAccount != null);
 
         CodefDto.VerifyAccountResponse res = new CodefDto.VerifyAccountResponse();
         res.setVerified(true);
         res.setOrganization(bank.getCodefOrgCode());
         res.setBankName(bank.getBankName());
+        res.setAccountName(accountName.isEmpty() ? null : securityGuard.sanitizeOutputText(accountName));
         res.setAccountMasked("****" + last4);
         res.setAccountLast4(last4);
         res.setHolderName(securityGuard.sanitizeOutputText(holderName));
         res.setMemberName(securityGuard.sanitizeOutputText(memberName));
         res.setBalanceAmt(balanceAmt);
-        res.setRecentTransactionCount(txList.size());
+        res.setRecentTransactionCount(rawTxList.size());
         res.setVerifiedAt(verifiedAt);
-        res.setMessage("실계좌 소유 및 예금주 실명 인증이 완료되었습니다.");
+        res.setMockAccount(mockAccount);
+        res.setMessage(mockAccount != null
+                ? "실계좌 인증 및 모의 은행 원장 적재가 완료되었습니다."
+                : "실계좌 소유 및 예금주 실명 인증이 완료되었습니다.");
         return res;
+    }
+
+    /**
+     * 이미 CODEF 실계좌인증이 완료된 계좌의 최신 잔액·거래내역을 CODEF에서 재조회해 모의 은행 원장에 적재한다.
+     */
+    @Transactional
+    public MockBankDto.ProvisionResult refreshVerifiedAccountToMockBank(
+            Long memberId,
+            CodefBankCode bank,
+            String accountPassword,
+            String birthDate,
+            String startDate,
+            String endDate,
+            Long initialMockBalance,
+            Boolean leaderAccount,
+            String clientIp
+    ) {
+        requireMemberId(memberId);
+        checkRateLimit("CODEF_SYNC", memberId, clientIp, 10);
+        if (mockBankProvisionService == null) {
+            throw CodefException.serviceUnavailable("MOCK_BANK_UNAVAILABLE", "모의 은행 적재 서비스가 초기화되지 않았습니다.");
+        }
+
+        CodefDto.ConnectionRecord conn = mapper.findConnection(memberId, bank.getCodefOrgCode());
+        if (conn == null || !isNotBlank(conn.getConnectedIdEnc())) {
+            throw CodefException.notFound("CODEF_NOT_CONNECTED", "먼저 해당 은행 계정을 연결해 주세요.");
+        }
+        if (!"Y".equals(conn.getVerifiedYn()) || !isNotBlank(conn.getVerifiedAccountEnc())) {
+            throw CodefException.badRequest("CODEF_NOT_VERIFIED", "먼저 실계좌 인증을 완료해 주세요.");
+        }
+
+        String connectedId = cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer());
+        String accountDigits = cryptoKeyService.decrypt(conn.getVerifiedAccountEnc(), conn.getKeyVer());
+
+        LocalDate today = LocalDate.now();
+        LocalDate start = isNotBlank(startDate) ? parseDate(startDate, "startDate") : today.minusMonths(1);
+        LocalDate end = isNotBlank(endDate) ? parseDate(endDate, "endDate") : today;
+        validateDateRange(start, end);
+
+        Map<String, Object> payload = buildTransactionPayload(
+                bank.getCodefOrgCode(), connectedId, accountDigits,
+                start.format(YYYYMMDD), end.format(YYYYMMDD), "0",
+                accountPassword, birthDate
+        );
+
+        JsonNode data = codefApiClient.postApi("/v1/kr/bank/p/account/transaction-list", payload);
+        List<CodefDto.TransactionItem> rawTxList = parseTransactionsRaw(data.path("resTrHistoryList"));
+        Long balanceAmt = resolveBalanceAmt(data, rawTxList);
+
+        String holderName = data.path("resAccountHolder").asString("").trim();
+        if (holderName.isBlank()) {
+            holderName = isNotBlank(conn.getVerifiedHolderName()) ? conn.getVerifiedHolderName() : "회원";
+        }
+
+        return mockBankProvisionService.provisionFromCodef(
+                memberId,
+                bank,
+                accountDigits,
+                holderName,
+                balanceAmt,
+                rawTxList,
+                initialMockBalance,
+                leaderAccount,
+                true
+        );
     }
 
     /**
@@ -342,7 +460,7 @@ public class CodefBankService {
         res.setBankName(bank.getBankName());
         res.setAccountMasked("****" + last4);
         res.setHolderName(securityGuard.sanitizeOutputText(data.path("resAccountHolder").asString("")));
-        res.setBalanceAmt(parseLongSafe(data.path("resAccountBalance").asString("0")));
+        res.setBalanceAmt(resolveBalanceAmt(data, txList));
         res.setStartDate(data.path("commStartDate").asString(startStr));
         res.setEndDate(data.path("commEndDate").asString(endStr));
         res.setCount(txList.size());
@@ -427,21 +545,29 @@ public class CodefBankService {
     }
 
     private List<CodefDto.TransactionItem> parseTransactions(JsonNode node) {
+        return parseTransactionsInternal(node, true);
+    }
+
+    private List<CodefDto.TransactionItem> parseTransactionsRaw(JsonNode node) {
+        return parseTransactionsInternal(node, false);
+    }
+
+    private List<CodefDto.TransactionItem> parseTransactionsInternal(JsonNode node, boolean sanitizeForOutput) {
         List<CodefDto.TransactionItem> list = new ArrayList<>();
         if (node == null || node.isMissingNode() || node.isNull()) {
             return list;
         }
         if (node.isArray()) {
             for (JsonNode item : node) {
-                list.add(toTransactionItem(item));
+                list.add(toTransactionItem(item, sanitizeForOutput));
             }
         } else if (node.isObject()) {
-            list.add(toTransactionItem(node));
+            list.add(toTransactionItem(node, sanitizeForOutput));
         }
         return list;
     }
 
-    private CodefDto.TransactionItem toTransactionItem(JsonNode item) {
+    private CodefDto.TransactionItem toTransactionItem(JsonNode item, boolean sanitizeForOutput) {
         long inAmt = parseLongSafe(item.path("resAccountIn").asString("0"));
         long outAmt = parseLongSafe(item.path("resAccountOut").asString("0"));
 
@@ -456,11 +582,34 @@ public class CodefBankService {
             tx.setTranAmt(outAmt);
         }
         tx.setAfterBalanceAmt(parseLongSafe(item.path("resAfterTranBalance").asString("0")));
-        tx.setDesc1(securityGuard.sanitizeOutputText(item.path("resAccountDesc1").asString("")));
-        tx.setDesc2(securityGuard.sanitizeOutputText(item.path("resAccountDesc2").asString("")));
-        tx.setDesc3(securityGuard.sanitizeOutputText(item.path("resAccountDesc3").asString("")));
-        tx.setDesc4(securityGuard.sanitizeOutputText(item.path("resAccountDesc4").asString("")));
+
+        String d1 = item.path("resAccountDesc1").asString("");
+        String d2 = item.path("resAccountDesc2").asString("");
+        String d3 = item.path("resAccountDesc3").asString("");
+        String d4 = item.path("resAccountDesc4").asString("");
+        if (sanitizeForOutput) {
+            tx.setDesc1(securityGuard.sanitizeOutputText(d1));
+            tx.setDesc2(securityGuard.sanitizeOutputText(d2));
+            tx.setDesc3(securityGuard.sanitizeOutputText(d3));
+            tx.setDesc4(securityGuard.sanitizeOutputText(d4));
+        } else {
+            tx.setDesc1(d1);
+            tx.setDesc2(d2);
+            tx.setDesc3(d3);
+            tx.setDesc4(d4);
+        }
         return tx;
+    }
+
+    private Long resolveBalanceAmt(JsonNode data, List<CodefDto.TransactionItem> txList) {
+        String rawBal = data.path("resAccountBalance").asString("").trim();
+        if (!rawBal.isEmpty()) {
+            return parseLongSafe(rawBal);
+        }
+        if (txList != null && !txList.isEmpty() && txList.get(0).getAfterBalanceAmt() != null) {
+            return txList.get(0).getAfterBalanceAmt();
+        }
+        return 0L;
     }
 
     private String validateLoginType(String raw) {
