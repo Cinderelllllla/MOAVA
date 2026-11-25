@@ -28,7 +28,7 @@ public class GroupJoinRequestService {
     }
 
     // ==================================================
-    // F16 - 모임 가입 신청 및 재가입 신청
+    // F16 - 모임 가입 신청
     // ==================================================
 
     @Transactional
@@ -87,18 +87,19 @@ public class GroupJoinRequestService {
             );
         }
 
-        // 5. 가입 및 재가입 제한 대상 확인
-        // ACTIVE, EXPELLED, 곗돈 수령 완료 회원은 신청 불가
-        // WITHDRAWN + 미수령 회원은 재가입 신청 가능
-        if (mapper.countBlockedMembership(
+        // 5. 기존 참여 이력 확인
+        // ACTIVE, WITHDRAWN, EXPELLED 모두 가입 신청 불가
+        // 탈퇴 완료 회원은 동일 모임에 재가입할 수 없음
+        if (mapper.countExistingMembership(
                 groupId, memberId) > 0) {
             throw new IllegalStateException(
-                    "현재 참여 중이거나 재가입이 제한된 회원입니다."
+                    "이미 참여 중이거나 탈퇴 이력이 있는 모임입니다."
             );
         }
 
         // 6. 유효한 승인 대기 신청 중복 확인
         // 7일이 경과한 신청은 중복 신청 검사에서 제외
+        // 거절 및 만료된 신청은 실제 가입 이력이 없으면 재신청 가능
         if (mapper.countPendingRequest(
                 groupId, memberId) > 0) {
             throw new IllegalStateException(
@@ -222,7 +223,7 @@ public class GroupJoinRequestService {
     }
 
     // ==================================================
-    // F16 - 모임장 가입 및 재가입 승인
+    // F16 - 모임장 가입 신청 승인
     // ==================================================
 
     @Transactional
@@ -315,12 +316,13 @@ public class GroupJoinRequestService {
             );
         }
 
-        // 9. 가입 및 재가입 가능 여부 재확인
+        // 9. 기존 참여 이력 재확인
         // 신청 이후 회원 상태가 변경되었을 수 있으므로 재검사
-        if (mapper.countBlockedMembership(
+        // 기존 가입 이력이 있는 회원은 승인 불가
+        if (mapper.countExistingMembership(
                 groupId, memberId) > 0) {
             throw new IllegalStateException(
-                    "현재 참여 중이거나 재가입이 제한된 회원입니다."
+                    "이미 참여 중이거나 탈퇴 이력이 있는 모임입니다."
             );
         }
 
@@ -369,35 +371,16 @@ public class GroupJoinRequestService {
             );
         }
 
-        // 13. 신규 가입 또는 기존 탈퇴 회원 재가입 처리
-        int affectedRows;
+        // 13. 신규 회원 참여 관계 생성
+        // 기존 탈퇴 회원의 재활성화는 허용하지 않음
+        int inserted = mapper.insertApprovedMember(
+                groupId,
+                memberId
+        );
 
-        if (mapper.countExistingMembership(
-                groupId, memberId) > 0) {
-
-            // 기존 탈퇴 회원 재활성화
-            // 기존 GYE_MEMBER_ID 및 금융 이력 유지
-            // WARNING_COUNT, CHAT_RESTRICTED_YN 유지
-            // WITHDRAWN + 미수령 회원만 UPDATE 가능
-            affectedRows =
-                    mapper.reactivateWithdrawnMember(
-                            groupId,
-                            memberId
-                    );
-
-        } else {
-
-            // 신규 회원 참여 관계 생성
-            affectedRows =
-                    mapper.insertApprovedMember(
-                            groupId,
-                            memberId
-                    );
-        }
-
-        if (affectedRows != 1) {
+        if (inserted != 1) {
             throw new IllegalStateException(
-                    "모임원 가입 또는 재가입 처리에 실패했습니다."
+                    "모임원 가입 처리에 실패했습니다."
             );
         }
 

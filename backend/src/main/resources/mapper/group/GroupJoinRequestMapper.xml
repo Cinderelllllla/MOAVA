@@ -20,23 +20,12 @@
     </select>
 
     <!-- 기존 참여 이력 확인 -->
+    <!-- 탈퇴 및 강제 탈퇴 회원도 재가입 불가 -->
     <select id="countExistingMembership" resultType="int">
         SELECT COUNT(*)
         FROM GYE_MEMBER
         WHERE GROUP_ID = #{groupId}
           AND MEMBER_ID = #{memberId}
-    </select>
-
-    <!-- F16 - 재가입 불가능한 기존 참여 관계 확인 -->
-    <select id="countBlockedMembership" resultType="int">
-        SELECT COUNT(*)
-        FROM GYE_MEMBER
-        WHERE GROUP_ID = #{groupId}
-          AND MEMBER_ID = #{memberId}
-          AND (
-              STATUS IN ('ACTIVE', 'EXPELLED')
-              OR PAYOUT_RECEIVED_YN = 'Y'
-          )
     </select>
 
     <!-- 유효한 승인 대기 신청 확인 -->
@@ -226,39 +215,6 @@
             'ACTIVE'
         )
     </insert>
-
-    <!-- ==========================================
-         F16 - 자진 탈퇴 회원 재가입
-         ========================================== -->
-
-    <!--
-        기존 참여 관계를 재활성화한다.
-
-        재가입 조건:
-        1. 기존 회원 상태가 WITHDRAWN
-        2. 곗돈 수령 완료 이력이 없음
-        3. 모임 상태가 RECRUITING
-
-        기존 GYE_MEMBER_ID, 수령 정보,
-        경고 횟수 및 채팅 제한 상태는 유지한다.
-    -->
-    <update id="reactivateWithdrawnMember">
-        UPDATE GYE_MEMBER
-        SET
-            STATUS = 'ACTIVE',
-            JOINED_AT = SYSDATE,
-            LEFT_AT = NULL
-        WHERE GROUP_ID = #{groupId}
-          AND MEMBER_ID = #{memberId}
-          AND STATUS = 'WITHDRAWN'
-          AND PAYOUT_RECEIVED_YN = 'N'
-          AND EXISTS (
-              SELECT 1
-              FROM GYE_GROUP G
-              WHERE G.GROUP_ID = #{groupId}
-                AND G.STATUS = 'RECRUITING'
-          )
-    </update>
 
     <!-- 가입 신청 거절: 7일 이내 신청만 가능 -->
     <update id="rejectJoinRequest">

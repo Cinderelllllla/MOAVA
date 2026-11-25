@@ -318,6 +318,33 @@ export async function createGroup(f) {
 
 /* ---- 가입 (F16 F18 F20) ---- */
 
+// F16 - 기존 가입 및 탈퇴 이력 확인
+function hasMembershipHistory(g, memberId) {
+  const key = String(memberId);
+
+  return (
+    String(g.ownerId) === key ||
+
+    (g.members ?? []).some(
+      id => String(id) === key
+    ) ||
+
+    (g.joinRequests ?? []).some(
+      r => String(r.userId) === key &&
+           r.status === '승인'
+    ) ||
+
+    (g.withdrawals ?? []).some(
+      w => String(w.userId) === key &&
+           w.status === '완료'
+    ) ||
+
+    (g.formerMemberIds ?? []).some(
+      id => String(id) === key
+    )
+  );
+}
+
 export async function joinRequest(id) {
   const g = D.group(id);
 
@@ -328,42 +355,43 @@ export async function joinRequest(id) {
   }
 
   if (
-      g.status !== '모집 중' ||
-      g.started ||
-      g.dissolution ||
-      g.members.length >= g.max
+    g.status !== '모집 중' ||
+    g.started ||
+    g.dissolution ||
+    g.members.length >= g.max
   ) {
     fail('가입이 마감된 모임입니다.');
   }
 
-  if (D.joined(g)) {
-    fail('이미 참여 중인 모임입니다.');
+  // F16 - 기존 가입 및 탈퇴 이력이 있으면 재가입 불가
+  if (hasMembershipHistory(g, D.me())) {
+    fail('이미 참여 중이거나 탈퇴 이력이 있는 모임입니다.');
   }
 
   if (
-      g.joinRequests.some(
-          x => x.userId === D.me() && x.status === '대기'
-      )
+    g.joinRequests.some(
+      x => x.userId === D.me() && x.status === '대기'
+    )
   ) {
     fail('이미 신청했어요.');
   }
 
   if (g.visibility === 'PRIVATE') {
-  const d = D.ensureJoinCode(g);
-  const key = String(D.me());
+    const d = D.ensureJoinCode(g);
+    const key = String(D.me());
 
-  if ((d.attempts[key]?.count ?? 0) >= 3) {
-    fail(
-      '인증에 3회 실패했습니다. 모임장에게 인증코드 재발급을 요청해 주세요.'
-    );
-  }
+    if ((d.attempts[key]?.count ?? 0) >= 3) {
+      fail(
+        '인증에 3회 실패했습니다. 모임장에게 인증코드 재발급을 요청해 주세요.'
+      );
+    }
 
-  if (!d.verified[key]) {
-    fail(
-      '비공개 모임은 초대 링크와 인증코드로만 가입 신청할 수 있어요.'
-    );
+    if (!d.verified[key]) {
+      fail(
+        '비공개 모임은 초대 링크와 인증코드로만 가입 신청할 수 있어요.'
+      );
+    }
   }
-}
 
   g.joinRequests.push({
     id: D.uid(),
@@ -373,12 +401,17 @@ export async function joinRequest(id) {
   });
 
   D.notice(
-      g.ownerId,
-      '가입 검토 필요',
-      `${g.title}에 가입 신청이 접수되었습니다.`
+    g.ownerId,
+    '가입 검토 필요',
+    `${g.title}에 가입 신청이 접수되었습니다.`
   );
 
-  D.audit('가입 신청', g.id, `${D.currentUser().name} 신청`);
+  D.audit(
+    '가입 신청',
+    g.id,
+    `${D.currentUser().name} 신청`
+  );
+
   save();
 }
 
@@ -444,9 +477,9 @@ export async function approveJoin(id, rid) {
   }
 
   if (
-      g.started ||
-      g.members.length >= g.max ||
-      g.status !== '모집 중'
+    g.started ||
+    g.members.length >= g.max ||
+    g.status !== '모집 중'
   ) {
     fail('가입이 마감되었습니다.');
   }
@@ -455,19 +488,27 @@ export async function approveJoin(id, rid) {
     fail('플랫폼 가입 제한 회원입니다.');
   }
 
-  r.status = '승인';
-
-  if (!g.members.includes(r.userId)) {
-    g.members.push(r.userId);
+  // F16 - 승인 시점에도 기존 가입 이력 재검사
+  if (hasMembershipHistory(g, r.userId)) {
+    fail('이미 참여 중이거나 탈퇴 이력이 있는 회원입니다.');
   }
 
+  r.status = '승인';
+
+  g.members.push(r.userId);
+
   D.notice(
-      r.userId,
-      '계모임 가입 승인',
-      `${g.title} 가입이 승인되었습니다.`
+    r.userId,
+    '계모임 가입 승인',
+    `${g.title} 가입이 승인되었습니다.`
   );
 
-  D.audit('가입 승인', id, D.memberName(r.userId));
+  D.audit(
+    '가입 승인',
+    id,
+    D.memberName(r.userId)
+  );
+
   save();
 }
 
@@ -915,6 +956,17 @@ export async function forceMember(id, x, reason) {
 
   if ((g.warnings[x] || 0) < 2) {
     fail('누적 경고 2회 이상부터 강제 탈퇴 검토가 가능합니다.');
+  }
+
+  // F16 - 강제 탈퇴 회원의 재가입 차단을 위한 이력 보존
+  g.formerMemberIds ??= [];
+
+  if (
+    !g.formerMemberIds.some(
+      id => String(id) === String(x)
+    )
+  ) {
+    g.formerMemberIds.push(x);
   }
 
   g.members = g.members.filter(a => a !== x);

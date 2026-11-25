@@ -403,16 +403,10 @@ export default function Invite() {
 
       setJoinResult(result);
     } catch (error) {
-      if (error.status === 409) {
-        setJoinError(
-          '이미 가입 신청했거나 가입할 수 없는 상태예요.'
-        );
-      } else {
-        setJoinError(
-          error.message ||
-          '가입 신청 중 오류가 발생했어요.'
-        );
-      }
+      setJoinError(
+        error.message ||
+        '가입 신청 중 오류가 발생했어요.'
+      );
     } finally {
       setJoining(false);
     }
@@ -517,16 +511,10 @@ export default function Invite() {
 
       setDirectJoinResult(result);
     } catch (error) {
-      if (error.status === 409) {
-        setDirectError(
-          '이미 가입 신청했거나 가입할 수 없는 상태예요.'
-        );
-      } else {
-        setDirectError(
-          error.message ||
-          '가입 신청 중 오류가 발생했어요.'
-        );
-      }
+      setDirectError(
+        error.message ||
+        '가입 신청 중 오류가 발생했어요.'
+      );
     } finally {
       setDirectJoining(false);
     }

@@ -20,13 +20,8 @@ public interface GroupJoinRequestMapper {
     );
 
     // 기존 참여 이력 확인
+    // ACTIVE, WITHDRAWN, EXPELLED 모두 가입 제한
     int countExistingMembership(
-            @Param("groupId") Long groupId,
-            @Param("memberId") Long memberId
-    );
-
-    // 재가입이 불가능한 기존 참여 관계 확인
-    int countBlockedMembership(
             @Param("groupId") Long groupId,
             @Param("memberId") Long memberId
     );
@@ -84,12 +79,6 @@ public interface GroupJoinRequestMapper {
 
     // 신규 회원 등록
     int insertApprovedMember(
-            @Param("groupId") Long groupId,
-            @Param("memberId") Long memberId
-    );
-
-    // 기존 자진 탈퇴 회원 재활성화
-    int reactivateWithdrawnMember(
             @Param("groupId") Long groupId,
             @Param("memberId") Long memberId
     );
