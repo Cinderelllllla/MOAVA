@@ -25,6 +25,7 @@ import {
   TOKEN_KEY,
   getToken,
   tokenMemberId,
+  tokenRole,
   setServerMember,
   apiFetch,
   friendlyError,
@@ -77,22 +78,27 @@ export function clearAccessToken() {
 }
 
 // ========================================
-// 3. 실제 서버 회원을 화면 세션에 연결
+// 3. 실제 서버 회원/관리자를 화면 세션에 연결
 // ========================================
 
-function connectServerSession(result) {
+function connectServerSession(result, expectedType = 'MEMBER') {
   sessionStorage.setItem(TOKEN_KEY, result.accessToken);
-  const memberId = tokenMemberId(result.accessToken);
+  const subjectId = tokenMemberId(result.accessToken);
+  const role = tokenRole(result.accessToken) || expectedType;
 
-  if (!memberId) {
+  if (!subjectId || role !== expectedType) {
     clearAccessToken();
-    throw new Error('로그인 정보를 확인하지 못했어요. 다시 로그인해 주세요.');
+    throw new Error('로그인 권한 정보를 확인하지 못했어요. 다시 로그인해 주세요.');
   }
 
-  setServerMember(result.user);
+  setServerMember({ ...result.user, role });
 
-  db.session = { type: 'MEMBER', id: memberId, source: 'SERVER' };
-  ensureFinanceOwner();
+  db.session = { type: expectedType, id: subjectId, source: 'SERVER' };
+  if (expectedType === 'MEMBER') {
+    ensureFinanceOwner();
+  } else {
+    clearFinance();
+  }
 
   // 기존 Zustand 구독 화면에 변경 알림
   save();
@@ -104,7 +110,7 @@ function connectServerSession(result) {
 export async function refreshMe() {
   if (!getToken()) return null;
   const user = await apiFetch('/api/auth/me');
-  setServerMember(user);
+  setServerMember({ ...user, role: 'MEMBER' });
   save();
   return user;
 }
@@ -137,11 +143,11 @@ export async function signupWithServer(f) {
     privacyAgreed: f.privacyAgreed
   });
 
-  return connectServerSession(result);
+  return connectServerSession(result, 'MEMBER');
 }
 
 // ========================================
-// 5. Spring Boot 로그인
+// 5. Spring Boot 로그인 (회원 / 관리자)
 // ========================================
 
 export async function loginWithServer(email, password) {
@@ -150,7 +156,16 @@ export async function loginWithServer(email, password) {
     password
   });
 
-  return connectServerSession(result);
+  return connectServerSession(result, 'MEMBER');
+}
+
+export async function loginAdminWithServer(email, password) {
+  const result = await requestAuth('admin/login', {
+    email: email.trim(),
+    password
+  });
+
+  return connectServerSession(result, 'ADMIN');
 }
 
 // ========================================
