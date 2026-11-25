@@ -12,8 +12,9 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import java.util.UUID;
 
-/** 금융(F07·F10) 컨트롤러 전용 오류 변환. 다른 패키지 컨트롤러에는 영향을 주지 않는다. */
-@RestControllerAdvice(assignableTypes = {FinanceMonthlyController.class, SpendingDefaultController.class})
+/** 금융(F07·F10·AI 분석) 컨트롤러 전용 오류 변환. 다른 패키지 컨트롤러에는 영향을 주지 않는다. */
+@RestControllerAdvice(assignableTypes = {FinanceMonthlyController.class, SpendingDefaultController.class,
+        AiFinanceController.class, AiPayoutOrderController.class})
 public class FinanceExceptionHandler {
 
     @ExceptionHandler(FinanceException.class)
