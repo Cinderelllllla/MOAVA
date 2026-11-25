@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.admin.sanctions.mapper.AdminSanctionMapper">
+
+    <!-- ==================== 0. 활성 관리자 검증 ==================== -->
+
+    <select id="countActiveAdmin" resultType="int">
+        SELECT COUNT(*)
+        FROM ADMIN
+        WHERE ADMIN_ID = #{adminId}
+          AND STATUS = 'ACTIVE'
+    </select>
+
+    <!-- ==================== 1. 플랫폼 가입 제한 대상/목록 조회 ==================== -->
+
+    <!-- 제재 대상 후보: 활성 회원 중 현재 가입 제한 중(BANNED_YN='Y')이 아닌 회원 -->
+    <select id="selectBanCandidates"
+            resultType="com.moava.admin.sanctions.dto.AdminSanctionDTO$BanCandidateRow">
+        SELECT
+            m.MEMBER_ID                                AS memberId,
+            m.NAME                                     AS name,
+            m.EMAIL                                    AS email,
+            m.REGION_SIDO                              AS regionSido,
+            m.REGION_SIGUNGU                           AS regionSigungu,
+            TO_CHAR(m.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt
+        FROM MEMBER m
+        WHERE m.STATUS = 'ACTIVE'
+          AND m.BANNED_YN = 'N'
+        ORDER BY m.CREATED_AT DESC, m.MEMBER_ID DESC
+    </select>
+
+    <!-- 현재 가입 제한 중인 회원 목록 + 가장 최근 BAN 이력 (기존 제재 이력은 보존) -->
+    <select id="selectBannedMembers"
+            resultType="com.moava.admin.sanctions.dto.AdminSanctionDTO$BannedMemberRow">
+        SELECT
+            m.MEMBER_ID                                  AS memberId,
+            m.NAME                                       AS name,
+            m.EMAIL                                      AS email,
+            s.SANCTION_ID                                AS latestSanctionId,
+            s.REASON                                     AS reason,
+            s.ISSUED_ADMIN_ID                            AS issuedAdminId,
+            a.NAME                                       AS issuedAdminName,
+            TO_CHAR(s.CREATED_AT, 'YYYY-MM-DD HH24:MI')  AS bannedAt
+        FROM MEMBER m
+                 LEFT JOIN (
+                     SELECT
+                         SANCTION_ID,
+                         MEMBER_ID,
+                         REASON,
+                         ISSUED_ADMIN_ID,
+                         CREATED_AT
+                     FROM (
+                         SELECT
+                             SANCTION_ID,
+                             MEMBER_ID,
+                             REASON,
+                             ISSUED_ADMIN_ID,
+                             CREATED_AT,
+                             ROW_NUMBER() OVER (
+                                 PARTITION BY MEMBER_ID
+                                 ORDER BY CREATED_AT DESC, SANCTION_ID DESC
+                             ) AS rn
+                         FROM SANCTION
+                         WHERE SANCTION_TYPE = 'BAN'
+                     )
+                     WHERE rn = 1
+                 ) s ON s.MEMBER_ID = m.MEMBER_ID
+                 LEFT JOIN ADMIN a ON a.ADMIN_ID = s.ISSUED_ADMIN_ID
+        WHERE m.STATUS = 'ACTIVE'
+          AND m.BANNED_YN = 'Y'
+        ORDER BY s.CREATED_AT DESC NULLS LAST, m.MEMBER_ID DESC
+    </select>
+
+    <!-- 가입 제한 설정/해제 대상 회원 행 잠금 조회 (중복 BAN 방지) -->
+    <select id="selectMemberForBanUpdate"
+            resultType="com.moava.admin.sanctions.dto.AdminSanctionDTO$MemberBanTargetRow">
+        SELECT
+            MEMBER_ID AS memberId,
+            NAME      AS name,
+            EMAIL     AS email,
+            STATUS    AS status,
+            BANNED_YN AS bannedYn
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+        FOR UPDATE
+    </select>
+
+    <!-- 조건부 상태 전이: BANNED_YN = fromYn 인 ACTIVE 회원만 toYn 으로 변경 -->
+    <update id="updateMemberBannedYn">
+        UPDATE MEMBER
+        SET BANNED_YN  = #{toYn},
+            UPDATED_AT = SYSDATE
+        WHERE MEMBER_ID = #{memberId}
+          AND STATUS = 'ACTIVE'
+          AND BANNED_YN = #{fromYn}
+    </update>
+
+    <select id="nextSanctionId" resultType="long">
+        SELECT SEQ_SANCTION.NEXTVAL FROM DUAL
+    </select>
+
+    <!-- (v3.1) 플랫폼 가입 제한/해제는 GROUP_ID=NULL, ISSUED_MEMBER_ID=NULL, ISSUED_ADMIN_ID만 기록 (Append-only) -->
+    <insert id="insertAdminSanction">
+        INSERT INTO SANCTION (
+            SANCTION_ID,
+            SANCTION_TYPE,
+            MEMBER_ID,
+            GROUP_ID,
+            ISSUED_MEMBER_ID,
+            ISSUED_ADMIN_ID,
+            REASON,
+            CREATED_AT
+        ) VALUES (
+            #{sanctionId},
+            #{sanctionType},
+            #{memberId},
+            NULL,
+            NULL,
+            #{adminId},
+            #{reason},
+            SYSDATE
+        )
+    </insert>
+
+    <!-- 감사 로그 Append-only (ACTOR_ADMIN_ID만 기록, GROUP_ID=NULL) -->
+    <insert id="insertAdminAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            ACTOR_ADMIN_ID,
+            TARGET_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        ) VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            NULL,
+            NULL,
+            #{adminId},
+            #{targetMemberId},
+            #{eventType},
+            #{description},
+            SYSDATE
+        )
+    </insert>
+
+    <!-- ==================== 2. 모임별 회원 경고 현황 (n/2회) ==================== -->
+
+    <select id="selectMemberWarnings"
+            resultType="com.moava.admin.sanctions.dto.AdminSanctionDTO$MemberWarningRow">
+        SELECT
+            gm.GYE_MEMBER_ID                             AS gyeMemberId,
+            gm.GROUP_ID                                  AS groupId,
+            g.TITLE                                      AS groupTitle,
+            g.STATUS                                     AS groupStatus,
+            gm.MEMBER_ID                                 AS memberId,
+            m.NAME                                       AS memberName,
+            gm.WARNING_COUNT                             AS warningCount,
+            TO_CHAR(gm.JOINED_AT, 'YYYY-MM-DD HH24:MI')  AS joinedAt
+        FROM GYE_MEMBER gm
+                 JOIN GYE_GROUP g ON g.GROUP_ID = gm.GROUP_ID
+                 JOIN MEMBER m    ON m.MEMBER_ID = gm.MEMBER_ID
+        WHERE gm.STATUS = 'ACTIVE'
+          AND gm.WARNING_COUNT &gt; 0
+        ORDER BY gm.WARNING_COUNT DESC, gm.GROUP_ID ASC, gm.MEMBER_ID ASC
+    </select>
+
+    <!-- ==================== 3. 경고·강제 탈퇴 이력 검색·유형 필터·8건 페이징 ==================== -->
+
+    <sql id="warningExpelHistoryWhere">
+        <where>
+            <choose>
+                <when test="sanctionType != null and sanctionType != ''">
+                    AND s.SANCTION_TYPE = #{sanctionType}
+                </when>
+                <otherwise>
+                    AND s.SANCTION_TYPE IN ('WARN', 'EXPEL')
+                </otherwise>
+            </choose>
+            <if test="escapedKeyword != null and escapedKeyword != ''">
+                AND (
+                    LOWER(NVL(m.NAME, '')) LIKE '%' || LOWER(#{escapedKeyword}) || '%' ESCAPE '\'
+                    OR LOWER(NVL(g.TITLE, '')) LIKE '%' || LOWER(#{escapedKeyword}) || '%' ESCAPE '\'
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="countWarningExpelHistory"
+            parameterType="com.moava.admin.sanctions.dto.AdminSanctionDTO$SanctionHistorySearchCriteria"
+            resultType="long">
+        SELECT COUNT(*)
+        FROM SANCTION s
+                 JOIN MEMBER m        ON m.MEMBER_ID = s.MEMBER_ID
+                 LEFT JOIN GYE_GROUP g ON g.GROUP_ID = s.GROUP_ID
+        <include refid="warningExpelHistoryWhere"/>
+    </select>
+
+    <select id="selectWarningExpelHistory"
+            parameterType="com.moava.admin.sanctions.dto.AdminSanctionDTO$SanctionHistorySearchCriteria"
+            resultType="com.moava.admin.sanctions.dto.AdminSanctionDTO$SanctionHistoryRow">
+        SELECT
+            s.SANCTION_ID                                AS sanctionId,
+            s.SANCTION_TYPE                              AS sanctionType,
+            s.GROUP_ID                                   AS groupId,
+            NVL(g.TITLE, '모임 미지정')                   AS groupTitle,
+            s.MEMBER_ID                                  AS memberId,
+            m.NAME                                       AS memberName,
+            s.ISSUED_MEMBER_ID                           AS issuedMemberId,
+            im.NAME                                      AS issuedMemberName,
+            s.ISSUED_ADMIN_ID                            AS issuedAdminId,
+            ia.NAME                                      AS issuedAdminName,
+            s.REASON                                     AS reason,
+            TO_CHAR(s.CREATED_AT, 'YYYY-MM-DD HH24:MI')  AS createdAt
+        FROM SANCTION s
+                 JOIN MEMBER m         ON m.MEMBER_ID = s.MEMBER_ID
+                 LEFT JOIN GYE_GROUP g ON g.GROUP_ID = s.GROUP_ID
+                 LEFT JOIN MEMBER im   ON im.MEMBER_ID = s.ISSUED_MEMBER_ID
+                 LEFT JOIN ADMIN ia    ON ia.ADMIN_ID = s.ISSUED_ADMIN_ID
+        <include refid="warningExpelHistoryWhere"/>
+        ORDER BY s.CREATED_AT DESC, s.SANCTION_ID DESC
+        OFFSET #{offset} ROWS FETCH NEXT #{size} ROWS ONLY
+    </select>
+
+</mapper>

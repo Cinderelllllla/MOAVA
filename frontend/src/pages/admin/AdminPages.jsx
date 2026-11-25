@@ -168,22 +168,8 @@ export function AdminDashboard() {
 /* ---- A02 계모임 관리 및 이력 감사 (F38 · 서버 API 연동) ---- */
 export { default as AdminGroups } from './AdminGroupsPage';
 
-/* ---- A03 제재 (F39) ---- */
-export function AdminSanctions() {
-  const { run } = useApp(); const [f, setF] = useState({ user: '', reason: '' }); const [wf, setWf] = useState({ search: '', type: 'all', page: 0 });
-  const active = admin.sanctions().filter(x => x.active), ids = new Set(active.map(x => x.userId));
-  const available = admin.members().filter(x => x.status !== 'WITHDRAWN' && !ids.has(x.id));
-  const summaries = groups.listGroups().flatMap(g => Object.entries(g.warnings || {}).filter(([, c]) => c > 0).map(([id, count]) => ({ g, id: Number(id), count }))).sort((a, b) => b.count - a.count);
-  const warnRows = admin.history().filter(x => ['경고', '강제 탈퇴'].includes(x.type)).filter(h => (wf.type === 'all' || h.type === wf.type) && (!wf.search || [h.description, groups.getGroup(h.groupId)?.title, h.type].join(' ').toLowerCase().includes(wf.search.toLowerCase())));
-  const size = 8, pages = Math.max(1, Math.ceil(warnRows.length / size)), page = Math.min(wf.page, pages - 1);
-  return <><PageHead kicker="PLATFORM SAFETY" title="신고 · 제재 관리" sub="중복 제재를 방지하고 회원별 경고·강제 탈퇴 이력을 관리합니다. 플랫폼 가입 제한은 ADMIN만 결정합니다." />
-    <Card><h2>신규 가입 제한 설정</h2><div className="form-grid"><div className="field"><label>제재 대상 (현재 제한 회원 제외)</label><select value={f.user} onChange={e => setF({ ...f, user: e.target.value })}><option value="">회원 선택</option>{available.map(a => <option key={a.id} value={a.id}>{a.name} · {a.email}</option>)}</select></div><Input label="제재 사유" name="sanctionReason" placeholder="제재 사유를 입력하세요" value={f.reason} onChange={e => setF({ ...f, reason: e.target.value })} /></div>
-      <div className="actions"><button className="btn danger" onClick={() => run(() => admin.setSanction(Number(f.user), f.reason), '가입 제한을 설정했어요.').then(r => r.ok && setF({ user: '', reason: '' }))}>플랫폼 가입 제한 설정</button></div><div className="divider" />
-      <h2>현재 가입 제한 · {active.length}명</h2>{active.length ? active.map(x => <div className="list-item item-head" key={x.id}><div><b>{memberName(x.userId)}</b><p className="muted mini">{x.reason} · {x.date}</p></div><button className="btn small soft" onClick={() => confirm('가입 제한을 해제할까요? 이전 제재 기록은 감사 이력에 남습니다.') && run(() => admin.releaseSanction(x.userId), '가입 제한을 해제했어요.')}>가입 제한 해제</button></div>) : <p className="muted">가입 제한 중인 회원이 없습니다.</p>}</Card>
-    <div className="section"><Card><h2>모임별 회원 경고 현황</h2><p className="muted mini">모임별 최대 2회. 2회 도달 시 자동 탈퇴하지 않고 모임장이 검토합니다.</p>{summaries.length ? summaries.map(x => <div className="list-item item-head" key={x.g.id + '-' + x.id}><div><b>{memberName(x.id)}</b> · {x.g.title}<p className="muted mini">경고 {x.count}회 · {x.count >= 2 ? '강제 탈퇴 검토 대상' : '경고 관리 중'}</p></div><span className={`pill ${x.count >= 2 ? 'warn' : ''}`}>{x.count}/2회</span></div>) : <p className="muted">현재 경고 대상이 없습니다.</p>}</Card></div>
-    <div className="section"><Card><h2>경고 · 강제 탈퇴 상세 이력</h2><div className="form-grid"><Input label="회원·모임 검색" name="warnSearch" placeholder="회원명 또는 모임명" value={wf.search} onChange={e => setWf({ ...wf, search: e.target.value, page: 0 })} /><div className="field"><label>처리 유형</label><select value={wf.type} onChange={e => setWf({ ...wf, type: e.target.value, page: 0 })}><option value="all">전체</option><option>경고</option><option>강제 탈퇴</option></select></div></div>
-      <HistoryTable items={warnRows.slice(page * size, (page + 1) * size)} /><div className="actions" style={{ justifyContent: 'flex-end', marginTop: 14 }}><span className="muted mini">{warnRows.length}건 · {page + 1}/{pages}페이지</span><button className="btn small soft" disabled={page <= 0} onClick={() => setWf({ ...wf, page: page - 1 })}>이전</button><button className="btn small soft" disabled={page >= pages - 1} onClick={() => setWf({ ...wf, page: page + 1 })}>다음</button></div></Card></div></>;
-}
+/* ---- A03 플랫폼 가입 제한 설정·해제 및 경고 현황 (F39 · 서버 API 연동) ---- */
+export { default as AdminSanctions } from './AdminSanctionsPage';
 
 /* ---- A04 해산 승인 · 탈퇴 동의 면제 (F32 · 서버 API 연동) ---- */
 export function AdminDissolve() {
