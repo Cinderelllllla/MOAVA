@@ -12,9 +12,11 @@ public record GroupListResponse(
         String regionSigungu,
         Long amount,
         Integer maxMembers,
+        Integer currentMembers,
         Integer months,
         Integer payDay,
         BigDecimal assumedRate,
         String visibility,
-        String description
+        String description,
+        String role
 ) {}

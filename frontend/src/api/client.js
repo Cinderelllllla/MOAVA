@@ -4,28 +4,46 @@
 export const TOKEN_KEY = 'moava_access_token';
 export const getToken = () => sessionStorage.getItem(TOKEN_KEY);
 
-/** JWT 안의 회원 번호(sub = MEMBER_ID). 토큰이 없거나 읽을 수 없으면 null */
-export function tokenMemberId(token = getToken()) {
+function parseTokenClaims(token = getToken()) {
     try {
         const payload = token?.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');
         if (!payload) return null;
-        const claims = JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, '=')));
-        const id = Number(claims.sub);
-        return Number.isSafeInteger(id) && id > 0 ? id : null;
+        return JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, '=')));
     } catch {
         return null;
     }
 }
 
-/** 로그인한 회원 정보(이름·이메일·지역) — 토큰과 같은 sessionStorage 에 둔다. 전화번호는 저장하지 않는다. */
+/** JWT 안의 주체 번호(sub = MEMBER_ID 또는 ADMIN_ID). 토큰이 없거나 읽을 수 없으면 null */
+export function tokenMemberId(token = getToken()) {
+    const claims = parseTokenClaims(token);
+    const id = Number(claims?.sub);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/** JWT 안의 역할 클레임(role = 'MEMBER' | 'ADMIN'). 없으면 null */
+export function tokenRole(token = getToken()) {
+    const role = parseTokenClaims(token)?.role;
+    return role === 'ADMIN' || role === 'MEMBER' ? role : null;
+}
+
+/** 로그인한 회원/관리자 정보 — 토큰과 같은 sessionStorage 에 둔다. 전화번호는 저장하지 않는다. */
 const MEMBER_KEY = 'moava_member';
 export function getServerMember() {
     try { return JSON.parse(sessionStorage.getItem(MEMBER_KEY)); } catch { return null; }
 }
 export function setServerMember(user) {
     if (!user) { sessionStorage.removeItem(MEMBER_KEY); return; }
-    const { name = '', email = '', regionSido = '', regionSigungu = '', status = 'ACTIVE' } = user;
-    sessionStorage.setItem(MEMBER_KEY, JSON.stringify({ name, email, regionSido, regionSigungu, status }));
+    const { adminId, role, name = '', email = '', regionSido = '', regionSigungu = '', status = 'ACTIVE' } = user;
+    sessionStorage.setItem(MEMBER_KEY, JSON.stringify({
+        ...(adminId != null ? { adminId } : {}),
+        ...(role ? { role } : {}),
+        name,
+        email,
+        regionSido,
+        regionSigungu,
+        status,
+    }));
 }
 
 /** 토큰이 만료·무효(401)일 때 할 일 — auth.js 가 "로그아웃 처리"를 등록한다. */
@@ -80,6 +98,7 @@ export async function apiFetch(url, options = {}) {
         headers['Content-Type'] = 'application/json';
     }
     const response = await send(url, { ...options, headers });
+    if (response.status === 204) return null;
     const payload = await response.json().catch(() => ({}));
     // ApiResponse.ok(data, requestId) 형태면 data만 언패킹해서 반환
     if (payload && typeof payload === 'object' && 'data' in payload && 'meta' in payload) {

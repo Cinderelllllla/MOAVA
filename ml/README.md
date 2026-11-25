@@ -14,17 +14,35 @@ Spring Boot 가 `moava.ml.base-url`(기본 `http://localhost:8000`)로 호출합
 python -m venv .venv
 .venv\Scripts\activate            # Mac: source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn src.main:app --port 8000
+uvicorn src.main:app --port 8000 --env-file .env
 ```
 
 - 문서·테스트 화면: http://localhost:8000/docs
 - 두 번째부터는 `activate` 와 `uvicorn` 두 줄만 실행하면 됩니다.
 
+### 내부 공유 키 설정 (필수)
+
+ML 서버는 **Spring 백엔드만** 부를 수 있습니다. 브라우저가 직접 부르면 남의 회원 번호로 위험 등급을 볼 수 있기 때문입니다.
+Spring 은 모든 요청에 `X-Internal-Key` 헤더로 공유 키를 붙이고, ML 은 그 값이 환경변수 `MOAVA_INTERNAL_KEY` 와 다르면 **401** 을 돌려줍니다.
+
+1. `ml/.env.example` 을 복사해 `ml/.env` 를 만들고 `MOAVA_INTERNAL_KEY=` 뒤에 키를 적습니다. (`.env` 는 git 에 올라가지 않습니다)
+   - 또는 환경변수로 직접 설정: PowerShell `$env:MOAVA_INTERNAL_KEY = "<키>"`, Mac/Linux `export MOAVA_INTERNAL_KEY=<키>`
+     (이 경우 `--env-file .env` 없이 `uvicorn src.main:app --port 8000`)
+2. 같은 값을 `backend/src/main/resources/application-secret.properties` 의 `moava.ml.internal-key` 에 넣습니다.
+3. 키 값은 팀 채널에서 따로 받으세요. **이 문서·코드·커밋에는 절대 적지 않습니다.**
+
+- 키가 비어 있으면 서버가 시작되지 않고 안내 메시지를 출력합니다 (실수로 열린 채 켜지지 않게).
+- `/health` 는 키 없이 열려 있습니다. `/risk/*` 는 모두 키가 필요합니다.
+- `/docs` 화면에서 직접 시험할 때는 헤더를 붙일 수 없어 401 이 나옵니다. 시험은 Spring API(`/api/v1/finance/ai/...`)로 하세요.
+
 ## API
+
+`/risk/*` 는 모두 `X-Internal-Key` 헤더가 필요합니다 (위 "내부 공유 키 설정"). 브라우저는 Spring 의
+`POST /api/v1/finance/ai/contribution`, `GET /api/v1/finance/ai/policy`, `POST /api/v1/groups/{groupId}/ai/payout-order` 를 부릅니다.
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
-| GET | `/health` | 상태 확인 |
+| GET | `/health` | 상태 확인 (키 불필요) |
 | GET | `/risk/model` | 입력 지표 목록, 위험 구간, 안전계수 |
 | POST | `/risk/score` | 연체 확률 + 위험 배지 + 안전계수 |
 | POST | `/risk/contribution` | 추천 납입액 |
@@ -71,15 +89,20 @@ DB 에 저장하지 않고 회원 번호로 정합니다.
 
 | 위험도 | 연체 확률 | 안전계수 |
 | --- | --- | --- |
-| 안정 `SAFE` | 10% 미만 | 0.5 |
+| 안정 `STABLE` | 10% 미만 | 0.5 |
 | 주의 `CAUTION` | 10% 이상 25% 미만 | 0.35 |
-| 위험 `DANGER` | 25% 이상 | 0.2 |
+| 위험 `RISK` | 25% 이상 | 0.2 |
+
+- 등급 코드는 DB `RISK_SCORE.TIER` 허용값(`STABLE`/`CAUTION`/`RISK`)과 같다. 응답의 `risk_level` 을 변환 없이 저장하면 된다.
+- `models/persona_scores.csv` 의 `risk_level` 열은 학습 당시 기록용(옛 코드 `SAFE`/`DANGER`)이며 서버는 읽지 않는다.
+  서버는 `default_probability` 만 읽고 등급은 위 표 기준으로 다시 계산한다.
 
 - 추천 납입액 = min((월소득 − 지출 − 저축 − 비상금) × 안전계수, 월소득 × 12%), **5만 원 단위 내림**, 가용액이 0 이하면 0원.
   `frontend/src/api/finance.js` 의 `affordability()` 와 같은 식입니다. `monthly_expense` 는 고정지출 + 변동지출 합계.
 - 수령 순서 = 연체 확률이 높은 회원부터 앞 회차. 동률이면 요청 순서 유지.
 - 설정값은 환경변수로 변경 가능: `MOAVA_CAUTION_FROM`, `MOAVA_DANGER_FROM`, `MOAVA_FACTOR_SAFE`,
   `MOAVA_FACTOR_CAUTION`, `MOAVA_FACTOR_DANGER`, `MOAVA_ROUND_UNIT`, `MOAVA_INCOME_CAP_RATIO`.
+  (환경변수 이름은 예전 코드 이름을 그대로 쓴다. `SAFE` = 안정, `DANGER` = 위험 구간 설정)
 
 ## 다시 학습하기 (데이터나 학습 코드가 바뀌었을 때만)
 
@@ -110,6 +133,7 @@ src/router/risk.py            엔드포인트
 src/schemas/risk.py           요청/응답 형식
 src/service/risk_service.py   모델 로딩, 예측·추천 로직
 src/common/config.py          위험 구간·안전계수 설정
+src/common/security.py        내부 공유 키(X-Internal-Key) 확인
 src/common/preprocess.py      데이터 로딩, 입력 지표 선택
 src/train.py                  학습 스크립트
 models/                       model.joblib, metrics.json, persona_scores.csv, demo_members.json

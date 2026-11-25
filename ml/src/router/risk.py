@@ -1,13 +1,15 @@
 """/risk 엔드포인트 — 연체 확률, 위험 배지, 추천 납입액, 곗돈 수령 순서 추천."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
 from ..common.config import INCOME_CAP_RATIO, RISK_LEVELS, ROUND_UNIT
+from ..common.security import require_internal_key
 from ..schemas import risk as s
 from ..service.risk_service import RiskService, recommend_amount
 
-router = APIRouter(prefix="/risk", tags=["risk"])
+# /risk/* 는 Spring 백엔드만 부를 수 있다 (X-Internal-Key 공유 키 확인). /health 는 키 없이 열려 있다.
+router = APIRouter(prefix="/risk", tags=["risk"], dependencies=[Depends(require_internal_key)])
 
 
 def svc(request: Request) -> RiskService:

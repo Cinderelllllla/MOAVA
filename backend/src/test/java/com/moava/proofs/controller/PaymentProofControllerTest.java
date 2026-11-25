@@ -2,6 +2,9 @@ package com.moava.proofs.controller;
 
 import com.moava.proofs.dto.PaymentProofListDto;
 import com.moava.proofs.service.PaymentProofService;
+import com.moava.proofs.service.ProofQueryService;
+import com.moava.proofs.service.ProofReviewService;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +39,11 @@ class PaymentProofControllerTest {
     @Mock
     PaymentProofService paymentProofService;     // 가짜 Service
 
+    @Mock
+    ProofQueryService proofQueryService;         // 가짜 Service (F22 목록·상세·파일 조회)
+
+    @Mock
+    ProofReviewService proofReviewService;       // 가짜 Service (F23 승인·보완 요청)
     @InjectMocks
     PaymentProofController paymentProofController;
 
@@ -47,6 +55,7 @@ class PaymentProofControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(paymentProofController)
+                .setControllerAdvice(new ProofExceptionHandler())             // 밖으로 뺀 오류 처리기 등록
                 .defaultResponseCharacterEncoding(StandardCharsets.UTF_8)   // 한글 메시지가 깨지지 않게
                 .build();
     }
@@ -86,7 +95,7 @@ class PaymentProofControllerTest {
         item.setPaymentProofId(100L);
         item.setPayMonth("202611");
         item.setStatus("PENDING");
-        when(paymentProofService.getProofList(1L, 20L)).thenReturn(List.of(item));   // 로그인 고유번호 20이 그대로 전달되는지
+        when(proofQueryService.getProofList(1L, 20L)).thenReturn(List.of(item));   // 로그인 고유번호 20이 그대로 전달되는지
 
         mockMvc.perform(get(LIST_URL).principal(login("20")))
                 .andExpect(status().isOk())
@@ -98,7 +107,7 @@ class PaymentProofControllerTest {
     @Test
     @DisplayName("심사: Service가 403을 던지면 403 + FORBIDDEN")
     void review_forbidden_403() throws Exception {
-        when(paymentProofService.reviewProof(any(), any(), any(), any()))
+        when(proofReviewService.reviewProof(any(), any(), any(), any()))
                 .thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 모임장만 승인할 수 있어요."));
 
         mockMvc.perform(patch(REVIEW_URL)

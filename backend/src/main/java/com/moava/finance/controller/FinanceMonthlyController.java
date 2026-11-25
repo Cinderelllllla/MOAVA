@@ -4,8 +4,6 @@ import com.moava.common.response.ApiResponse;
 import com.moava.finance.dto.MonthlyListResponse;
 import com.moava.finance.dto.MonthlyUpsertRequest;
 import com.moava.finance.service.FinanceMonthlyService;
-import com.moava.finance.service.FinanceException;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -50,17 +48,9 @@ public class FinanceMonthlyController {
         return ApiResponse.ok(Map.of("yearMonth", yearMonth, "deleted", true), requestId());
     }
 
-    /**
-     * 로그인한 회원 번호. JWT subject 는 회원이면 MEMBER_ID, 관리자면 ADMIN_ID 라서
-     * 관리자 토큰으로 남의 월별 기록을 보지 못하게 ROLE_MEMBER 만 허용한다.
-     */
+    /** 로그인한 회원 번호 (관리자 토큰은 403). 규칙은 FinanceAuth 한 곳에 모아 둔다. */
     static long memberId(Authentication authentication) {
-        boolean member = authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(a -> "ROLE_MEMBER".equals(a.getAuthority()));
-        if (!member) {
-            throw new FinanceException(HttpStatus.FORBIDDEN, "MEMBER_ONLY", "회원만 이용할 수 있어요.");
-        }
-        return Long.parseLong(authentication.getName()); // JwtAuthenticationFilter 가 subject 를 이름으로 넣어 준다
+        return FinanceAuth.memberId(authentication);
     }
 
     private static String requestId() {

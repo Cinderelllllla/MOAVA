@@ -80,3 +80,7 @@ ml/env/
 # 대용량 원본 데이터셋 무시 (필요 시 모델 파일은 예외 처리)
 ml/data/*.csv
 ml/data/*.parquet
+
+# 기본 설정
+*.zip
+uploads/

@@ -1,6 +1,6 @@
 # 알림 (Notification) — MOA-40
 
-> 담당: 박기태 · 관련 기능: F35 인앱 알림, F36 SMS · 기준 문서: 알림코드표 v3, API 명세서 v0.5
+> 담당: 박기태 · 관련 기능: F35 인앱 알림, F36 SMS · 기준 문서: 알림코드표 v3.1, API 명세서 v0.5(7.4), 기능명세서 v3.1(F35·F36)
 
 MOAVA의 모든 기능이 **같은 방법으로 알림을 보내고**, 회원·관리자가 **알림함에서 확인**할 수 있게 하는 모듈입니다.
 
@@ -8,7 +8,7 @@ MOAVA의 모든 기능이 **같은 방법으로 알림을 보내고**, 회원·�
 |---|---|---|
 | 1. 알림 공통 함수 | 다른 기능이 호출해서 알림을 저장 (`notifyMember` / `notifyGroup` / `notifyAdmins`) | PR 올림 (#11 revert 후 재반영) |
 | 2. 알림함 API | 목록 · 안 읽은 개수 · 읽음 · 모두 읽음 · 숨김 (`/api/v1/notifications`) | 다음 PR |
-| 3. SMS 발송 | 커밋 후 비동기 발송 (SOLAPI) | 2차 — 지금은 로그만 |
+| 3. SMS 발송 | 커밋 후 비동기 발송 (SOLAPI) | 구현 완료 — `moava.sms.enabled=true` + 키 설정 시 실제 발송 (기본 꺼짐) |
 
 ---
 
@@ -73,11 +73,11 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
         Map.of("group", groupName, "member", NameMasker.mask(memberName), "month", "11월", "days", 5));
 ```
 
-### 알림 코드 21개 (`NotifType`)
+### 알림 코드 22개 (`NotifType`, 코드표 v3.1)
 
 `params`에 아래 **필요한 값**을 모두 넣어야 합니다. 빠지면 `IllegalArgumentException`이 납니다 (개발 중 바로 발견용).
 
-**유저 (11)**
+**유저 (12)**
 
 | 코드 | 언제 | 필요한 값 | 이동 경로 |
 |---|---|---|---|
@@ -85,19 +85,20 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
 | `CONSENT_REQ` | 계좌 변경·모임장 승계·수령 순서·탈퇴 정산 동의 요청 | groupId, group, item, deadline | /procedures?groupId= |
 | `CONSENT_RESULT` | 위 절차 확정·부결·만료 | groupId, item, group, result, detail(없으면 "") | /procedures?groupId= |
 | `PROOF_REVISION` | 증빙 보완 요청 | groupId, group, round, reason | /evidence?groupId= |
-| `PAY_DUE_3D` | 납입일 3일 전 (배치) | groupId, group, month, payDate, amount | /evidence?groupId= |
-| `PAY_OVERDUE` | 미납 1일 차·5일 차 (배치) | groupId, group, month, days, guide | /evidence?groupId= |
+| `PAY_DUE_3D` | 납입일 3일 전 (배치, **SMS**) | groupId, group, month, payDate, amount | /evidence?groupId= |
+| `PAY_OVERDUE` | 미납 1일 차·5일 차 (F26 미납 감지 배치, 인앱만) | groupId, group, month, days, guide | /evidence?groupId= |
+| `OVERDUE_WARNED` | 관리자 미납 경고 조치 (F26·A06, **SMS**) | groupId, group, month | /evidence?groupId= |
 | `SANCTION` | 모임 경고·강제 탈퇴, 가입 제한·해제 | scope(모임명 또는 MOAVA), action | /support |
 | `WITHDRAW_DONE` | 탈퇴 처리 완료 | group | /my-groups |
 | `DISSOLVED` | 해산 승인 (모임 전원) | group | /my-groups |
 | `REPORT_STATUS` | 신고 처리 상태 변경 | status | /support |
-| `RISK_UP` | AI 위험 등급 RISK 전환 | (없음) | /finance |
+| `RISK_UP` | AI 위험 등급 RISK 전환 (**SMS**) | (없음) | /finance |
 
 **유저(모임장) (6)**
 
 | 코드 | 언제 | 필요한 값 | 이동 경로 |
 |---|---|---|---|
-| `JOIN_REQUEST` | 가입 신청 접수 | groupId, member, group | /operations?groupId= |
+| `JOIN_REQUEST` | 가입 신청 접수 | groupId, member, group | /operations?groupId={groupId}&tab=joinRequests |
 | `PROOF_PENDING` | 증빙 등록·재제출 | groupId, group | /evidence?groupId= |
 | `ORDER_REQUEST` | 수령 순서 신청·수정 | groupId, member, group, round, stage(신청/수정) | /procedures?groupId= |
 | `ACCOUNT_VERIFIED` | 관리자 계좌 소유 확인 완료 | groupId, group, bank, last4 | /operations?groupId= |
@@ -113,6 +114,7 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
 | `DISSOLVE_REQUEST` | 해산 신청 | group, reason | /admin/dissolve |
 | `REPORT_RECEIVED` | 신고 접수 | category, group | /admin/support |
 
+> **SMS 대상은 `PAY_DUE_3D`·`RISK_UP`·`OVERDUE_WARNED` 3개뿐입니다** (기능명세서 v3.1 F36, API 명세서 7.4). 자동 감지 배치의 미납 안내(`PAY_OVERDUE`)는 SMS를 보내지 않습니다.
 > 코드표에 없는 알림이 필요하면 담당자(박기태)에게 요청해 주세요. `NotifType`에 추가합니다.
 > 공개 설정 변경 · 운영 규칙 변경 · 곗돈 수령 기록 · 채팅 제한/해제 · 증빙 승인은 **알림을 보내지 않습니다** (채팅방 시스템 메시지 / 화면 표시로 대체, 알림 축소 결정).
 
@@ -133,11 +135,22 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
 | 트랜잭션 | 호출한 쪽 트랜잭션에 참여 → 함께 커밋/롤백 |
 | 전원 발송 | `INSERT … SELECT` 한 번으로 저장 (회원 목록을 불러와 반복하지 않음) |
 | 회원/관리자 구분 | 회원 알림은 `MEMBER_ID`, 관리자 알림은 `ADMIN_ID`에 저장 (`CK_NOTIFICATION_RECEIVER` 규칙) |
-| SMS | `NotifType`의 SMS 대상이면 커밋 후 `NotificationSmsListener`가 비동기 처리 (지금은 로그만) |
+| SMS | `NotifType`의 SMS 대상이면 커밋 후 `NotificationSmsListener`가 비동기 발송 (아래 "문자 발송 설정") |
 
 ### 이 함수가 하지 않는 것
 - **중복 방지** (증빙 알림 하루 1건, 미납 안내 1일·5일 차만 등) — 호출하는 쪽(배치)에서 조건을 걸어야 합니다
-- **실제 SMS 발송** — 2차 작업
+- **문자 발송 설정** — 기본은 꺼져 있어 로그만 남깁니다. 실제로 보내려면 `application-secret.properties`에 아래를 넣습니다.
+  ```properties
+  moava.sms.enabled=true
+  moava.api.solapi.key=발급받은 API Key
+  moava.api.solapi.secret=발급받은 API Secret
+  moava.api.solapi.sender=SOLAPI에 등록한 발신번호(숫자만)
+  ```
+  - 키가 비었거나 노션 placeholder(`★…`)면 켜 두어도 보내지 않습니다.
+  - 받는 사람: `MEMBER.STATUS='ACTIVE'`이고 `PHONE_ENC`가 있는 회원만. 번호는 발송 직전에만 복호화하고 로그에 남기지 않습니다.
+  - 본문: `[MOAVA] ` + 알림 본문 (90바이트 초과 시 SOLAPI가 LMS로 자동 전환).
+  - 성공 시 `NOTIFICATION.SMS_SENT_YN='Y'`. 실패는 로그만 남기고 업무에는 영향 없음.
+  - 서비스 필수 알림이라 마케팅 수신 동의(MKT_SMS_OPT)와 무관하게 보냅니다 (기능명세서 F36).
 
 ---
 
@@ -159,7 +172,7 @@ API 명세서 v0.5 F35 기준. **회원(S13)·관리자(A07) 공용** — 로그
 - 삭제는 실제 DELETE가 아니라 `DELETED_YN='Y'` (숨김)
 - 남의 알림 ID → 읽음은 404, 숨김은 해당 건 무시
 
-**받는 사람 판별 (JWT)**: 로그인 토큰(JWT)의 subject(MEMBER_ID)로 받는 사람을 정합니다. 요청 헤더나 파라미터로 회원 ID를 받지 않으며, 로그인하지 않은 요청은 401입니다. `NotificationController.resolveReceiver()` 참고. 관리자 알림함은 관리자 전용 JWT claim이 생긴 뒤 연결합니다(현재 화면에서는 "준비 중" 안내).
+**받는 사람 판별 (JWT)**: 로그인 토큰(JWT)의 subject로 받는 사람을 정합니다. 토큰 권한이 `ROLE_ADMIN`(관리자 로그인, role=ADMIN)이면 관리자 알림함(`ADMIN_ID`), 그 외는 회원 알림함(`MEMBER_ID`)입니다. 회원·관리자 번호가 겹칠 수 있어 반드시 권한으로 구분합니다. 요청 헤더나 파라미터로 ID를 받지 않으며, 로그인하지 않은 요청은 401입니다. `NotificationController.resolveReceiver()` 참고.
 
 ### 오래된 알림 정리 배치
 
@@ -182,9 +195,11 @@ API 명세서 v0.5 F35 기준. **회원(S13)·관리자(A07) 공용** — 로그
 ```
 backend/src/main/java/com/moava/
 ├── notification/common/
-│   ├── domain/NotifType.java                  알림 코드 21개 (템플릿·이동 경로·SMS 여부)
+│   ├── domain/NotifType.java                  알림 코드 22개 (템플릿·이동 경로·SMS 여부)
 │   ├── service/NotificationService.java       공통 함수 3개
-│   ├── service/NotificationSmsListener.java   SMS 자리 (커밋 후 @Async, 지금은 로그)
+│   ├── service/NotificationSmsListener.java   문자 발송 (커밋 후 @Async, 대상 확인·복호화·발송 기록)
+│   ├── sms/SmsSender.java · SolapiSmsSender.java  SOLAPI 호출 (HMAC-SHA256 인증)
+│   ├── mapper/NotificationSmsMapper.java       받는 회원 번호 조회·SMS_SENT_YN 기록
 │   ├── service/NotificationCleanupService.java 오래된 알림 정리 배치 (매일 03:30)
 │   ├── mapper/NotificationCleanupMapper.java   정리 배치 UPDATE 매퍼
 │   ├── mapper/NotificationMapper.java         INSERT 매퍼
@@ -201,15 +216,18 @@ backend/src/main/java/com/moava/
 backend/src/main/resources/mapper/notification/common/
 ├── NotificationMapper.xml
 ├── NotificationInboxMapper.xml
-└── NotificationCleanupMapper.xml
+├── NotificationCleanupMapper.xml
+└── NotificationSmsMapper.xml
 ```
 
 ## 4. 남은 작업
 
 - [x] 알림함 API PR (PR #17, #33)
 - [x] JWT 연동 후 임시 헤더 방식 제거 (PR #33)
-- [ ] 관리자 JWT 로그인(관리자 전용 claim) 후 관리자 알림함 연결
-- [ ] SMS 규칙 v0.5 반영 — 자동 미납 안내 SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 시 SMS (코드표 v3.1)
+- [x] 관리자 JWT(role=ADMIN) 기준 관리자 알림함 API 구분
+- [ ] 프론트 관리자 로그인 연결 후 관리자 알림 화면("준비 중") 실제 API 연결
+- [x] SMS 규칙 반영 — 자동 미납 안내(`PAY_OVERDUE`) SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 추가 (코드표 v3.1)
 - [x] 배치: 오래된 알림 정리(읽음 14일·안 읽음 30일)
-- [ ] 배치: 납입 3일 전·미납 안내
-- [ ] 2차: SOLAPI SMS 발송 (`PHONE_ENC`가 NULL인 탈퇴 회원은 건너뜀)
+- [ ] 납입 3일 전(`PAY_DUE_3D`)·미납 안내(`PAY_OVERDUE`)·관리자 알림(`OVERDUE_5D`) — 모두 F26 미납 감지 배치(`overdue/OverdueDetectService`, 담당 조서현)가 발송
+- [x] 2차: SOLAPI SMS 발송 (탈퇴·번호 없는 회원 건너뜀, 기본 꺼짐)
+- [ ] SOLAPI 키·발신번호 발급 후 실제 발송 테스트

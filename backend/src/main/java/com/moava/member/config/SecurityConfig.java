@@ -2,13 +2,11 @@ package com.moava.member.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.http.HttpMethod;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -21,14 +19,11 @@ import jakarta.servlet.DispatcherType;
 
 @Configuration
 public class SecurityConfig {
+
     private final JwtAuthenticationFilter jwtFilter;
+
     public SecurityConfig(JwtAuthenticationFilter jwtFilter) {
         this.jwtFilter = jwtFilter;
-    }
-
-    @Bean 
-    PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
     }
 
     @Bean
@@ -36,51 +31,114 @@ public class SecurityConfig {
         return http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(Customizer.withDefaults())
-            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .sessionManagement(s ->
+                s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .formLogin(AbstractHttpConfigurer::disable)
             .httpBasic(AbstractHttpConfigurer::disable)
-            .exceptionHandling(e -> e.authenticationEntryPoint((request, response, authException) ->
-                response.sendError(401)))
+            .exceptionHandling(e ->
+                e.authenticationEntryPoint((request, response, authException) ->
+                    response.sendError(401)))
             .authorizeHttpRequests(auth -> auth
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+
                 .requestMatchers(
                     "/",
                     "/error",
                     "/index.html",
                     "/assets/**",
                     "/favicon.ico",
-                    //test용 API
+
+                    // 테스트용 API
                     "/api/test",
-                    // 모의 금융결제원 오픈뱅킹 v2.0 API (자체 OAuth 2.0 Bearer 토큰 검증)
-                    "/oauth/2.0/**",
-                    "/v2.0/**"
+
+                    // F34 채팅 웹소켓 연결
+                    // 브라우저는 여기에 토큰 헤더를 못 붙이므로
+                    // 로그인 확인은 ChatChannelInterceptor에서
+                    // STOMP CONNECT 시 수행한다.
+                    "/ws/**"
                 ).permitAll()
+
+                // 인증 관련 공개 API
                 .requestMatchers(
                     "/api/auth/signup",
                     "/api/auth/login",
-                    "/api/auth/admin/login"
+                    "/api/auth/admin/login",
+                    "/api/auth/check-email"
                 ).permitAll()
-                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                // F29 관리자 면제는 ADMIN 전용으로 제한하고, 대상 조회는 인증된 회원·관리자에게 허용한다.
-                .requestMatchers(HttpMethod.POST,
-                    "/api/v1/groups/*/withdrawals/*/consent-targets/*/exemption").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.GET,
-                    "/api/v1/groups/*/withdrawals/*/consent-targets").hasAnyRole("ADMIN", "MEMBER")
-                .requestMatchers("/api/v1/groups/**", "/api/groups/**", "/api/auth/me", "/api/openbanking/codef/**").hasRole("MEMBER")
-                .anyRequest().authenticated())
-            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+
+                // 관리자 전용 API
+                .requestMatchers(
+                    "/api/admin/**",
+                    "/api/v1/admin/**"
+                ).hasRole("ADMIN")
+
+                // 회원 및 관리자 접근 API
+                .requestMatchers(
+                    "/api/member/**"
+                ).hasAnyRole("ADMIN", "MEMBER")
+
+                // F18 비공개 모임 초대 링크
+                // 비로그인 사용자도 GET 조회만 가능
+                .requestMatchers(
+                    HttpMethod.GET,
+                    "/api/v1/invites/*"
+                ).permitAll()
+
+                // F29 관리자 면제 처리
+                .requestMatchers(
+                    HttpMethod.POST,
+                    "/api/v1/groups/*/withdrawals/*/consent-targets/*/exemption"
+                ).hasRole("ADMIN")
+
+                // F29 동의 대상 조회
+                .requestMatchers(
+                    HttpMethod.GET,
+                    "/api/v1/groups/*/withdrawals/*/consent-targets"
+                ).hasAnyRole("ADMIN", "MEMBER")
+
+                // 회원 전용 API
+                .requestMatchers(
+                    "/api/auth/me",
+                    "/api/auth/password",
+                    "/api/v1/groups/**",
+                    "/api/groups/**"
+                ).hasRole("MEMBER")
+
+                // 나머지 API는 인증 필요
+                .requestMatchers("/api/**").authenticated()
+
+                .anyRequest().authenticated()
+            )
+            .addFilterBefore(
+                jwtFilter,
+                UsernamePasswordAuthenticationFilter.class
+            )
             .build();
     }
 
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(java.util.List.of("*"));
-        configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(java.util.List.of("*"));
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+
+        configuration.setAllowedOrigins(
+            java.util.List.of("*")
+        );
+
+        configuration.setAllowedMethods(
+            java.util.List.of(
+                "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+            )
+        );
+
+        configuration.setAllowedHeaders(
+            java.util.List.of("*")
+        );
+
+        UrlBasedCorsConfigurationSource source =
+            new UrlBasedCorsConfigurationSource();
+
         source.registerCorsConfiguration("/**", configuration);
+
         return source;
     }
-    
 }

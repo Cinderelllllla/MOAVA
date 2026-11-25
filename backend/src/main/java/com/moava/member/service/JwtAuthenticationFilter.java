@@ -40,24 +40,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = header.substring(7);
         try{
             if(!jwtTokenProvider.isValid(token)) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.setContentType("application/json;charset=UTF-8");
-                response.getWriter().write("{\"message\":\"로그인 정보가 만료되었거나 유효하지않습니다. 다시 로그인해 주세요.\"}");
+                unauthorized(response);
                 return;
             }
             String id = jwtTokenProvider.getId(token);
-            // JWT role claim을 Spring Security 권한으로 연결한다. 기존 role 없는 회원 토큰은 MEMBER로 처리한다.
             String role = jwtTokenProvider.getRole(token);
-            String authority = "ADMIN".equals(role) ? "ROLE_ADMIN" : "ROLE_MEMBER";
-            var authentication = new UsernamePasswordAuthenticationToken(
-                    id, null, List.of(new SimpleGrantedAuthority(authority)));
+            var authentication = new UsernamePasswordAuthenticationToken(id, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
             SecurityContextHolder.getContext().setAuthentication(authentication);
         } catch (Exception e) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"message\":\"로그인 정보가 만료되었거나 유효하지않습니다. 다시 로그인해 주세요.\"}");
+            unauthorized(response);
             return;
         }
         filterChain.doFilter(request, response);
+    }
+
+    private void unauthorized(HttpServletResponse response)throws IOException{
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"message\":\"로그인 정보가 만료되었거나 유효하지않습니다. 다시 로그인해 주세요.\"}");
     }
 }

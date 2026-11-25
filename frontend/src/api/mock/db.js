@@ -2,7 +2,7 @@
    MOAVA · api/mock/db.js — 브라우저(localStorage) 가짜 DB
    기준: 테이블 정의서 v1.5. 서버 연동 후에는 이 폴더 전체가 필요 없어집니다.
    ============================================================ */
-import { tokenMemberId, getServerMember } from '../client';
+import { tokenMemberId, tokenRole, getServerMember } from '../client';
 
 const KEY = 'moava-react-v1';
 
@@ -57,15 +57,18 @@ export const SEED = {
 export let db = load();
 
 /* 로그인은 서버(JWT)만 인정한다.
-   - 토큰이 없거나, 토큰의 회원 번호와 세션이 다르면 세션을 지운다 (예전 목업 로그인 흔적 포함).
+   - 토큰이 없거나, 토큰의 주체 번호·역할과 세션이 다르면 세션을 지운다 (예전 목업 로그인 흔적 포함).
    - 예전 버전이 브라우저에 복사해 둔 서버 회원 정보('server:이메일', 전화번호 포함)도 지운다. */
 {
   const tokenId = tokenMemberId();
-  const validServerSession = db.session?.type === 'MEMBER' && db.session.source === 'SERVER' && db.session.id === tokenId;
+  const role = tokenRole();
+  const validMemberSession = db.session?.type === 'MEMBER' && db.session.source === 'SERVER' && db.session.id === tokenId && (!role || role === 'MEMBER');
+  const validAdminSession = db.session?.type === 'ADMIN' && db.session.source === 'SERVER' && db.session.id === tokenId && role === 'ADMIN';
+  const validServerSession = validMemberSession || validAdminSession;
   const legacyMembers = (db.members || []).some(m => String(m.id).startsWith('server:'));
   const ownerBefore = db.financeOwner;
-  if (validServerSession) ensureFinanceOwner();   // 예전 버전이 넣어 둔 SEED 금융값 비우기
-  else clearFinance();                            // 로그인 상태가 아니면(탭을 닫았다 연 경우 등) 금융 프로필을 남기지 않는다
+  if (validMemberSession) ensureFinanceOwner();   // 예전 버전이 넣어 둔 SEED 금융값 비우기
+  else clearFinance();                            // 일반 회원 로그인 상태가 아니면 금융 프로필을 남기지 않는다
   // 로그인 상태가 아니면 비운 금융 프로필을 항상 저장소에 반영한다
   if (!validServerSession || legacyMembers || ownerBefore !== db.financeOwner) {
     if (!validServerSession) db.session = null;

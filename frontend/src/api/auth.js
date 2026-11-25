@@ -25,6 +25,7 @@ import {
   TOKEN_KEY,
   getToken,
   tokenMemberId,
+  tokenRole,
   setServerMember,
   apiFetch,
   friendlyError,
@@ -77,22 +78,27 @@ export function clearAccessToken() {
 }
 
 // ========================================
-// 3. 실제 서버 회원을 화면 세션에 연결
+// 3. 실제 서버 회원/관리자를 화면 세션에 연결
 // ========================================
 
-function connectServerSession(result) {
+function connectServerSession(result, expectedType = 'MEMBER') {
   sessionStorage.setItem(TOKEN_KEY, result.accessToken);
-  const memberId = tokenMemberId(result.accessToken);
+  const subjectId = tokenMemberId(result.accessToken);
+  const role = tokenRole(result.accessToken) || expectedType;
 
-  if (!memberId) {
+  if (!subjectId || role !== expectedType) {
     clearAccessToken();
-    throw new Error('로그인 정보를 확인하지 못했어요. 다시 로그인해 주세요.');
+    throw new Error('로그인 권한 정보를 확인하지 못했어요. 다시 로그인해 주세요.');
   }
 
-  setServerMember(result.user);
+  setServerMember({ ...result.user, role });
 
-  db.session = { type: 'MEMBER', id: memberId, source: 'SERVER' };
-  ensureFinanceOwner();
+  db.session = { type: expectedType, id: subjectId, source: 'SERVER' };
+  if (expectedType === 'MEMBER') {
+    ensureFinanceOwner();
+  } else {
+    clearFinance();
+  }
 
   // 기존 Zustand 구독 화면에 변경 알림
   save();
@@ -104,7 +110,7 @@ function connectServerSession(result) {
 export async function refreshMe() {
   if (!getToken()) return null;
   const user = await apiFetch('/api/auth/me');
-  setServerMember(user);
+  setServerMember({ ...user, role: 'MEMBER' });
   save();
   return user;
 }
@@ -137,11 +143,11 @@ export async function signupWithServer(f) {
     privacyAgreed: f.privacyAgreed
   });
 
-  return connectServerSession(result);
+  return connectServerSession(result, 'MEMBER');
 }
 
 // ========================================
-// 5. Spring Boot 로그인
+// 5. Spring Boot 로그인 (회원 / 관리자)
 // ========================================
 
 export async function loginWithServer(email, password) {
@@ -150,7 +156,16 @@ export async function loginWithServer(email, password) {
     password
   });
 
-  return connectServerSession(result);
+  return connectServerSession(result, 'MEMBER');
+}
+
+export async function loginAdminWithServer(email, password) {
+  const result = await requestAuth('admin/login', {
+    email: email.trim(),
+    password
+  });
+
+  return connectServerSession(result, 'ADMIN');
 }
 
 // ========================================
@@ -177,79 +192,57 @@ export async function updateAccount(f) {
     fail('로그인이 필요합니다.');
   }
 
-  if (u.source === 'SERVER') {
-    fail('회원정보 수정은 아직 준비 중이에요.');
+  if (u.source !== 'SERVER') {
+    fail('서버 회원 정보만 수정할 수 있습니다.');
   }
 
-  if (
-    db.members.some(
-      x => x.id !== u.id && x.email === f.email
-    )
-  ) {
-    fail('이미 사용 중인 이메일입니다.');
-  }
-
-  for (const k of [
-    'name',
-    'email',
-    'phone',
-    'regionSido',
-    'regionSigungu'
-  ]) {
-    u[k] = String(f[k]).trim();
-  }
-
-  audit('내 정보 수정', null, u.name);
-
+  const updatedUser = await apiFetch('/api/auth/me', {
+    method: 'PUT',
+    body: JSON.stringify({
+      name:f.name.trim(),
+      email: f.email.trim(),
+      phone: f.phone.trim(),
+      regionSido: f.regionSido.trim(),
+      regionSigungu: f.regionSigungu.trim()
+    })
+  });
+  setServerMember(updatedUser);
   save();
+  return updatedUser;
 }
 
 // ========================================
 // 8. 회원 탈퇴 (서버 API 없음 → 화면에서 "준비 중")
 // ========================================
 
-export async function withdrawAccount() {
+export async function withdrawAccount(password) {
   const u = currentUser();
 
   if (!u) {
     fail('로그인이 필요합니다.');
   }
 
-  if (u.source === 'SERVER') {
-    fail('회원 탈퇴는 아직 준비 중이에요.');
+  if (u.source !== 'SERVER') {
+    fail('서버 회원만 탈퇴할 수 있습니다.');
   }
 
-  if (
-    db.groups.some(
-      g => leader(g) && !isEnded(g)
-    )
-  ) {
-    fail(
-      '모임장인 모임이 있습니다. 승계 또는 해산 후 탈퇴할 수 있어요.'
-    );
+  if(!password || !password.trim()){
+    fail('탈퇴를 위해 비밀번호를 입력해주세요.');
   }
 
-  if (db.groups.some(activeJoined)) {
-    fail(
-      '참여 중인 모임이 있습니다. 중도 탈퇴 절차를 먼저 완료해 주세요.'
-    );
-  }
-
-  Object.assign(u, {
-    status: 'WITHDRAWN',
-    withdrawnAt: nowText(),
-    email: null,
-    phone: '',
-    name: '탈퇴회원'
+  await apiFetch('/api/auth/me', {
+    method: 'DELETE',
+    body: JSON.stringify({
+      password: password
+    })
   });
-
-  audit('회원 탈퇴', null, '익명화 처리');
-
   clearAccessToken();
-
   db.session = null;
+  clearFinance();
 
   save();
+
+  return true;
 }
 
 // ========================================

@@ -51,4 +51,74 @@
              #{regionSigungu}, 'ACTIVE', 'N', #{keyVer})
     </insert>
 
+    <select id="findPasswordHashById" resultType="string">
+        SELECT PASSWORD_HASH
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+            AND STATUS = 'ACTIVE'
+            AND BANNED_YN = 'N'
+    </select>
+
+    <select id="existsByEmailExceptMember" resultType="int">
+        SELECT COUNT(*)
+        FROM MEMBER
+        WHERE LOWER(EMAIL) = LOWER(#{email})
+            AND MEMBER_ID != #{memberId}
+    </select>
+
+    <update id="updateProfile">
+        UPDATE MEMBER
+        SET
+            NAME = #{name},
+            EMAIL = #{email},
+            PHONE_ENC = #{phoneEnc},
+            KEY_VER = #{keyVer},
+            REGION_SIDO = #{regionSido},
+            REGION_SIGUNGU = #{regionSigungu},
+            UPDATED_AT = SYSDATE
+        WHERE MEMBER_ID = #{memberId}
+            AND STATUS = 'ACTIVE'
+            AND BANNED_YN = 'N'
+    </update>
+
+    <update id="updatePassword">
+        UPDATE MEMBER
+        SET
+            PASSWORD_HASH = #{passwordHash},
+            UPDATED_AT = SYSDATE
+        WHERE MEMBER_ID = #{memberId}
+            AND STATUS = 'ACTIVE'
+            AND BANNED_YN = 'N'
+    </update>
+
+    <update id="withdraw">
+        UPDATE MEMBER
+        SET
+            NAME = '탈퇴회원',
+            EMAIL = NULL,
+            PHONE_ENC = NULL,
+            PASSWORD_HASH = #{passwordHash},
+            STATUS = 'WITHDRAWN',
+            WITHDRAWN_AT = SYSDATE,
+            UPDATED_AT = SYSDATE
+        WHERE MEMBER_ID = #{memberId}
+            AND STATUS = 'ACTIVE'
+    </update>
+
+    <select id="countActiveGroupMemberships" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_MEMBER GM
+        JOIN GYE_GROUP GG
+            ON GG.GROUP_ID = GM.GROUP_ID
+        WHERE GM.MEMBER_ID = #{memberId}
+            AND GM.STATUS = 'ACTIVE'
+            AND GG.STATUS = 'ACTIVE'
+    </select>
+
+    <select id="countOwnedActiveGroups" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_GROUP
+        WHERE OWNER_ID = #{memberId}
+            AND STATUS = 'ACTIVE'
+    </select>
 </mapper>

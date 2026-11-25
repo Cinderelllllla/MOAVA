@@ -26,11 +26,13 @@ public class CryptoKeyInitializer implements ApplicationRunner{
     private static final int TAG_LENGTH = 128;
 
     private final CryptoKeyMapper mapper;
+    private final CryptoKeyService cryptoKeyService;
     private final byte[] kek;
 
     //애플리케이션 실행시 KEK 준비
-    public CryptoKeyInitializer(CryptoKeyMapper mapper, CryptoProperties properties){
+    public CryptoKeyInitializer(CryptoKeyMapper mapper, CryptoProperties properties, CryptoKeyService cryptoKeyService){
         this.mapper = mapper;
+        this.cryptoKeyService = cryptoKeyService;
         String kekValue = properties.getKekBase64();
 
         // System.out.println("========== KEK 설정 진단 ==========");
@@ -80,6 +82,7 @@ public class CryptoKeyInitializer implements ApplicationRunner{
         CryptoKeyRecord activeKey = mapper.findActiveKey();
 
         if(activeKey != null){
+            cryptoKeyService.validateActiveKey();
             return;
         }
         Integer maxVersion = mapper.findMaxKeyVersion();

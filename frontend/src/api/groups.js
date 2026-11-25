@@ -80,7 +80,21 @@ export async function fetchInvite(token) {
 
 /** 서버 모임 상태 코드(GYE_GROUP.STATUS) → 화면 문구 */
 export const GROUP_STATUS_LABEL = { RECRUITING: '모집 중', ACTIVE: '운영 중', DISSOLVE_PENDING: '해산 검토 중', DISSOLVED: '해산 완료' };
-export const groupStatusLabel = s => GROUP_STATUS_LABEL[s] || '확인 중';
+// 모집 상태 표시
+// 정원에 도달한 경우 DB 상태 변경 없이 모집 종료로 표시
+export const groupStatusLabel = (s, currentMembers, maxMembers) => {
+  if (
+    s === 'RECRUITING' &&
+    Number.isInteger(currentMembers) &&
+    Number.isInteger(maxMembers) &&
+    maxMembers > 0 &&
+    currentMembers >= maxMembers
+  ) {
+    return '모집 종료';
+  }
+
+  return GROUP_STATUS_LABEL[s] || '확인 중';
+};
 /** 서버 모임 목적 코드(GYE_GROUP.PURPOSE) → 화면 문구 */
 export const PURPOSE_LABEL = { SAVINGS: '목돈 마련', INVEST: '재테크', SOCIAL: '친목', STARTUP: '창업', TRAVEL: '여행' };
 export const purposeLabel = p => PURPOSE_LABEL[p] || p || '-';
@@ -304,6 +318,33 @@ export async function createGroup(f) {
 
 /* ---- 가입 (F16 F18 F20) ---- */
 
+// F16 - 기존 가입 및 탈퇴 이력 확인
+function hasMembershipHistory(g, memberId) {
+  const key = String(memberId);
+
+  return (
+    String(g.ownerId) === key ||
+
+    (g.members ?? []).some(
+      id => String(id) === key
+    ) ||
+
+    (g.joinRequests ?? []).some(
+      r => String(r.userId) === key &&
+           r.status === '승인'
+    ) ||
+
+    (g.withdrawals ?? []).some(
+      w => String(w.userId) === key &&
+           w.status === '완료'
+    ) ||
+
+    (g.formerMemberIds ?? []).some(
+      id => String(id) === key
+    )
+  );
+}
+
 export async function joinRequest(id) {
   const g = D.group(id);
 
@@ -314,31 +355,42 @@ export async function joinRequest(id) {
   }
 
   if (
-      g.status !== '모집 중' ||
-      g.started ||
-      g.dissolution ||
-      g.members.length >= g.max
+    g.status !== '모집 중' ||
+    g.started ||
+    g.dissolution ||
+    g.members.length >= g.max
   ) {
     fail('가입이 마감된 모임입니다.');
   }
 
-  if (D.joined(g)) {
-    fail('이미 참여 중인 모임입니다.');
+  // F16 - 기존 가입 및 탈퇴 이력이 있으면 재가입 불가
+  if (hasMembershipHistory(g, D.me())) {
+    fail('이미 참여 중이거나 탈퇴 이력이 있는 모임입니다.');
   }
 
   if (
-      g.joinRequests.some(
-          x => x.userId === D.me() && x.status === '대기'
-      )
+    g.joinRequests.some(
+      x => x.userId === D.me() && x.status === '대기'
+    )
   ) {
     fail('이미 신청했어요.');
   }
 
-  if (
-      g.visibility === 'PRIVATE' &&
-      !D.ensureJoinCode(g).verified[String(D.me())]
-  ) {
-    fail('비공개 모임은 초대 링크와 인증코드로만 가입 신청할 수 있어요.');
+  if (g.visibility === 'PRIVATE') {
+    const d = D.ensureJoinCode(g);
+    const key = String(D.me());
+
+    if ((d.attempts[key]?.count ?? 0) >= 3) {
+      fail(
+        '인증에 3회 실패했습니다. 모임장에게 인증코드 재발급을 요청해 주세요.'
+      );
+    }
+
+    if (!d.verified[key]) {
+      fail(
+        '비공개 모임은 초대 링크와 인증코드로만 가입 신청할 수 있어요.'
+      );
+    }
   }
 
   g.joinRequests.push({
@@ -349,12 +401,17 @@ export async function joinRequest(id) {
   });
 
   D.notice(
-      g.ownerId,
-      '가입 검토 필요',
-      `${g.title}에 가입 신청이 접수되었습니다.`
+    g.ownerId,
+    '가입 검토 필요',
+    `${g.title}에 가입 신청이 접수되었습니다.`
   );
 
-  D.audit('가입 신청', g.id, `${D.currentUser().name} 신청`);
+  D.audit(
+    '가입 신청',
+    g.id,
+    `${D.currentUser().name} 신청`
+  );
+
   save();
 }
 
@@ -367,38 +424,45 @@ export async function verifyInviteCode(id, value) {
 
   const d = D.ensureJoinCode(g);
   const key = String(D.me());
-  const a = d.attempts[key] || { count: 0, until: 0 };
 
-  if (Date.now() < a.until) {
-    fail('인증 시도 제한 중입니다. 잠시 후 다시 시도해 주세요.');
+  const a = d.attempts[key] || {
+    count: 0
+  };
+
+  const lockedMessage =
+    '인증에 3회 실패했습니다. 모임장에게 인증코드 재발급을 요청해 주세요.';
+
+  // 3회 실패 시 코드 재발급 전까지 인증 차단
+  if (a.count >= 3) {
+    fail(lockedMessage);
   }
 
-  if (!/^\d{6}$/.test(value)) {
-    fail('6자리 숫자 인증코드를 입력해 주세요.');
-  }
-
-  if (value !== String(d.code)) {
-    a.count++;
-
-    if (a.count >= 5) {
-      a.count = 0;
-      a.until = Date.now() + 15 * 60000;
-    }
+  // 인증코드 형식 및 일치 여부 확인
+  if (
+    !/^\d{6}$/.test(value) ||
+    value !== String(d.code)
+  ) {
+    a.count = Math.min(3, a.count + 1);
 
     d.attempts[key] = a;
+
     save();
 
-    fail(
-        a.until > Date.now()
-            ? '5회 실패하여 15분 동안 인증이 제한됩니다.'
-            : '인증코드가 올바르지 않습니다.'
-    );
+    if (a.count >= 3) {
+      fail(lockedMessage);
+    }
+
+    fail('인증코드가 올바르지 않습니다.');
   }
 
-  d.verified[key] = true;
-  delete d.attempts[key];
+  // 인증 성공 처리
+  if (!d.verified[key]) {
+    d.verified[key] = true;
+    delete d.attempts[key];
+  }
 
   D.groupLog(g, '인증코드 확인');
+
   save();
 
   await joinRequest(id);
@@ -413,9 +477,9 @@ export async function approveJoin(id, rid) {
   }
 
   if (
-      g.started ||
-      g.members.length >= g.max ||
-      g.status !== '모집 중'
+    g.started ||
+    g.members.length >= g.max ||
+    g.status !== '모집 중'
   ) {
     fail('가입이 마감되었습니다.');
   }
@@ -424,19 +488,27 @@ export async function approveJoin(id, rid) {
     fail('플랫폼 가입 제한 회원입니다.');
   }
 
-  r.status = '승인';
-
-  if (!g.members.includes(r.userId)) {
-    g.members.push(r.userId);
+  // F16 - 승인 시점에도 기존 가입 이력 재검사
+  if (hasMembershipHistory(g, r.userId)) {
+    fail('이미 참여 중이거나 탈퇴 이력이 있는 회원입니다.');
   }
 
+  r.status = '승인';
+
+  g.members.push(r.userId);
+
   D.notice(
-      r.userId,
-      '계모임 가입 승인',
-      `${g.title} 가입이 승인되었습니다.`
+    r.userId,
+    '계모임 가입 승인',
+    `${g.title} 가입이 승인되었습니다.`
   );
 
-  D.audit('가입 승인', id, D.memberName(r.userId));
+  D.audit(
+    '가입 승인',
+    id,
+    D.memberName(r.userId)
+  );
+
   save();
 }
 
@@ -536,13 +608,37 @@ export async function rotateInviteCode(id) {
     fail('비공개 모임장만 변경할 수 있습니다.');
   }
 
+  // 기존 인증코드 확인
+  const previousCode = String(D.ensureJoinCode(g).code);
+
+  let newCode = null;
+
+  // 기존 인증코드와 다른 번호 생성
+  for (let i = 0; i < 10; i++) {
+    const candidate = String(D.inviteDigits());
+
+    if (
+      /^\d{6}$/.test(candidate) &&
+      candidate !== previousCode
+    ) {
+      newCode = candidate;
+      break;
+    }
+  }
+
+  if (newCode === null) {
+    fail('새로운 인증코드 생성에 실패했습니다.');
+  }
+
+  // 인증코드 재발급 및 회원별 인증 상태 초기화
   g.joinCode = {
-    code: D.inviteDigits(),
+    code: newCode,
     attempts: {},
     verified: {}
   };
 
   D.groupLog(g, '비공개 초대 인증코드 변경');
+
   save();
 }
 
@@ -862,6 +958,17 @@ export async function forceMember(id, x, reason) {
     fail('누적 경고 2회 이상부터 강제 탈퇴 검토가 가능합니다.');
   }
 
+  // F16 - 강제 탈퇴 회원의 재가입 차단을 위한 이력 보존
+  g.formerMemberIds ??= [];
+
+  if (
+    !g.formerMemberIds.some(
+      id => String(id) === String(x)
+    )
+  ) {
+    g.formerMemberIds.push(x);
+  }
+
   g.members = g.members.filter(a => a !== x);
 
   D.notice(
@@ -907,4 +1014,290 @@ export async function requestDissolve(id, reason) {
 
   D.audit('해산 신청', id, reason);
   save();
+}
+
+/* ==================================================
+   F18 — 비공개 모임 인증코드 발급 및 검증 (Spring Boot)
+   ================================================== */
+
+/**
+ * 모임장 전용
+ * POST /api/groups/{groupId}/join-code
+ *
+ * 호출할 때마다 새 인증코드가 발급되므로
+ * 사용자가 버튼을 클릭했을 때만 호출한다.
+ */
+export async function issueJoinCode(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  if (!Number.isSafeInteger(Number(groupId)) || Number(groupId) <= 0) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  return apiFetch(`/api/groups/${groupId}/join-code`, {
+    method: 'POST'
+  });
+}
+
+
+/**
+ * [F18 추가] 비공개 모임 초대 링크 토큰 조회
+ *
+ * 모임장 전용
+ * GET /api/groups/{groupId}/invite
+ *
+ * 서버에서 기존 초대 토큰을 조회한다.
+ * 인증코드를 새로 발급하거나 변경하지 않는다.
+ */
+export async function fetchInviteLink(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  if (
+    !Number.isSafeInteger(Number(groupId)) ||
+    Number(groupId) <= 0
+  ) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  return apiFetch(`/api/groups/${groupId}/invite`, {
+    method: 'GET'
+  });
+}
+
+
+/**
+ * 참여 회원 전용
+ * POST /api/groups/{groupId}/join-code/verify
+ *
+ * 인증 성공: VERIFIED / ALREADY_VERIFIED
+ * 인증 실패: INVALID_CODE / LOCKED 등
+ */
+export async function verifyJoinCode(groupId, joinCode) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  if (!Number.isSafeInteger(Number(groupId)) || Number(groupId) <= 0) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  const code = String(joinCode ?? '').trim();
+
+  if (!/^\d{6}$/.test(code)) {
+    throw new Error('6자리 숫자 인증코드를 입력해 주세요.');
+  }
+
+  return apiFetch(`/api/groups/${groupId}/join-code/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ joinCode: code })
+  });
+}
+
+
+/**
+ * F18 - 현재 회원의 비공개 모임 인증 상태 조회
+ *
+ * GET /api/groups/{groupId}/join-code/verification-state
+ */
+export async function fetchJoinCodeVerificationState(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = Number(groupId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  return apiFetch(
+    `/api/groups/${id}/join-code/verification-state`,
+    { method: 'GET' }
+  );
+}
+
+
+/* ==================================================
+   F16 — 모임 가입 신청 (Spring Boot)
+   ================================================== */
+
+/**
+ * POST /api/groups/{groupId}/join-requests
+ *
+ * 비공개 초대 가입: INVITE
+ * 공개 모임 검색 가입: SEARCH
+ *
+ * 가입 신청 성공 시 PENDING 반환
+ */
+export async function requestJoinGroup(groupId, via = 'INVITE') {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = Number(groupId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  if (!['INVITE', 'SEARCH'].includes(via)) {
+    throw new Error('올바르지 않은 가입 경로입니다.');
+  }
+
+  return apiFetch(`/api/groups/${id}/join-requests`, {
+    method: 'POST',
+    body: JSON.stringify({ via })
+  });
+}
+
+
+/* ==================================================
+   F16 — 모임장 가입 신청 관리 (Spring Boot)
+   ================================================== */
+
+// 모임 ID 유효성 검사
+function validateGroupId(groupId) {
+  const id = Number(groupId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error('올바르지 않은 모임 ID입니다.');
+  }
+
+  return id;
+}
+
+// 가입 신청 ID 유효성 검사
+function validateRequestId(requestId) {
+  const id = Number(requestId);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error('올바르지 않은 가입 신청 ID입니다.');
+  }
+
+  return id;
+}
+
+
+/**
+ * F16: 모임장 전용 참여 회원 목록 조회
+ * GET /api/groups/{groupId}/members
+ */
+export async function fetchGroupMembers(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = validateGroupId(groupId);
+
+  const result = await apiFetch(
+    `/api/groups/${id}/members`
+  );
+
+  if (!Array.isArray(result)) {
+    throw new Error(
+      '참여 회원 목록 응답 형식이 올바르지 않아요.'
+    );
+  }
+
+  return result;
+}
+
+
+/**
+ * 모임장 전용: 가입 신청 목록 조회
+ *
+ * GET /api/groups/{groupId}/join-requests
+ *
+ * 반환:
+ * [
+ *   {
+ *     joinRequestId: 4,
+ *     groupId: 13,
+ *     memberId: 12,
+ *     via: 'INVITE',
+ *     status: 'PENDING',
+ *     createdAt: '2026-11-23T00:29:15'
+ *   }
+ * ]
+ */
+export async function fetchJoinRequests(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = validateGroupId(groupId);
+
+  const result = await apiFetch(
+    `/api/groups/${id}/join-requests`
+  );
+
+  // 서버에서 배열로 반환
+  if (Array.isArray(result)) {
+    return result;
+  }
+
+  // 신청이 한 건이고 객체로 반환된 경우
+  if (
+    result &&
+    typeof result === 'object' &&
+    Number.isSafeInteger(Number(result.joinRequestId)) &&
+    Number(result.joinRequestId) > 0
+  ) {
+    return [result];
+  }
+
+  // 빈 응답
+  if (result == null) {
+    return [];
+  }
+
+  throw new Error(
+    '가입 신청 목록 응답 형식이 올바르지 않아요.'
+  );
+}
+
+/**
+ * 모임장 전용: 가입 신청 승인
+ *
+ * PATCH /api/groups/{groupId}/join-requests/{requestId}/approve
+ */
+export async function approveJoinRequest(groupId, requestId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = validateGroupId(groupId);
+  const rid = validateRequestId(requestId);
+
+  return apiFetch(
+    `/api/groups/${id}/join-requests/${rid}/approve`,
+    {
+      method: 'PATCH'
+    }
+  );
+}
+
+/**
+ * 모임장 전용: 가입 신청 거절
+ *
+ * PATCH /api/groups/{groupId}/join-requests/{requestId}/reject
+ */
+export async function rejectJoinRequest(groupId, requestId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = validateGroupId(groupId);
+  const rid = validateRequestId(requestId);
+
+  return apiFetch(
+    `/api/groups/${id}/join-requests/${rid}/reject`,
+    {
+      method: 'PATCH'
+    }
+  );
 }

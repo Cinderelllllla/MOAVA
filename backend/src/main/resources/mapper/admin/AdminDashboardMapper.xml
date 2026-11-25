@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.admin.dashboard.mapper.AdminDashboardMapper">
+
+    <!-- ==================== 0. 활성 관리자 검증 ==================== -->
+
+    <select id="countActiveAdmin" resultType="int">
+        SELECT COUNT(*)
+        FROM ADMIN
+        WHERE ADMIN_ID = #{adminId}
+          AND STATUS = 'ACTIVE'
+    </select>
+
+    <!-- ==================== 1. 대시보드 통계 & 최근 이력 ==================== -->
+
+    <!-- 4대 통계 지표 (ADMIN 제외 전체 회원 / 전체 계모임 / 해산 승인 대기 / 가입 제한) -->
+    <select id="selectDashboardStats"
+            resultType="com.moava.admin.dashboard.dto.AdminDashboardDTO$SummaryStats">
+        SELECT
+            (SELECT COUNT(*)
+             FROM MEMBER
+             WHERE STATUS = 'ACTIVE') AS totalMembers,
+            (SELECT COUNT(*)
+             FROM GYE_GROUP) AS totalGroups,
+            (SELECT COUNT(*)
+             FROM DISSOLUTION_REQUEST
+             WHERE STATUS = 'PENDING') AS pendingDissolutions,
+            (SELECT COUNT(*)
+             FROM MEMBER
+             WHERE STATUS = 'ACTIVE'
+               AND BANNED_YN = 'Y') AS bannedMembers
+        FROM DUAL
+    </select>
+
+    <!-- 최근 운영 이력 7건 (이름 마스킹은 서비스 계층에서 공통 NameMasker 적용) -->
+    <select id="selectRecentAuditLogs"
+            resultType="com.moava.admin.dashboard.dto.AdminDashboardDTO$RecentAuditRow">
+        SELECT *
+        FROM (
+                 SELECT
+                     l.AUDIT_LOG_ID                             AS auditLogId,
+                     l.GROUP_ID                                 AS groupId,
+                     NVL(g.TITLE, '플랫폼 공통')                 AS groupTitle,
+                     l.EVENT_TYPE                               AS eventType,
+                     l.ACTOR_ADMIN_ID                           AS actorAdminId,
+                     a.NAME                                     AS adminName,
+                     l.ACTOR_MEMBER_ID                          AS actorMemberId,
+                     m.NAME                                     AS memberName,
+                     l.DESCRIPTION                              AS description,
+                     TO_CHAR(l.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt
+                 FROM AUDIT_LOG l
+                          LEFT JOIN GYE_GROUP g ON l.GROUP_ID = g.GROUP_ID
+                          LEFT JOIN MEMBER m    ON l.ACTOR_MEMBER_ID = m.MEMBER_ID
+                          LEFT JOIN ADMIN a     ON l.ACTOR_ADMIN_ID = a.ADMIN_ID
+                 ORDER BY l.CREATED_AT DESC, l.AUDIT_LOG_ID DESC
+             )
+        WHERE ROWNUM &lt;= 7
+    </select>
+
+    <!-- ==================== 2. 테스트 회원 5명 생성 ==================== -->
+
+    <select id="selectMaxTestMemberSuffix" resultType="int">
+        SELECT NVL(
+                       MAX(
+                               CASE
+                                   WHEN REGEXP_LIKE(LOWER(EMAIL), '^testuser[0-9]+@moava\.test$')
+                                       THEN TO_NUMBER(REGEXP_SUBSTR(LOWER(EMAIL), '[0-9]+'))
+                                   ELSE 0
+                                   END
+                       ), 0
+               )
+        FROM MEMBER
+    </select>
+
+    <select id="countMemberByEmail" resultType="int">
+        SELECT COUNT(*)
+        FROM MEMBER
+        WHERE LOWER(EMAIL) = LOWER(#{email})
+    </select>
+
+    <select id="selectUnusedSynIds" resultType="string">
+        SELECT SYN_ID
+        FROM (
+                 SELECT c.SYN_ID
+                 FROM CREDIT_SNAPSHOT c
+                 WHERE NOT EXISTS (
+                     SELECT 1
+                     FROM MEMBER m
+                     WHERE m.SYN_ID = c.SYN_ID
+                 )
+                 ORDER BY DBMS_RANDOM.VALUE
+             )
+        WHERE ROWNUM &lt;= #{count}
+    </select>
+
+    <select id="selectActiveRequiredTermIds" resultType="long">
+        SELECT TERMS_ID
+        FROM TERMS_POLICY
+        WHERE ACTIVE_YN = 'Y'
+          AND REQUIRED_YN = 'Y'
+    </select>
+
+    <insert id="insertTestMember" parameterType="map">
+        <selectKey keyProperty="memberId" resultType="long" order="BEFORE">
+            SELECT SEQ_MEMBER.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO MEMBER (
+        MEMBER_ID, EMAIL, PASSWORD_HASH, NAME, PHONE_ENC,
+        REGION_SIDO, REGION_SIGUNGU, BANNED_YN, SYN_ID,
+        THEME_CODE, STATUS, KEY_VER, CREATED_AT
+        ) VALUES (
+        #{memberId}, #{email}, #{passwordHash}, #{name}, #{phoneEnc},
+        #{regionSido}, #{regionSigungu}, 'N', #{synId, jdbcType=VARCHAR},
+        'v9', 'ACTIVE', #{keyVer}, SYSDATE
+        )
+    </insert>
+
+    <insert id="insertMemberConsent">
+        INSERT INTO MEMBER_CONSENT (
+            MEMBER_CONSENT_ID, MEMBER_ID, TERMS_ID, AGREED_YN,
+            CONSENT_CHANNEL, IP_ADDR_ENC, KEY_VER, AGREED_AT
+        ) VALUES (
+                     SEQ_MEMBER_CONSENT.NEXTVAL, #{memberId}, #{termsId}, 'Y',
+                     'SIGNUP', #{ipAddrEnc}, #{keyVer}, SYSDATE
+                 )
+    </insert>
+
+    <insert id="insertAdminAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID, GROUP_ID, ACTOR_MEMBER_ID, ACTOR_ADMIN_ID,
+            EVENT_TYPE, DESCRIPTION, CREATED_AT
+        ) VALUES (
+                     SEQ_AUDIT_LOG.NEXTVAL, NULL, NULL, #{adminId},
+                     #{eventType}, #{description}, SYSDATE
+                 )
+    </insert>
+
+    <!-- ==================== 3. 데모 데이터 초기화 (FK 역순) ==================== -->
+
+    <delete id="deleteAllNotifications">DELETE FROM NOTIFICATION</delete>
+    <delete id="deleteAllChatMessages">DELETE FROM CHAT_MESSAGE</delete>
+    <delete id="deleteAllSupportReports">DELETE FROM SUPPORT_REPORT</delete>
+    <delete id="deleteAllAuditLogs">DELETE FROM AUDIT_LOG</delete>
+
+    <delete id="deleteAllOverdueCases">DELETE FROM OVERDUE_CASE</delete>
+    <delete id="deleteAllSanctions">DELETE FROM SANCTION</delete>
+    <delete id="deleteAllDissolutionRequests">DELETE FROM DISSOLUTION_REQUEST</delete>
+    <delete id="deleteAllConsents">DELETE FROM CONSENT</delete>
+
+    <delete id="deleteAllWithdrawalConsentTargets">DELETE FROM WITHDRAWAL_CONSENT_TARGET</delete>
+    <delete id="deleteAllWithdrawalRequests">DELETE FROM WITHDRAWAL_REQUEST</delete>
+    <delete id="deleteAllPayoutRequests">DELETE FROM PAYOUT_REQUEST</delete>
+    <delete id="deleteAllPaymentProofFiles">DELETE FROM PAYMENT_PROOF_FILE</delete>
+    <delete id="deleteAllPaymentProofs">DELETE FROM PAYMENT_PROOF</delete>
+    <delete id="deleteAllJoinRequests">DELETE FROM JOIN_REQUEST</delete>
+    <delete id="deleteAllJoinCodeAttempts">DELETE FROM JOIN_CODE_ATTEMPT</delete>
+
+    <delete id="deleteAllLeaderTransferRequests">DELETE FROM LEADER_TRANSFER_REQUEST</delete>
+    <delete id="deleteAllGyeAccounts">DELETE FROM GYE_ACCOUNT</delete>
+    <delete id="deleteAllGyeMembers">DELETE FROM GYE_MEMBER</delete>
+    <delete id="deleteAllGyeGroups">DELETE FROM GYE_GROUP</delete>
+
+    <delete id="deleteAllRiskScores">DELETE FROM RISK_SCORE</delete>
+    <delete id="deleteAllFinanceMonthly">DELETE FROM FINANCE_MONTHLY</delete>
+    <delete id="deleteAllFinanceProfiles">DELETE FROM FINANCE_PROFILE</delete>
+    <delete id="deleteAllMemberConsents">DELETE FROM MEMBER_CONSENT</delete>
+    <delete id="deleteAllMembers">DELETE FROM MEMBER</delete>
+
+</mapper>

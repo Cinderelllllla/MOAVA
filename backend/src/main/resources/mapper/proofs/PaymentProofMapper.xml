@@ -175,7 +175,8 @@
         AND n.CREATED_AT >= TRUNC(SYSDATE)
     </select>
 
-    <!-- 감사 로그: 증빙 등록·승인·보완 요청·재제출. DESCRIPTION에 보완 사유 등 자유 입력값은 넣지 않음 -->
+    <!-- 감사 로그(F22·F23 증빙 등록·승인·보완 요청·재제출 전용): DESCRIPTION에 보완 사유 등 자유 입력값은 넣지 않음.
+      ※ F24 정정 사유는 설계상 AUDIT_LOG(REF_CORRECT)에 남김 — 계좌·연락처 같은 긴 숫자는 RefNoService에서 차단 -->
     <insert id="insertAuditLog">
         INSERT INTO AUDIT_LOG (
         AUDIT_LOG_ID, GROUP_ID, ACTOR_MEMBER_ID, TARGET_MEMBER_ID, EVENT_TYPE, DESCRIPTION
@@ -235,6 +236,30 @@
         FROM PAYMENT_PROOF_FILE
         WHERE FILE_ID = #{fileId}
         AND PAYMENT_PROOF_ID = #{proofId}
+    </select>
+
+    <!-- F25: 귀속 월 기준 회원별 납입 상태
+     한 달에 증빙이 여러 건(회차별)일 수 있어서 우선순위로 하나만 고름:
+     승인 완료가 하나라도 있으면 CONFIRMED > 승인 대기 PENDING > 나머지(보완 요청) REVISION > 없으면 NONE -->
+    <select id="findMemberPaymentStatus" resultType="com.moava.proofs.dto.PaymentStatusResponse$MemberStatus">
+        SELECT gm.MEMBER_ID     AS memberId,
+        m.NAME           AS memberName,
+        gm.WARNING_COUNT AS warningCount,
+        (SELECT CASE
+        WHEN SUM(CASE WHEN p.STATUS = 'CONFIRMED' THEN 1 ELSE 0 END) &gt; 0 THEN 'CONFIRMED'
+        WHEN SUM(CASE WHEN p.STATUS = 'PENDING'   THEN 1 ELSE 0 END) &gt; 0 THEN 'PENDING'
+        WHEN COUNT(*) &gt; 0 THEN 'REVISION'
+        ELSE 'NONE'
+        END
+        FROM PAYMENT_PROOF p
+        WHERE p.GROUP_ID  = gm.GROUP_ID
+        AND p.MEMBER_ID = gm.MEMBER_ID
+        AND p.PAY_MONTH = #{payMonth}) AS status
+        FROM GYE_MEMBER gm
+        JOIN MEMBER m ON m.MEMBER_ID = gm.MEMBER_ID
+        WHERE gm.GROUP_ID = #{groupId}
+        AND gm.STATUS = 'ACTIVE'
+        ORDER BY gm.JOINED_AT
     </select>
 
 </mapper>
