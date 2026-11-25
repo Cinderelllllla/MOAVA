@@ -88,9 +88,6 @@ export function Login() {
   const after = useAfterAuth();
   const [searchParams] = useSearchParams();
 
-  const [mode, setMode] = useState(() =>
-    searchParams.get('mode') === 'admin' ? 'ADMIN' : 'MEMBER'
-  );
   const [f, setF] = useState({
     email: '',
     password: ''
@@ -113,9 +110,7 @@ export function Login() {
 
     try {
       const r = await run(() =>
-        mode === 'ADMIN'
-          ? auth.loginAdminWithServer(f.email.trim(), f.password)
-          : auth.loginWithServer(f.email.trim(), f.password)
+        auth.loginWithServer(f.email.trim(), f.password)
       );
 
       if (r.ok) {
@@ -143,35 +138,16 @@ export function Login() {
   }
 
   return (
-    <AuthCard invite={!!inviteToken && mode === 'MEMBER'}>
-      <h1>{mode === 'ADMIN' ? '관리자 콘솔 로그인' : '다시 만나 반가워요'}</h1>
+    <AuthCard invite={!!inviteToken}>
+      <h1>다시 만나 반가워요</h1>
 
       <p className="muted">
-        {mode === 'ADMIN'
-          ? '플랫폼 관리자 계정으로 로그인합니다.'
-          : '모아바와 함께 내일을 모아보세요.'}
+        모아바와 함께 내일을 모아보세요.
       </p>
-
-      <div className="proc-tabs" style={{ marginBottom: 16 }}>
-        <button
-          type="button"
-          className={`tab ${mode === 'MEMBER' ? 'active' : ''}`}
-          onClick={() => setMode('MEMBER')}
-        >
-          일반 회원
-        </button>
-        <button
-          type="button"
-          className={`tab ${mode === 'ADMIN' ? 'active' : ''}`}
-          onClick={() => setMode('ADMIN')}
-        >
-          관리자
-        </button>
-      </div>
 
       <form onSubmit={submit}>
         <Input
-          label={mode === 'ADMIN' ? '관리자 이메일' : '이메일'}
+          label="이메일"
           name="email"
           type="email"
           required
@@ -205,25 +181,19 @@ export function Login() {
           type="submit"
           disabled={submitting}
         >
-          {submitting
-            ? '로그인 중...'
-            : mode === 'ADMIN'
-              ? '관리자 로그인'
-              : '로그인'}
+          {submitting ? '로그인 중...' : '로그인'}
         </button>
       </form>
 
-      {mode === 'MEMBER' && (
-        <div className="auth-link">
-          아직 계정이 없나요?{' '}
-          <Link
-            className="toggle"
-            to={'/signup' + q}
-          >
-            회원가입
-          </Link>
-        </div>
-      )}
+      <div className="auth-link">
+        아직 계정이 없나요?{' '}
+        <Link
+          className="toggle"
+          to={'/signup' + q}
+        >
+          회원가입
+        </Link>
+      </div>
     </AuthCard>
   );
 }

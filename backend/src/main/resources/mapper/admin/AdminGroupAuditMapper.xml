@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.admin.groups.mapper.AdminGroupAuditMapper">
+
+    <!-- ==================== 0. 활성 관리자 검증 ==================== -->
+
+    <select id="countActiveAdmin" resultType="int">
+        SELECT COUNT(*)
+        FROM ADMIN
+        WHERE ADMIN_ID = #{adminId}
+          AND STATUS = 'ACTIVE'
+    </select>
+
+    <!-- ==================== 1. 계모임 목록 ==================== -->
+
+    <select id="selectAdminGroupList"
+            resultType="com.moava.admin.groups.dto.AdminGroupAuditDTO$GroupSummaryRow">
+        SELECT
+            g.GROUP_ID                                 AS groupId,
+            g.TITLE                                    AS title,
+            g.OWNER_ID                                 AS ownerId,
+            o.NAME                                     AS ownerName,
+            g.STATUS                                   AS status,
+            g.VISIBILITY                               AS visibility,
+            NVL(gm.ACTIVE_MEMBER_COUNT, 0)             AS activeMemberCount,
+            g.MAX_MEMBERS                              AS maxMembers,
+            g.PAY_DAY                                  AS payDay,
+            g.AMOUNT                                   AS amount,
+            g.MONTHS                                   AS months,
+            g.ASSUMED_RATE                             AS assumedRate,
+            acc.VERIFY_STATUS                          AS accountVerifyStatus,
+            TO_CHAR(g.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt
+        FROM GYE_GROUP g
+                 JOIN MEMBER o ON o.MEMBER_ID = g.OWNER_ID
+                 LEFT JOIN (
+                     SELECT GROUP_ID, COUNT(*) AS ACTIVE_MEMBER_COUNT
+                     FROM GYE_MEMBER
+                     WHERE STATUS = 'ACTIVE'
+                     GROUP BY GROUP_ID
+                 ) gm ON gm.GROUP_ID = g.GROUP_ID
+                 LEFT JOIN (
+                     SELECT GROUP_ID, VERIFY_STATUS
+                     FROM (
+                         SELECT GROUP_ID,
+                                VERIFY_STATUS,
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY GROUP_ID
+                                    ORDER BY CREATED_AT DESC, GYE_ACCOUNT_ID DESC
+                                ) AS rn
+                         FROM GYE_ACCOUNT
+                         WHERE ACCOUNT_STATUS = 'CURRENT'
+                     )
+                     WHERE rn = 1
+                 ) acc ON acc.GROUP_ID = g.GROUP_ID
+        ORDER BY g.CREATED_AT DESC, g.GROUP_ID DESC
+    </select>
+
+    <!-- ==================== 2. 계모임 관리자 상세 패널 ==================== -->
+
+    <resultMap id="groupDetailRowMap"
+               type="com.moava.admin.groups.dto.AdminGroupAuditDTO$GroupDetailRow">
+        <id property="groupId" column="groupId"/>
+        <result property="title" column="title"/>
+        <result property="purpose" column="purpose"/>
+        <result property="regionSido" column="regionSido"/>
+        <result property="regionSigungu" column="regionSigungu"/>
+        <result property="ownerId" column="ownerId"/>
+        <result property="ownerName" column="ownerName"/>
+        <result property="status" column="status"/>
+        <result property="visibility" column="visibility"/>
+        <result property="activeMemberCount" column="activeMemberCount"/>
+        <result property="maxMembers" column="maxMembers"/>
+        <result property="amount" column="amount"/>
+        <result property="months" column="months"/>
+        <result property="payDay" column="payDay"/>
+        <result property="assumedRate" column="assumedRate"/>
+        <result property="overduePolicy" column="overduePolicy"/>
+        <result property="orderConfirmedYn" column="orderConfirmedYn"/>
+        <result property="rulesTitle" column="rulesTitle"/>
+        <result property="rulesBody" column="rulesBody" jdbcType="CLOB"/>
+        <result property="description" column="description"/>
+        <result property="startedAt" column="startedAt"/>
+        <result property="createdAt" column="createdAt"/>
+        <result property="joinRequestCount" column="joinRequestCount"/>
+        <result property="pendingJoinRequestCount" column="pendingJoinRequestCount"/>
+        <result property="paymentProofCount" column="paymentProofCount"/>
+        <result property="pendingProofCount" column="pendingProofCount"/>
+        <result property="withdrawalRequestCount" column="withdrawalRequestCount"/>
+        <result property="activeWithdrawalCount" column="activeWithdrawalCount"/>
+        <result property="overdueCaseCount" column="overdueCaseCount"/>
+        <result property="openOverdueCaseCount" column="openOverdueCaseCount"/>
+    </resultMap>
+
+    <select id="selectAdminGroupDetail" resultMap="groupDetailRowMap">
+        SELECT
+            g.GROUP_ID                                 AS groupId,
+            g.TITLE                                    AS title,
+            g.PURPOSE                                  AS purpose,
+            g.REGION_SIDO                              AS regionSido,
+            g.REGION_SIGUNGU                           AS regionSigungu,
+            g.OWNER_ID                                 AS ownerId,
+            o.NAME                                     AS ownerName,
+            g.STATUS                                   AS status,
+            g.VISIBILITY                               AS visibility,
+            (SELECT COUNT(*)
+             FROM GYE_MEMBER gm
+             WHERE gm.GROUP_ID = g.GROUP_ID
+               AND gm.STATUS = 'ACTIVE')               AS activeMemberCount,
+            g.MAX_MEMBERS                              AS maxMembers,
+            g.AMOUNT                                   AS amount,
+            g.MONTHS                                   AS months,
+            g.PAY_DAY                                  AS payDay,
+            g.ASSUMED_RATE                             AS assumedRate,
+            g.OVERDUE_POLICY                           AS overduePolicy,
+            g.ORDER_CONFIRMED_YN                       AS orderConfirmedYn,
+            g.RULES_TITLE                              AS rulesTitle,
+            g.RULES_BODY                               AS rulesBody,
+            g.DESCRIPTION                              AS description,
+            TO_CHAR(g.STARTED_AT, 'YYYY-MM-DD')        AS startedAt,
+            TO_CHAR(g.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt,
+            (SELECT COUNT(*)
+             FROM JOIN_REQUEST jr
+             WHERE jr.GROUP_ID = g.GROUP_ID)           AS joinRequestCount,
+            (SELECT COUNT(*)
+             FROM JOIN_REQUEST jr
+             WHERE jr.GROUP_ID = g.GROUP_ID
+               AND jr.STATUS = 'PENDING')              AS pendingJoinRequestCount,
+            (SELECT COUNT(*)
+             FROM PAYMENT_PROOF pp
+             WHERE pp.GROUP_ID = g.GROUP_ID)           AS paymentProofCount,
+            (SELECT COUNT(*)
+             FROM PAYMENT_PROOF pp
+             WHERE pp.GROUP_ID = g.GROUP_ID
+               AND pp.STATUS &lt;&gt; 'CONFIRMED')     AS pendingProofCount,
+            (SELECT COUNT(*)
+             FROM WITHDRAWAL_REQUEST wr
+             WHERE wr.GROUP_ID = g.GROUP_ID)           AS withdrawalRequestCount,
+            (SELECT COUNT(*)
+             FROM WITHDRAWAL_REQUEST wr
+             WHERE wr.GROUP_ID = g.GROUP_ID
+               AND wr.STATUS IN ('SETTLEMENT_PENDING', 'CONSENT_PENDING')) AS activeWithdrawalCount,
+            (SELECT COUNT(*)
+             FROM OVERDUE_CASE oc
+             WHERE oc.GROUP_ID = g.GROUP_ID)           AS overdueCaseCount,
+            (SELECT COUNT(*)
+             FROM OVERDUE_CASE oc
+             WHERE oc.GROUP_ID = g.GROUP_ID
+               AND oc.STATUS &lt;&gt; 'RESOLVED')      AS openOverdueCaseCount
+        FROM GYE_GROUP g
+                 JOIN MEMBER o ON o.MEMBER_ID = g.OWNER_ID
+        WHERE g.GROUP_ID = #{groupId}
+    </select>
+
+    <select id="selectGroupAccountByStatus"
+            resultType="com.moava.admin.groups.dto.AdminGroupAuditDTO$GroupAccountRow">
+        SELECT *
+        FROM (
+            SELECT
+                a.GYE_ACCOUNT_ID                            AS gyeAccountId,
+                a.BANK_NAME                                 AS bankName,
+                m.NAME                                      AS registeredByName,
+                a.ACCOUNT_NO_LAST4                          AS accountNoLast4,
+                a.VERIFY_STATUS                             AS verifyStatus,
+                a.ACCOUNT_STATUS                            AS accountStatus,
+                TO_CHAR(a.REQUESTED_AT, 'YYYY-MM-DD HH24:MI') AS requestedAt,
+                TO_CHAR(a.VERIFIED_AT, 'YYYY-MM-DD HH24:MI')  AS verifiedAt
+            FROM GYE_ACCOUNT a
+                     LEFT JOIN MEMBER m ON m.MEMBER_ID = a.REGISTERED_BY
+            WHERE a.GROUP_ID = #{groupId}
+              AND a.ACCOUNT_STATUS = #{accountStatus}
+            ORDER BY a.CREATED_AT DESC, a.GYE_ACCOUNT_ID DESC
+        )
+        WHERE ROWNUM = 1
+    </select>
+
+    <!-- ==================== 3. AUDIT_LOG 필터 + 8건 페이징 ==================== -->
+
+    <sql id="auditLogFilterWhere">
+        <where>
+            <if test="groupId != null">
+                AND l.GROUP_ID = #{groupId}
+            </if>
+            <if test="eventType != null and eventType != ''">
+                AND l.EVENT_TYPE = #{eventType}
+            </if>
+            <if test="reviewStatus == 'REVIEW'">
+                AND (
+                    l.EVENT_TYPE LIKE '%\_REQUEST' ESCAPE '\'
+                    OR l.EVENT_TYPE LIKE '%\_DETECT' ESCAPE '\'
+                )
+            </if>
+            <if test="reviewStatus == 'DONE'">
+                AND l.EVENT_TYPE NOT LIKE '%\_REQUEST' ESCAPE '\'
+                AND l.EVENT_TYPE NOT LIKE '%\_DETECT' ESCAPE '\'
+            </if>
+            <if test="adminOnly">
+                AND l.ACTOR_ADMIN_ID IS NOT NULL
+            </if>
+            <if test="actorAdminId != null">
+                AND l.ACTOR_ADMIN_ID = #{actorAdminId}
+            </if>
+        </where>
+    </sql>
+
+    <select id="countAuditLogs"
+            parameterType="com.moava.admin.groups.dto.AdminGroupAuditDTO$AuditLogSearchCriteria"
+            resultType="long">
+        SELECT COUNT(*)
+        FROM AUDIT_LOG l
+        <include refid="auditLogFilterWhere"/>
+    </select>
+
+    <select id="selectAuditLogs"
+            parameterType="com.moava.admin.groups.dto.AdminGroupAuditDTO$AuditLogSearchCriteria"
+            resultType="com.moava.admin.groups.dto.AdminGroupAuditDTO$AuditLogRow">
+        SELECT
+            l.AUDIT_LOG_ID                             AS auditLogId,
+            l.GROUP_ID                                 AS groupId,
+            NVL(g.TITLE, '플랫폼 공통')                 AS groupTitle,
+            l.EVENT_TYPE                               AS eventType,
+            l.ACTOR_ADMIN_ID                           AS actorAdminId,
+            a.NAME                                     AS adminName,
+            l.ACTOR_MEMBER_ID                          AS actorMemberId,
+            m.NAME                                     AS memberName,
+            l.TARGET_MEMBER_ID                         AS targetMemberId,
+            tm.NAME                                    AS targetMemberName,
+            l.DESCRIPTION                              AS description,
+            TO_CHAR(l.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS createdAt
+        FROM AUDIT_LOG l
+                 LEFT JOIN GYE_GROUP g ON g.GROUP_ID = l.GROUP_ID
+                 LEFT JOIN ADMIN a     ON a.ADMIN_ID = l.ACTOR_ADMIN_ID
+                 LEFT JOIN MEMBER m    ON m.MEMBER_ID = l.ACTOR_MEMBER_ID
+                 LEFT JOIN MEMBER tm   ON tm.MEMBER_ID = l.TARGET_MEMBER_ID
+        <include refid="auditLogFilterWhere"/>
+        ORDER BY l.CREATED_AT DESC, l.AUDIT_LOG_ID DESC
+        OFFSET #{offset} ROWS FETCH NEXT #{size} ROWS ONLY
+    </select>
+
+    <!-- ==================== 4. 필터 옵션 조회 ==================== -->
+
+    <select id="selectDistinctAuditEventTypes" resultType="string">
+        SELECT DISTINCT EVENT_TYPE
+        FROM AUDIT_LOG
+        ORDER BY EVENT_TYPE ASC
+    </select>
+
+    <select id="selectAdminOptions"
+            resultType="com.moava.admin.groups.dto.AdminGroupAuditDTO$AdminOption">
+        SELECT
+            ADMIN_ID AS adminId,
+            NAME     AS name,
+            EMAIL    AS email,
+            STATUS   AS status
+        FROM ADMIN
+        ORDER BY ADMIN_ID ASC
+    </select>
+
+</mapper>
