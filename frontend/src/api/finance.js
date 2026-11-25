@@ -6,7 +6,8 @@ import { apiFetch, getToken } from './client';
 import { RISK, INCOME_CAP_RATIO, AMOUNT_UNIT_MANWON } from '../common/policy';
 export { RISK };
 
-/* ---- 정책 값: ML 서버(/ml-api/risk/model)가 기준. 받지 못하면 common/policy.js 기본값을 쓴다 ---- */
+/* ---- 정책 값: ML 서버가 기준(백엔드 GET /api/v1/finance/ai/policy 가 대신 받아 줌).
+        로그인 전이거나 받지 못하면 common/policy.js 기본값을 쓴다 ---- */
 let policy = {
   incomeCapRatio: INCOME_CAP_RATIO,       // 추천액 상한 (월수입 대비 비율)
   amountUnitManwon: AMOUNT_UNIT_MANWON,   // 추천액 절사 단위 (만 원)
@@ -15,9 +16,7 @@ let policy = {
 let policyRequested = false;
 async function loadPolicy() {
   try {
-    const res = await fetch('/ml-api/risk/model');
-    if (!res.ok) return;
-    const m = await res.json();
+    const m = await apiFetch('/api/v1/finance/ai/policy');
     const cap = Number(m?.income_cap_ratio), unit = Number(m?.round_unit) / 10000;   // round_unit 은 원 단위
     policy = {
       incomeCapRatio: cap > 0 && cap <= 1 ? cap : policy.incomeCapRatio,
@@ -26,12 +25,12 @@ async function loadPolicy() {
     };
     save();   // 정책 값을 쓰는 화면 다시 그리기
   } catch {
-    // 분석 서버가 꺼져 있으면 기본값 유지
+    // 분석 서버가 꺼져 있거나 실패하면 기본값 유지
   }
 }
-/** 화면용 정책 값 { incomeCapRatio, amountUnitManwon, source }. 처음 부를 때 한 번 ML 서버에서 받아 온다. */
+/** 화면용 정책 값 { incomeCapRatio, amountUnitManwon, source }. 로그인 후 처음 부를 때 한 번 서버에서 받아 온다. */
 export function getPolicy() {
-  if (!policyRequested) {
+  if (!policyRequested && getToken()) {   // 로그인 전에는 부르지 않고 기본값 (로그인 후 다시 시도)
     policyRequested = true;
     Promise.resolve().then(loadPolicy);   // 화면을 그리는 도중에 상태를 바꾸지 않도록 다음 차례에 호출
   }
@@ -185,28 +184,18 @@ export async function assessWithMl(memberId) {
     reserve: Number(f.reserve),
   };
   const profileKey = financeProfileKey(input);
-  let response;
-  try {
-    response = await fetch('/ml-api/risk/contribution', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        member_id: memberId,
-        monthly_income: Math.round(input.income * 10000),
-        monthly_expense: Math.round((input.fixed + input.variable) * 10000),
-        monthly_saving: Math.round(input.saving * 10000),
-        emergency_fund: Math.round(input.reserve * 10000),
-      }),
-    });
-  } catch {
-    throw new Error('분석 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.');
-  }
-  const result = await response.json().catch(() => null);
-  if (!response.ok) {
-    // 분석 서버가 준 안내가 한국어면 그대로, 아니면 쉬운 문장으로
-    const detail = typeof result?.detail === 'string' && /[가-힣]/.test(result.detail) ? result.detail : null;
-    throw new Error(detail || (response.status >= 500 ? '분석 서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.' : '입력한 금융정보를 확인해 주세요.'));
-  }
+  if (!getToken()) fail('로그인이 필요해요.');
+  // 백엔드가 로그인 토큰으로 본인 회원 번호를 넣어 ML 서버에 대신 묻는다 (member_id 는 보내지 않음).
+  // 오류 안내(분석 서버 연결 실패 503, 입력 확인 400 등)는 apiFetch 가 서버의 한국어 문장으로 던져 준다.
+  const result = await apiFetch('/api/v1/finance/ai/contribution', {
+    method: 'POST',
+    body: JSON.stringify({
+      monthly_income: Math.round(input.income * 10000),
+      monthly_expense: Math.round((input.fixed + input.variable) * 10000),
+      monthly_saving: Math.round(input.saving * 10000),
+      emergency_fund: Math.round(input.reserve * 10000),
+    }),
+  });
   // 위험 등급 이름은 ML 서버가 기준이라 프론트 목록(RISK)과 비교하지 않는다
   if (!result?.risk?.risk_label || !Number.isFinite(Number(result.recommended_amount))
       || !Number.isFinite(Number(result.available_amount))) {
