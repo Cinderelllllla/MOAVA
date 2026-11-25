@@ -690,7 +690,7 @@ CREATE TABLE CHAT_MESSAGE (
                               MESSAGE_ID             NUMBER(12)     NOT NULL,
                               GROUP_ID               NUMBER(10)     NOT NULL,
                               MEMBER_ID              NUMBER(10)     NOT NULL,
-                              BODY_ENC               VARCHAR2(2000) NOT NULL,
+                              BODY_ENC               VARCHAR2(2800) NOT NULL,
                               KEY_VER                NUMBER(2)      DEFAULT 1 NOT NULL,
                               SENT_AT                DATE           DEFAULT SYSDATE NOT NULL,
                               CONSTRAINT PK_CHAT_MESSAGE PRIMARY KEY (MESSAGE_ID)
