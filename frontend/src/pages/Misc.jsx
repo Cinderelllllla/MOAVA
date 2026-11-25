@@ -266,8 +266,8 @@ export function Account() {
       <button className="btn danger" type="button" onClick={handleWithdraw} disabled={withdrawing}>{withdrawing ? '탈퇴 처리 중...' : '회원 탈퇴'}</button>
     </div>
     <div className="theme-settings">
-      <h2>🎨 화면 테마 설정</h2>
-      <p className="muted mini">밝은 스카이 브리즈 또는 어두운 네이비.민트 테마를 선택할 수 있습니다.</p>
+      <h2>화면 테마 설정</h2>
+      <p className="muted mini">밝은 테마 또는 어두운 테마를 선택할 수 있습니다.</p>
       <ThemeSwitcher/>
     </div>
     </Card></>;

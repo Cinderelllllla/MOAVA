@@ -5,6 +5,7 @@ import { useApp } from '../common/store';
 import { finance, groups, joined, leader, memberName, activeJoined, db } from '../api';
 import { won, krw, signed } from '../common/format';
 import { Empty } from './ui';
+import Icon from './Icon';
 
 export function BarChart({ data, limit }) {
   if (!data?.length) return <Empty>아직 월별 기록이 없어요. 월별 금융 데이터에서 수입·지출을 저장해 보세요.</Empty>;
@@ -32,7 +33,7 @@ export function MonthlyChart({ limit }) {
 export function GroupCard({ g, selected, onSelect, onSim }) {
   const nav = useNavigate(); const { setUi } = useApp();
   return <div className={`list-item group-choice ${selected ? 'selected' : ''}`} role="button" tabIndex={0} aria-pressed={!!selected} onClick={() => onSelect(g.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(g.id); } }}>
-    <div className="item-head"><b>☁ {g.title}</b><span className={`pill ${joined(g) ? 'mine' : ''}`}>{joined(g) ? (leader(g) ? '내 모임 · 모임장' : '참여 중') : g.status}</span></div>
+    <div className="item-head"><b>{g.title}</b><span className={`pill ${joined(g) ? 'mine' : ''}`}>{joined(g) ? (leader(g) ? '내 모임 · 모임장' : '참여 중') : g.status}</span></div>
     <p className="muted mini">{g.region} · {g.purpose} · 월 {won(g.amount)} · 매월 {g.payDay}일 · {g.members.length}/{g.max}명</p>
     <div className="group-card-actions"><button type="button" className="btn small primary" onClick={e => { e.stopPropagation(); onSelect(g.id); }}>상세 보기</button>{joined(g) && <button type="button" className="btn small soft" onClick={e => { e.stopPropagation(); setUi({ selected: g.id }); nav('/operations'); }}>운영 홈</button>}</div>
   </div>;
@@ -40,7 +41,7 @@ export function GroupCard({ g, selected, onSelect, onSim }) {
 
 export function GroupInfo({ g, onSim }) {
   const nav = useNavigate(); const { setUi, run } = useApp();
-  if (!g) return <div className="group-info-empty"><span className="empty-cloud">☁</span><h3>모임을 선택해 주세요</h3><p>목록 카드 또는 지도 핀을 누르면 이곳에 모임 정보가 나타나요.</p></div>;
+  if (!g) return <div className="group-info-empty"><h3>모임을 선택해 주세요</h3><p>목록 카드 또는 지도 핀을 누르면 이곳에 모임 정보가 나타나요.</p></div>;
   const rows = [['지역', g.region], ['목적', g.purpose], ['월 납입액', won(g.amount)], ['납입일', `매월 ${g.payDay}일`], ['운영 기간', `${g.months}개월`], ['참여 인원', `${g.members.length} / ${g.max}명`], ['모임장', memberName(g.ownerId)], ['수령 순서', g.orderConfirmed ? '확정' : '협의 중'], ['가정 이율', `연 ${Number(g.rate || 0)}%`]];
   return <div className="group-info-full"><span className={`pill ${joined(g) ? 'mine' : ''}`}>{joined(g) ? (leader(g) ? '내 모임 · 모임장' : '참여 중 · ' + g.status) : g.status}</span><h2>{g.title}</h2><p>{g.description || '모임 소개가 등록되지 않았습니다.'}</p>
     <div className="group-info-rows">{rows.map(([k, v]) => <div key={k}><span>{k}</span><strong>{v}</strong></div>)}</div>
@@ -82,7 +83,7 @@ export function FinanceAssessmentStatus({ status, error, retry }) {
   </p>;
 }
 
-export const ProofAttachment = ({ data }) => String(data || '').startsWith('data:application/pdf') ? <a className="pdf-proof-link" href={data} target="_blank" rel="noopener noreferrer" download="MOAVA_거래증빙.pdf">📄 PDF 증빙 보기 · 저장</a> : <img className="upload-preview" src={data} alt="거래 증빙 이미지" />;
+export const ProofAttachment = ({ data }) => String(data || '').startsWith('data:application/pdf') ? <a className="pdf-proof-link" href={data} target="_blank" rel="noopener noreferrer" download="MOAVA_거래증빙.pdf"><Icon name="file" size={16} />PDF 증빙 보기 · 저장</a> : <img className="upload-preview" src={data} alt="거래 증빙 이미지" />;
 
 /** 운영 대상 모임: ui.selected가 참여 중 모임이면 그것, 아니면 첫 참여 모임 */
 export function useOpGroup() { const { ui, setUi } = useApp(); const g = groups.getGroup(ui.selected); const op = g && activeJoined(g) ? g : db.groups.find(activeJoined) || null; return [op, id => setUi({ selected: Number(id) })]; }

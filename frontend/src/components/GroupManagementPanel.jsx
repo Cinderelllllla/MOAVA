@@ -453,7 +453,7 @@ function GroupManagement({ g, onReload }) {
           >
             {issuing
               ? '발급 중...'
-              : '🔑 인증코드 발급·재발급'}
+              : '인증코드 발급·재발급'}
           </button>
         )}
 
@@ -467,7 +467,7 @@ function GroupManagement({ g, onReload }) {
           >
             {copying
               ? '링크 가져오는 중...'
-              : '🔗 초대 링크 복사'}
+              : '초대 링크 복사'}
           </button>
         )}
 
@@ -479,8 +479,8 @@ function GroupManagement({ g, onReload }) {
           onClick={handleToggleMembers}
         >
           {openMembers
-            ? '👥 참여 회원 목록 닫기'
-            : '👥 참여 회원 보기'}
+            ? '참여 회원 목록 닫기'
+            : '참여 회원 보기'}
         </button>
 
         {/* 가입 신청 관리 */}
@@ -494,8 +494,8 @@ function GroupManagement({ g, onReload }) {
           onClick={handleToggleJoinRequests}
         >
           {openJoin
-            ? '👥 가입 신청 관리 닫기'
-            : '👥 가입 신청 관리'}
+            ? '가입 신청 관리 닫기'
+            : '가입 신청 관리'}
         </button>
 
       </div>

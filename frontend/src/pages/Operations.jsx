@@ -21,6 +21,7 @@ import {
 
 import { PageHead, Card, Empty } from '../components/ui';
 import { useOpGroup, GroupSelect, LoadState } from '../components/shared';
+import Icon from '../components/Icon';
 
 import {
   won,
@@ -75,8 +76,8 @@ function ServerOperations() {
     [
       '공개 여부',
       g.visibility === 'PRIVATE'
-        ? '🔒 비공개'
-        : '🌐 공개'
+        ? '비공개'
+        : '공개'
     ],
     [
       '지역',
@@ -358,7 +359,7 @@ function MockOperations() {
       className={`todo ${n ? (urgent ? 'urgent' : '') : 'zero'}`}
       onClick={onClick}
     >
-      <span className="todo-ico">{ico}</span>
+      <span className="todo-ico"><Icon g={ico} /></span>
       <small>{label}</small>
       <b>{n}건</b>
     </button>
@@ -754,7 +755,7 @@ export function VisibilityPanel({ g }) {
         공개 설정
 
         <span className="policy-tag">
-          {priv ? '🔒 비공개 모임' : '🌐 공개 모임'}
+          {priv ? '비공개 모임' : '공개 모임'}
         </span>
       </h3>
 
@@ -825,7 +826,7 @@ export function InvitePanel({ g }) {
 
       {g.visibility === 'PRIVATE' && (
         <div className="moava-code-box">
-          <h3>🔐 비공개 모임 인증코드</h3>
+          <h3>비공개 모임 인증코드</h3>
 
           <p className="muted mini">
             모임별 공통 6자리 코드입니다.
@@ -1062,7 +1063,7 @@ export function FundsPanel({ g }) {
                               </span>
                             )
                             : '확인되지 않음'
-                        : '🔒 본인 납입 후 열람'}
+                        : '본인 납입 후 열람'}
                     </td>
 
                     {l && (

@@ -5,6 +5,7 @@ import { useApp } from '../../common/store';
 import { groups, admin, procedures, proofs, memberName, proofPeriod } from '../../api';
 import { PageHead, Card, Input, HistoryTable, Empty } from '../../components/ui';
 import { LoadState, ProofAttachment } from '../../components/shared';
+import Icon from '../../components/Icon';
 import { krw, formatKrw } from '../../common/format';
 
 const CONSENT_STATUS_LABELS = { PENDING: '응답 대기', AGREED: '동의 완료', REJECTED: '거부', EXEMPT: '동의 면제' };
@@ -88,7 +89,7 @@ export function AdminDashboard() {
     >
       <small>{label}</small>
       <div className="value">{val}</div>
-      <div className="symbol">{ico}</div>
+      <div className="symbol"><Icon g={ico} size={22} /></div>
     </button>
   );
 
