@@ -125,10 +125,14 @@ class ChatServiceTest {
     }
 
     @Test
-    void 한글은_500자_안이어도_암호화_후_저장_칸을_넘으면_거부() {
-        // 한글 1글자 = 3바이트 → 491자(1473바이트)부터 BODY_ENC(2000) 초과
-        assertEquals("MESSAGE_TOO_LONG", sendFails("가".repeat(491)).getCode());
-        verifyNoInteractions(mapper);
+    void 한글_이모지도_500자까지는_보낼_수_있다() {
+        // BODY_ENC(2800) 기준: 한글 500자 = 1500바이트, 이모지 500자 = 2000바이트 → 둘 다 2072바이트 안
+        access("ACTIVE", "ACTIVE", "N", null);
+        when(crypto.getCurrentKeyVersion()).thenReturn(1);
+        when(crypto.encrypt(anyString(), anyInt())).thenReturn("ENC");
+        assertDoesNotThrow(() -> service.send(ME, GROUP, "가".repeat(500)));
+        assertDoesNotThrow(() -> service.send(ME, GROUP, "😀".repeat(500)));
+        assertEquals("MESSAGE_TOO_LONG", sendFails("가".repeat(501)).getCode());
     }
 
     // ---- 읽기 ----
