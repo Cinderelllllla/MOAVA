@@ -76,14 +76,14 @@ class AiFinanceControllerTest {
     void 추천_납입액_응답에서_본인_연체_확률은_빼고_등급만_준다() throws Exception {
         when(ml.contribution(anyMap())).thenReturn(Map.of(
                 "recommended_amount", 150000, "available_amount", 520000,
-                "risk", Map.of("default_probability", 0.123, "risk_level", "SAFE", "risk_label", "안정",
+                "risk", Map.of("default_probability", 0.123, "risk_level", "STABLE", "risk_label", "안정",
                         "safety_factor", 0.5, "source", "persona")));
 
         mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.recommended_amount").value(150000))
-                .andExpect(jsonPath("$.data.risk.risk_level").value("SAFE"))
+                .andExpect(jsonPath("$.data.risk.risk_level").value("STABLE"))
                 .andExpect(jsonPath("$.data.risk.risk_label").value("안정"))
                 .andExpect(jsonPath("$.data.risk.safety_factor").value(0.5))
                 .andExpect(jsonPath("$.data.risk.default_probability").doesNotExist())
@@ -126,14 +126,14 @@ class AiFinanceControllerTest {
     void 정책_값만_골라서_주고_모델_내부_정보는_뺀다() throws Exception {
         when(ml.model()).thenReturn(Map.of(
                 "round_unit", 50000, "income_cap_ratio", 0.12,
-                "risk_levels", List.of(Map.of("code", "SAFE")),
+                "risk_levels", List.of(Map.of("code", "STABLE")),
                 "features", List.of("A", "B"), "n_features", 2));
 
         mvc.perform(get("/api/v1/finance/ai/policy").principal(member(7)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.round_unit").value(50000))
                 .andExpect(jsonPath("$.data.income_cap_ratio").value(0.12))
-                .andExpect(jsonPath("$.data.risk_levels[0].code").value("SAFE"))
+                .andExpect(jsonPath("$.data.risk_levels[0].code").value("STABLE"))
                 .andExpect(jsonPath("$.data.features").doesNotExist())
                 .andExpect(jsonPath("$.data.n_features").doesNotExist());
     }
@@ -160,16 +160,16 @@ class AiFinanceControllerTest {
                 "rule", "r",
                 "order", List.of(
                         Map.of("order", 1, "member_id", 8, "risk", Map.of("default_probability", 0.41,
-                                "risk_level", "DANGER", "risk_label", "위험", "safety_factor", 0.2, "source", "persona")),
+                                "risk_level", "RISK", "risk_label", "위험", "safety_factor", 0.2, "source", "persona")),
                         Map.of("order", 2, "member_id", 7, "risk", Map.of("default_probability", 0.05,
-                                "risk_level", "SAFE", "risk_label", "안정", "safety_factor", 0.5, "source", "persona")))));
+                                "risk_level", "STABLE", "risk_label", "안정", "safety_factor", 0.5, "source", "persona")))));
 
         mvc.perform(post("/api/v1/groups/101/ai/payout-order").principal(member(7)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rule").value("r"))
                 .andExpect(jsonPath("$.data.order[0].order").value(1))
                 .andExpect(jsonPath("$.data.order[0].member_id").value(8))
-                .andExpect(jsonPath("$.data.order[0].risk.risk_level").value("DANGER"))
+                .andExpect(jsonPath("$.data.order[0].risk.risk_level").value("RISK"))
                 .andExpect(jsonPath("$.data.order[0].risk.risk_label").value("위험"))
                 .andExpect(jsonPath("$.data.order[0].risk.default_probability").doesNotExist())
                 .andExpect(jsonPath("$.data.order[0].risk.safety_factor").doesNotExist())
