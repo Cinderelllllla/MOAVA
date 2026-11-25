@@ -14,17 +14,35 @@ Spring Boot 가 `moava.ml.base-url`(기본 `http://localhost:8000`)로 호출합
 python -m venv .venv
 .venv\Scripts\activate            # Mac: source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn src.main:app --port 8000
+uvicorn src.main:app --port 8000 --env-file .env
 ```
 
 - 문서·테스트 화면: http://localhost:8000/docs
 - 두 번째부터는 `activate` 와 `uvicorn` 두 줄만 실행하면 됩니다.
 
+### 내부 공유 키 설정 (필수)
+
+ML 서버는 **Spring 백엔드만** 부를 수 있습니다. 브라우저가 직접 부르면 남의 회원 번호로 위험 등급을 볼 수 있기 때문입니다.
+Spring 은 모든 요청에 `X-Internal-Key` 헤더로 공유 키를 붙이고, ML 은 그 값이 환경변수 `MOAVA_INTERNAL_KEY` 와 다르면 **401** 을 돌려줍니다.
+
+1. `ml/.env.example` 을 복사해 `ml/.env` 를 만들고 `MOAVA_INTERNAL_KEY=` 뒤에 키를 적습니다. (`.env` 는 git 에 올라가지 않습니다)
+   - 또는 환경변수로 직접 설정: PowerShell `$env:MOAVA_INTERNAL_KEY = "<키>"`, Mac/Linux `export MOAVA_INTERNAL_KEY=<키>`
+     (이 경우 `--env-file .env` 없이 `uvicorn src.main:app --port 8000`)
+2. 같은 값을 `backend/src/main/resources/application-secret.properties` 의 `moava.ml.internal-key` 에 넣습니다.
+3. 키 값은 팀 채널에서 따로 받으세요. **이 문서·코드·커밋에는 절대 적지 않습니다.**
+
+- 키가 비어 있으면 서버가 시작되지 않고 안내 메시지를 출력합니다 (실수로 열린 채 켜지지 않게).
+- `/health` 는 키 없이 열려 있습니다. `/risk/*` 는 모두 키가 필요합니다.
+- `/docs` 화면에서 직접 시험할 때는 헤더를 붙일 수 없어 401 이 나옵니다. 시험은 Spring API(`/api/v1/finance/ai/...`)로 하세요.
+
 ## API
+
+`/risk/*` 는 모두 `X-Internal-Key` 헤더가 필요합니다 (위 "내부 공유 키 설정"). 브라우저는 Spring 의
+`POST /api/v1/finance/ai/contribution`, `GET /api/v1/finance/ai/policy`, `POST /api/v1/groups/{groupId}/ai/payout-order` 를 부릅니다.
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
-| GET | `/health` | 상태 확인 |
+| GET | `/health` | 상태 확인 (키 불필요) |
 | GET | `/risk/model` | 입력 지표 목록, 위험 구간, 안전계수 |
 | POST | `/risk/score` | 연체 확률 + 위험 배지 + 안전계수 |
 | POST | `/risk/contribution` | 추천 납입액 |
@@ -110,6 +128,7 @@ src/router/risk.py            엔드포인트
 src/schemas/risk.py           요청/응답 형식
 src/service/risk_service.py   모델 로딩, 예측·추천 로직
 src/common/config.py          위험 구간·안전계수 설정
+src/common/security.py        내부 공유 키(X-Internal-Key) 확인
 src/common/preprocess.py      데이터 로딩, 입력 지표 선택
 src/train.py                  학습 스크립트
 models/                       model.joblib, metrics.json, persona_scores.csv, demo_members.json
