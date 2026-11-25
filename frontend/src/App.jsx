@@ -18,6 +18,7 @@ import Chat from './pages/Chat';
 import Evidence from './pages/Evidence';
 import { Notifications, Account, Support } from './pages/Misc';
 import { AdminDashboard, AdminGroups, AdminSanctions, AdminDissolve, AdminRefs, AdminOverdue } from './pages/admin/AdminPages';
+import AdminLoginPage from './pages/admin/AdminLoginPage';
 
 export default function App() {
   return <BrowserRouter><Routes>
@@ -26,6 +27,7 @@ export default function App() {
     <Route path="/login" element={<Login />} />
     <Route path="/signup" element={<Signup />} />
     <Route path="/invite" element={<InviteRoute />} />
+    <Route path="/admin/login" element={<AdminLoginPage />} />
     {/* 회원 (S02~S15) */}
     <Route element={<Shell role="MEMBER" />}>
       <Route path="/dashboard" element={<Dashboard />} />

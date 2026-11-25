@@ -5,9 +5,8 @@ import { useApp } from '../../common/store';
 import { groups, admin, procedures, proofs, memberName, proofPeriod } from '../../api';
 import { PageHead, Card, Input, HistoryTable, Empty } from '../../components/ui';
 import { LoadState, ProofAttachment } from '../../components/shared';
-import { krw, formatKrw, maskName, maskAccount } from '../../common/format';
+import { krw, formatKrw } from '../../common/format';
 
-const VERIFY = { PENDING: '인증 대기', VERIFIED: '확인 완료', REVERIFY_REQUIRED: '재인증 필요' };
 const CONSENT_STATUS_LABELS = { PENDING: '응답 대기', AGREED: '동의 완료', REJECTED: '거부', EXEMPT: '동의 면제' };
 const DASHBOARD_EVENT_TYPE_LABEL = {
   GROUP_CREATE: '모임 개설',
@@ -215,28 +214,8 @@ export function AdminDashboard() {
   </>;
 }
 
-/* ---- A02 계모임 관리 (F37 F33) ---- */
-export function AdminGroups() {
-  const { run } = useApp(); const [detail, setDetail] = useState(null); const [flt, setFlt] = useState({ group: 'all', type: 'all', status: 'all', page: 0 });
-  const g = groups.getGroup(detail), rows = admin.history(), types = [...new Set(rows.map(h => h.type))];
-  const filtered = rows.filter(h => (flt.group === 'all' || String(h.groupId) === flt.group) && (flt.type === 'all' || h.type === flt.type) && (flt.status === 'all' || (flt.status === '검토' ? /신청|검토|대기|요청/.test(h.type) : !/신청|검토|대기|요청/.test(h.type))));
-  const size = 8, pages = Math.max(1, Math.ceil(filtered.length / size)), page = Math.min(flt.page, pages - 1), view = filtered.slice(page * size, (page + 1) * size);
-  const verify = (id, which) => confirm('계좌 소유를 확인한 것으로 처리할까요? (시연용 — 실제 은행 인증 아님)') && run(() => admin.verifyAccount(id, which), '소유 확인을 처리했어요.');
-  return <><PageHead kicker="ADMIN GROUPS" title="계모임 관리 · 승인 이력" sub="모임장은 가입·납입을 승인하며 ADMIN은 처리 이력을 조회하고 계좌 소유 확인을 처리합니다." />
-    <Card><div className="tablewrap"><table><thead><tr><th>모임</th><th>모임장</th><th>상태</th><th>공개</th><th>회원</th><th>납입일</th><th>계좌 인증</th><th>상세</th></tr></thead><tbody>{groups.listGroups().map(x => <tr key={x.id}><td>{x.title}</td><td>{memberName(x.ownerId)}</td><td>{x.status}</td><td>{x.visibility === 'PRIVATE' ? '🔒 비공개' : '공개'}</td><td>{x.members.length}/{x.max}명</td><td>{x.payDay}일</td><td>{x.account ? VERIFY[x.account.verifyStatus] || x.account.verifyStatus : '미등록'}</td><td><button className="btn small soft" onClick={() => setDetail(x.id)}>상세</button></td></tr>)}</tbody></table></div></Card>
-    {g && <div className="detail-panel section"><h2>관리자 상세 · {g.title}</h2><p>모임장: {memberName(g.ownerId)} · 상태: {g.status} · {g.members.length}/{g.max}명 · 매월 {g.payDay}일 · 가정 이율 {g.rate}%</p><p>운영 규칙: {g.rulesTitle} / {g.rules}</p><p>가입 요청 {g.joinRequests.length}건 · 증빙 {proofs.listProofs(g.id).length}건 · 탈퇴 {g.withdrawals.length}건 · 미납 감지 {proofs.overdueCases().filter(c => c.groupId === g.id).length}건</p>
-      <div className="policy-panel"><h3>모임 계좌 소유 확인 (GYE_ACCOUNT.VERIFY_STATUS)</h3>{g.account ? <><p>{g.account.bank} · 예금주 {maskName(g.account.holder)} · {maskAccount(g.account.accountNo)} <span className="policy-tag">{VERIFY[g.account.verifyStatus] || g.account.verifyStatus}</span></p>{g.account.verifyStatus !== 'VERIFIED' && <div className="actions"><button className="btn small primary" onClick={() => verify(g.id, 'account')}>소유 확인 처리 (시연)</button></div>}</> : <p className="muted">등록된 계좌가 없습니다.</p>}
-        {g.pendingAccount && <><p style={{ marginTop: 10 }}>변경 신청 중: {g.pendingAccount.bank} · {maskAccount(g.pendingAccount.accountNo)} · {g.pendingAccount.requestedAt} <span className="policy-tag">{VERIFY[g.pendingAccount.verifyStatus]}</span></p>{g.pendingAccount.verifyStatus !== 'VERIFIED' && <div className="actions"><button className="btn small primary" onClick={() => verify(g.id, 'pending')}>변경 계좌 소유 확인 처리</button></div>}</>}
-        <p className="muted mini">1원 인증 API 미연동(11/04 결정 ⑤). 관리자가 확인 처리하면 VERIFIED로 바뀌고 모임장이 변경을 확정할 수 있습니다.</p></div>
-      <p className="info mini">가입 승인 및 납입 증빙 승인은 모임장 전용입니다. 관리자는 조회·감사 기능과 위 계좌 확인만 사용합니다.</p><div className="actions"><button className="btn small soft" onClick={() => setDetail(null)}>닫기</button></div></div>}
-    <div className="section"><Card><h2>모임별 처리·해산 이력</h2><div className="policy-history-wrap"><div className="policy-admin-filter">
-      <div className="field"><label>계모임 선택</label><select value={flt.group} onChange={e => setFlt({ ...flt, group: e.target.value, page: 0 })}><option value="all">전체 계모임</option>{groups.listGroups().map(x => <option key={x.id} value={x.id}>{x.title}</option>)}</select></div>
-      <div className="field"><label>처리 유형</label><select value={flt.type} onChange={e => setFlt({ ...flt, type: e.target.value, page: 0 })}><option value="all">전체 유형</option>{types.map(t => <option key={t}>{t}</option>)}</select></div>
-      <div className="field"><label>처리 상태</label><select value={flt.status} onChange={e => setFlt({ ...flt, status: e.target.value, page: 0 })}><option value="all">전체 상태</option><option value="처리">처리됨</option><option value="검토">검토·신청</option></select></div></div>
-      <div className="policy-history-summary">조회 결과 <b>{filtered.length}건</b> · 페이지 {page + 1}/{pages}</div>
-      <div className="policy-history-items">{view.length ? view.map(h => <details className="policy-history-item" key={h.id}><summary><span className="policy-history-type">{h.type}</span><span className="policy-history-group">{groups.getGroup(h.groupId)?.title || '공통'}</span><span className="policy-history-date">{h.date}</span></summary><p>{h.description} · 행위자 {h.actor}</p></details>) : <Empty>선택한 조건의 기록이 없습니다.</Empty>}</div>
-      <div className="actions policy-history-pages"><button type="button" className="btn small soft" disabled={page === 0} onClick={() => setFlt({ ...flt, page: page - 1 })}>이전</button><button type="button" className="btn small soft" disabled={page >= pages - 1} onClick={() => setFlt({ ...flt, page: page + 1 })}>다음</button></div></div></Card></div></>;
-}
+/* ---- A02 계모임 관리 및 이력 감사 (F38 · 서버 API 연동) ---- */
+export { default as AdminGroups } from './AdminGroupsPage';
 
 /* ---- A03 제재 (F39) ---- */
 export function AdminSanctions() {

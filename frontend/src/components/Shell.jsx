@@ -73,7 +73,7 @@ export default function Shell({ role }) {
   }, [canNotify, loadUnread]);
   // 화면 이동·로그인 시 한 번 갱신
   useEffect(() => { if (canNotify) loadUnread(); }, [canNotify, pathname, loadUnread]);
-  if (!session || !user) return <Navigate to="/login" replace />;
+  if (!session || !user) return <Navigate to={role === 'ADMIN' ? '/admin/login' : '/login'} replace />;
   if (role === 'ADMIN' && !isAdmin) return <Navigate to="/dashboard" replace />;
   if (role === 'MEMBER' && isAdmin) return <Navigate to="/admin" replace />;
   const logout = async () => { await run(() => auth.logout()); nav('/'); };
