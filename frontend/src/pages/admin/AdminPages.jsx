@@ -8,6 +8,52 @@ import { LoadState, ProofAttachment } from '../../components/shared';
 import { krw, formatKrw } from '../../common/format';
 
 const CONSENT_STATUS_LABELS = { PENDING: '응답 대기', AGREED: '동의 완료', REJECTED: '거부', EXEMPT: '동의 면제' };
+const DASHBOARD_EVENT_TYPE_LABEL = {
+  GROUP_CREATE: '모임 개설',
+  JOIN_REQUEST: '가입 신청',
+  JOIN_APPROVE: '가입 승인',
+  JOIN_REJECT: '가입 반려',
+  PROOF_UPLOAD: '증빙 업로드',
+  PROOF_CONFIRM: '납입 확인',
+  PROOF_REVISION: '증빙 보완 요청',
+  PROOF_RESUBMIT: '증빙 재제출',
+  REF_ASSIGN: '참조번호 지정',
+  REF_CORRECT: '참조번호 정정',
+  ORDER_REQUEST: '수령 회차 신청',
+  ORDER_CONSENT_REQ: '수령 순서 동의 요청',
+  ORDER_CONFIRM: '수령 순서 확정',
+  PAYOUT_RECEIVED: '곗돈 수령 완료',
+  WITHDRAW_REQUEST: '중도 탈퇴 신청',
+  SETTLEMENT_SET: '정산안 등록',
+  SETTLEMENT_CONSENT: '정산안 동의',
+  WITHDRAW_APPROVE: '중도 탈퇴 승인',
+  WITHDRAW_CONSENT_EXEMPT: '탈퇴 동의 면제',
+  WARN: '회원 경고',
+  EXPEL: '강제 탈퇴',
+  RULE_UPDATE: '운영 규칙 수정',
+  DISSOLVE_REQUEST: '해산 신청',
+  DISSOLVE_APPROVE: '해산 최종 승인',
+  DISSOLVE_REJECT: '해산 신청 반려',
+  ACCOUNT_REGISTER: '계좌 등록',
+  ACCOUNT_CHANGE: '계좌 변경',
+  ACCOUNT_VERIFY: '계좌 소유 확인',
+  LEADER_TRANSFER: '모임장 승계',
+  OVERDUE_DETECT: '미납 자동 감지',
+  OVERDUE_WARN: '미납 경고 알림',
+  CHAT_RESTRICT: '채팅 제한',
+  CHAT_RELEASE: '채팅 제한 해제',
+  ORDER_REVIEW: '수령 후순위 검토',
+  BAN: '플랫폼 가입 제한',
+  BAN_RELEASE: '가입 제한 해제',
+  REPORT_RECEIVED: '신고 접수',
+  REPORT_STATUS: '신고 상태 변경',
+  VISIBILITY_CHANGE: '공개 여부 변경',
+  JOIN_CODE_VERIFY: '인증코드 검증',
+  JOIN_CODE_LOCK: '인증코드 잠금',
+  JOIN_CODE_REISSUE: '인증코드 재발급',
+  DEMO_TEST_MEMBERS: '시연 테스트 회원 생성',
+  DEMO_RESET: '시연 데이터 초기화',
+};
 const formatDateTime = v => {
   if (!v) return '-';
   if (typeof v === 'string') return v.replace('T', ' ').slice(0, 16);
@@ -115,7 +161,11 @@ export function AdminDashboard() {
                     <tr key={log.auditLogId}>
                       <td className="muted mini">{log.createdAt || '-'}</td>
                       <td>{log.groupTitle || '공통'}</td>
-                      <td><span className="pill">{log.eventType}</span></td>
+                      <td>
+                        <span className="pill" title={log.eventType}>
+                          {DASHBOARD_EVENT_TYPE_LABEL[log.eventType] || log.eventType}
+                        </span>
+                      </td>
                       <td style={{ whiteSpace: 'nowrap' }}>{log.actorLabel || '-'}</td>
                       <td>{log.description || '-'}</td>
                     </tr>
@@ -133,19 +183,18 @@ export function AdminDashboard() {
           <p className="muted mini">
             관리자 전용 테스트 회원 5명 생성 (이메일 중복 방지, 초기 비밀번호 <b>Test1234!</b>)
           </p>
-          <div className="actions">
-            <button className="btn small primary" onClick={handleCreateTestMembers}>
-              테스트 회원 5명 준비
-            </button>
-            {demoEnabled && (
+          {demoEnabled ? (
+            <div className="actions">
+              <button className="btn small primary" onClick={handleCreateTestMembers}>
+                테스트 회원 5명 준비
+              </button>
               <button className="btn small danger" onClick={handleResetDemo}>
                 시연 데이터 초기화
               </button>
-            )}
-          </div>
-          {!demoEnabled && (
+            </div>
+          ) : (
             <p className="muted mini" style={{ marginTop: 8 }}>
-              현재 환경에서는 시연 데이터 초기화가 비활성화되어 있습니다.
+              현재 환경에서는 시연용 데이터 관리 기능이 비활성화되어 있습니다.
             </p>
           )}
           {demoResult && (
