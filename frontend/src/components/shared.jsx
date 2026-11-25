@@ -66,11 +66,11 @@ export function RiskPanel({ compact }) {
   const assessment = finance.getMlAssessment(), a = finance.affordability();
   const cap = Math.round(finance.getPolicy().incomeCapRatio * 100);   // 상한 적용 안내용(%) — ML 서버 값 기준
   return <div className="policy-panel" style={{ marginTop: 0 }}><h3>연체 위험 등급 {assessment && <span className="policy-tag">AI 분석</span>}</h3>
-    {assessment ? <p className="muted mini">위험 등급 <b>{assessment.risk.risk_label}</b> · 연체 확률 {(assessment.risk.default_probability * 100).toFixed(1)}% · 안전계수 {assessment.risk.safety_factor}</p>
+    {assessment ? <p className="muted mini">위험 등급 <b>{assessment.risk.risk_label}</b>{assessment.risk.safety_factor != null && <> · 안전계수 {assessment.risk.safety_factor}</>}</p>
       : <><p className="muted mini">아직 분석 결과가 없어요. 맞춤 추천에서 금융정보를 입력하고 이용에 동의하면 AI가 위험 등급과 추천 납입액을 계산해 드려요.</p><div className="actions"><button type="button" className="btn small soft" onClick={() => nav('/journey')}>맞춤 추천 시작 →</button></div></>}
     {!compact && assessment && a && <p className="info mini" style={{ marginTop: 12 }}>추천 월 납입액 <b>{a.rec > 0 ? won(a.rec) : '추천 없음'}</b>{a.rec <= 0 ? ` · ${finance.noRecommendReason(a)}` : ''}{a.capped && a.rec > 0 ? ` · 월수입 ${cap}% 상한 적용` : ''}</p>}</div>;
 }
-export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return assessment ? <>위험 등급 <b>{assessment.risk.risk_label}</b> · 연체 확률 {(assessment.risk.default_probability * 100).toFixed(1)}%</> : <>아직 위험 등급 분석 전이에요.</>; };
+export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return assessment ? <>위험 등급 <b>{assessment.risk.risk_label}</b></> : <>아직 위험 등급 분석 전이에요.</>; };
 
 export function FinanceAssessmentStatus({ status, error, retry }) {
   const text = status === 'loading' ? 'AI가 금융정보를 분석하고 있어요.'
