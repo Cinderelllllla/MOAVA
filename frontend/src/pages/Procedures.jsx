@@ -436,7 +436,7 @@ function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChan
 
       {confirmedList.length > 0 && (
         <p className="info" style={{ marginTop: 14 }}>
-          ✓ 확정 순서: {confirmedList.map(o => `${o.memberName || `회원 #${o.memberId}`} ${o.roundNo}회차`).join(', ')}
+          확정 순서: {confirmedList.map(o => `${o.memberName || `회원 #${o.memberId}`} ${o.roundNo}회차`).join(', ')}
         </p>
       )}
     </Card>

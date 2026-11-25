@@ -531,7 +531,7 @@ export default function Invite() {
           <h1>
             {t
               ? 'MOAVA 모임에 초대되었어요!'
-              : '🔑 초대코드로 가입하기'}
+              : '초대코드로 가입하기'}
           </h1>
 
           <p className="muted">
@@ -595,10 +595,10 @@ export default function Invite() {
         <Card>
           <div className="policy-invite-card">
             <span className="pill">
-              🔒 비공개 모임 초대
+              비공개 모임 초대
             </span>
 
-            <h2>🔑 초대코드 인증</h2>
+            <h2>초대코드 인증</h2>
 
             <p className="muted">
               비공개 계모임에 가입하려면
@@ -760,7 +760,7 @@ export default function Invite() {
                     role="status"
                     style={{ marginTop: 20 }}
                   >
-                    <h3>✅ 인증 완료!</h3>
+                    <h3>인증 완료!</h3>
 
                     <p>
                       모임 ID {directVerifiedGroupId}의
@@ -779,7 +779,7 @@ export default function Invite() {
                 >
                   {directJoinResult?.status === 'PENDING' ? (
                     <div role="status">
-                      <h3>✅ 가입 신청 완료!</h3>
+                      <h3>가입 신청 완료!</h3>
 
                       <p>
                         모임장의 승인을 기다리고 있어요.
@@ -870,7 +870,7 @@ export default function Invite() {
             <div className="policy-invite-card">
               <span className="pill">
                 {g.visibility === 'PRIVATE'
-                  ? '🔒 비공개 모임'
+                  ? '비공개 모임'
                   : '공개 모임'}
               </span>
 
@@ -887,7 +887,7 @@ export default function Invite() {
               {/* F18 — 비공개 모임 인증 */}
               {g.visibility === 'PRIVATE' && (
                 <div style={{ marginTop: 20 }}>
-                  <h3>🔑 비공개 모임 인증</h3>
+                  <h3>비공개 모임 인증</h3>
 
                   {tokenStateLoading && (
                     <p className="muted" role="status">
@@ -999,7 +999,7 @@ export default function Invite() {
                       role="status"
                       style={{ marginTop: 12 }}
                     >
-                      <h3>✅ 인증 완료!</h3>
+                      <h3>인증 완료!</h3>
 
                       <p>
                         비공개 모임 인증코드가
@@ -1022,7 +1022,7 @@ export default function Invite() {
               >
                 {joinResult?.status === 'PENDING' ? (
                   <div role="status">
-                    <h3>✅ 가입 신청 완료!</h3>
+                    <h3>가입 신청 완료!</h3>
 
                     <p>
                       모임장의 승인을 기다리고 있어요.

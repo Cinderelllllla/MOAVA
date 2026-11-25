@@ -144,21 +144,31 @@ export default function MyGroups() {
             list.map(g => (
               <Card key={g.groupId}>
 
-                {/* 모임 제목 및 역할 */}
-                <div className="item-head">
+                {/* 모임 제목 + 상태 뱃지(역할 · 모집 상태 · 비공개)를 한 줄에 모음 */}
+                <div className="item-head mg-head">
                   <h2 style={{ margin: 0 }}>
                     {g.title}
                   </h2>
 
-                  <span className="pill">
-                    {g.role === 'OWNER'
-                      ? '모임장'
-                      : '일반 멤버'}
+                  <span className="mg-badges">
+                    <span className={`pill ${g.role === 'OWNER' ? 'mine' : ''}`}>
+                      {g.role === 'OWNER'
+                        ? '모임장'
+                        : '일반 멤버'}
+                    </span>
+                    <span className="pill">
+                      {groups.groupStatusLabel(
+                        g.status,
+                        g.currentMembers,
+                        g.maxMembers
+                      )}
+                    </span>
+                    {g.visibility === 'PRIVATE' && <span className="pill">비공개</span>}
                   </span>
                 </div>
 
                 {/* 모임 기본 정보 */}
-                <p className="muted">
+                <p className="muted mg-meta">
                   {[g.regionSido, g.regionSigungu]
                     .filter(Boolean)
                     .join(' ')}
@@ -170,25 +180,6 @@ export default function MyGroups() {
                   {' · '}매월 {g.payDay}일
                   {' · '}{g.months}개월
                   {' · '}{g.currentMembers ?? '-'} / {g.maxMembers}명
-
-                  {' · '}
-
-                  <span className="pill">
-                    {groups.groupStatusLabel(
-                      g.status,
-                      g.currentMembers,
-                      g.maxMembers
-                    )}
-                  </span>
-
-                  {g.visibility === 'PRIVATE' && (
-                    <>
-                      {' '}
-                      <span className="pill">
-                        🔒 비공개
-                      </span>
-                    </>
-                  )}
                 </p>
 
                 {/* 모임 정보 조회 및 운영 홈 이동 */}

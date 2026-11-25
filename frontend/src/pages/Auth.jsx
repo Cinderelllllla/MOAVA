@@ -18,6 +18,7 @@ import {
 import { useApp } from '../common/store';
 import { auth } from '../api';
 import { Input } from '../components/ui';
+import { Logo } from '../components/Icon';
 
 // ========================================
 // 공통 인증 화면
@@ -28,7 +29,7 @@ function AuthCard({ children, invite }) {
     <div className="auth">
       <div className="auth-card">
         <div className="auth-brand">
-          ☁ MOAVA
+          <span className="auth-logo"><Logo size={34} /></span>MOAVA
           <span>TOGETHER, BRIGHTER</span>
         </div>
 
