@@ -149,7 +149,7 @@ public class OverdueAdminService {
         }
     }
 
-    // "202611" → "11월분" (경고 알림 TODO에서 사용 예정)
+    // "202611" → "11월분" (경고 알림 OVERDUE_WARNED의 month 값)
     private static String monthLabel(String payMonth) {
         return Integer.parseInt(payMonth.substring(4)) + "월분";
     }
