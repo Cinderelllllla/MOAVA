@@ -12,7 +12,7 @@ def _f(name: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class RiskLevel:
-    code: str            # SAFE / CAUTION / DANGER
+    code: str            # STABLE / CAUTION / RISK (DB RISK_SCORE.TIER 허용값과 같게 맞춤)
     label: str           # 안정 / 주의 / 위험
     min_probability: float  # 이 값 이상이면 해당 구간 (하한 포함)
     safety_factor: float
@@ -24,10 +24,12 @@ DANGER_FROM = _f("MOAVA_DANGER_FROM", 0.25)
 if not 0 < CAUTION_FROM < DANGER_FROM < 1:
     raise ValueError("0 < MOAVA_CAUTION_FROM < MOAVA_DANGER_FROM < 1 이어야 합니다.")
 
+# 코드는 DB RISK_SCORE.TIER 의 CHECK 제약(STABLE/CAUTION/RISK)과 같아야 변환 없이 저장할 수 있다.
+# 환경변수 이름(MOAVA_FACTOR_SAFE, MOAVA_DANGER_FROM 등)은 기존 .env 호환을 위해 그대로 둔다.
 RISK_LEVELS: tuple[RiskLevel, ...] = (
-    RiskLevel("SAFE", "안정", 0.0, _f("MOAVA_FACTOR_SAFE", 0.5)),
+    RiskLevel("STABLE", "안정", 0.0, _f("MOAVA_FACTOR_SAFE", 0.5)),
     RiskLevel("CAUTION", "주의", CAUTION_FROM, _f("MOAVA_FACTOR_CAUTION", 0.35)),
-    RiskLevel("DANGER", "위험", DANGER_FROM, _f("MOAVA_FACTOR_DANGER", 0.2)),
+    RiskLevel("RISK", "위험", DANGER_FROM, _f("MOAVA_FACTOR_DANGER", 0.2)),
 )
 
 # 추천 납입액 절사 단위(원). 기획서 예시: 52만 x 0.5 = 26만 -> 25만, 52만 x 0.35 = 18.2만 -> 15만
