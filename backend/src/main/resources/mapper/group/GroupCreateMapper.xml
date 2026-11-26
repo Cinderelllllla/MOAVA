@@ -1,22 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper
-  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.moava.group.create.mapper.GroupCreateMapper">
 
-<!-- 모임 생성 가능한 회원의 이름 조회 -->
-<select id="findActiveMemberName" resultType="java.lang.String">
-    SELECT NAME
-    FROM MEMBER
-    WHERE MEMBER_ID = #{memberId}
-      AND STATUS = 'ACTIVE'
-      AND BANNED_YN = 'N'
-</select>
+    <!-- 모임 생성 가능한 회원의 이름 조회 -->
+    <select id="findActiveMemberName" resultType="java.lang.String">
+        SELECT NAME
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+          AND STATUS = 'ACTIVE'
+          AND BANNED_YN = 'N'
+    </select>
 
-<select id="nextGroupId" resultType="java.lang.Long">
-    SELECT SEQ_GYE_GROUP.NEXTVAL FROM DUAL
-</select>
+    <!--
+        F19 - 동일 계좌 중복 등록 확인
+
+        기존 HMAC-SHA256 해시 방식 유지
+        은행명과 관계없이 계좌 해시만 비교
+        전체 모임의 CURRENT, PENDING 계좌를 대상으로 검사
+        RETIRED 계좌는 검사 대상에서 제외
+        DDL v2.0 UX_GYE_ACCOUNT_ACTIVE_HASH 기준과 일치
+    -->
+    <select id="countDuplicateAccount" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_ACCOUNT
+        WHERE ACCOUNT_NO_HASH = #{accountNoHash}
+          AND ACCOUNT_STATUS IN ('CURRENT', 'PENDING')
+    </select>
+
+    <select id="nextGroupId" resultType="java.lang.Long">
+        SELECT SEQ_GYE_GROUP.NEXTVAL FROM DUAL
+    </select>
 
     <insert id="insertGroup">
         INSERT INTO GYE_GROUP (
@@ -63,7 +79,6 @@
         )
     </insert>
 
-
     <insert id="insertOwnerMember">
         INSERT INTO GYE_MEMBER (
             GYE_MEMBER_ID,
@@ -77,10 +92,10 @@
             #{memberId},
             'ACTIVE'
         )
-        <!--모임 생성 시 Service에서 다음 두 메서드를 순서대로 호출-->
+        <!-- 모임 생성 시 Service에서 순서대로 호출 -->
     </insert>
 
-
+    <!-- F19 - 모임 계좌 등록 -->
     <insert id="insertGroupAccount">
         INSERT INTO GYE_ACCOUNT (
             GYE_ACCOUNT_ID,
@@ -108,10 +123,11 @@
             #{registeredBy},
             'CURRENT'
         )
-        <!--암호화가 완료된 값만 전달받아 저장하는 구조-->
+        <!-- 암호화가 완료된 값만 전달받아 저장 -->
+        <!-- 실제 계좌 소유 확인 전까지 인증 대기 상태 유지 -->
     </insert>
 
-
+    <!-- 모임 생성 감사 로그 -->
     <insert id="insertGroupCreateAudit">
         INSERT INTO AUDIT_LOG (
             AUDIT_LOG_ID,
@@ -127,10 +143,26 @@
             'GROUP_CREATE',
             #{description}
         )
-        <!--감사 로그에는 모임 ID와 생성 회원 ID, 작업 종류 정도만 기록하고 
-            계좌번호나 암호화 키 등 민감정보는 기록 x-->
+        <!-- 계좌번호 및 암호화 키 등 민감정보 기록 금지 -->
     </insert>
 
-
+    <!-- F19 - 계좌 등록 감사 로그 -->
+    <insert id="insertAccountRegisterAudit">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION
+        )
+        VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId},
+            #{actorMemberId},
+            'ACCOUNT_REGISTER',
+            #{description}
+        )
+        <!-- 계좌번호, 예금주명, 암호문, 해시값 기록 금지 -->
+    </insert>
 
 </mapper>

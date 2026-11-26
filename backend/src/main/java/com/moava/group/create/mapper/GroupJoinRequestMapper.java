@@ -19,6 +19,11 @@ public interface GroupJoinRequestMapper {
             @Param("groupId") Long groupId
     );
 
+    // 플랫폼 가입 제한 및 회원 상태 확인
+    Map<String, Object> findMemberStatus(
+            @Param("memberId") Long memberId
+    );
+
     // 기존 참여 이력 확인
     // ACTIVE, WITHDRAWN, EXPELLED 모두 가입 제한
     int countExistingMembership(
@@ -112,5 +117,17 @@ public interface GroupJoinRequestMapper {
     // 만료 조건을 충족한 신청만 EXPIRED로 변경
     int expireJoinRequest(
             @Param("requestId") Long requestId
+    );
+
+    // ==========================================
+    // F16 - 가입 관련 감사 로그
+    // ==========================================
+
+    int insertAuditLog(
+            @Param("groupId") Long groupId,
+            @Param("actorMemberId") Long actorMemberId,
+            @Param("targetMemberId") Long targetMemberId,
+            @Param("eventType") String eventType,
+            @Param("description") String description
     );
 }

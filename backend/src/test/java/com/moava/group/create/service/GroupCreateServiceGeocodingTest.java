@@ -5,6 +5,8 @@ import com.moava.group.create.dto.GroupCreateResponse;
 import com.moava.group.create.mapper.GroupCreateMapper;
 import com.moava.group.map.GeoPoint;
 import com.moava.group.map.KakaoGeocodingClient;
+import com.moava.notification.common.service.NotificationService;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,16 +27,27 @@ class GroupCreateServiceGeocodingTest {
 
     @Mock
     GroupCreateMapper mapper;
+
     @Mock
     GroupAccountCrypto crypto;
+
     @Mock
     KakaoGeocodingClient kakaoGeocodingClient;
+
+    // F19 - 계좌 소유 확인 요청 알림 의존성 추가
+    @Mock
+    NotificationService notificationService;
 
     GroupCreateService service;
 
     @BeforeEach
     void setUp() {
-        service = new GroupCreateService(mapper, crypto, kakaoGeocodingClient);
+        service = new GroupCreateService(
+                mapper,
+                crypto,
+                kakaoGeocodingClient,
+                notificationService
+        );
     }
 
     private static GroupCreateRequest sampleRequest() {
@@ -59,63 +72,142 @@ class GroupCreateServiceGeocodingTest {
     }
 
     private void stubCommonHappyPath() {
-        when(mapper.findActiveMemberName(1L)).thenReturn("홍길동");
-        when(mapper.nextGroupId()).thenReturn(101L);
+
+        when(mapper.findActiveMemberName(1L))
+                .thenReturn("홍길동");
+
+        when(mapper.nextGroupId())
+                .thenReturn(101L);
+
         when(mapper.insertGroup(
-                anyLong(), anyLong(), anyString(), anyString(), anyString(), anyString(),
+                anyLong(), anyLong(), anyString(), anyString(),
+                anyString(), anyString(),
                 any(), any(),
-                anyLong(), anyInt(), anyInt(), anyInt(), any(), anyString(), anyString(),
+                anyLong(), anyInt(), anyInt(), anyInt(),
+                any(), anyString(), anyString(),
                 anyString(), anyString(), anyString(), anyString()
         )).thenReturn(1);
-        when(mapper.insertOwnerMember(101L, 1L)).thenReturn(1);
-        when(crypto.encrypt("홍길동")).thenReturn("enc-name");
-        when(crypto.encrypt("3333012345678")).thenReturn("enc-acc");
-        when(crypto.hashAccountNumber("3333012345678")).thenReturn("hash-acc");
-        when(crypto.keyVersion()).thenReturn(1);
-        when(mapper.insertGroupAccount(anyLong(), anyString(), anyString(), anyString(),
-                anyString(), anyString(), anyInt(), anyLong())).thenReturn(1);
-        when(mapper.insertGroupCreateAudit(anyLong(), anyLong(), anyString())).thenReturn(1);
+
+        when(mapper.insertOwnerMember(101L, 1L))
+                .thenReturn(1);
+
+        when(crypto.encrypt("홍길동"))
+                .thenReturn("enc-name");
+
+        when(crypto.encrypt("3333012345678"))
+                .thenReturn("enc-acc");
+
+        when(crypto.hashAccountNumber("3333012345678"))
+                .thenReturn("hash-acc");
+
+        // F19 - 동일 계좌가 등록되어 있지 않은 상태
+        when(mapper.countDuplicateAccount("hash-acc"))
+                .thenReturn(0);
+
+        when(crypto.keyVersion())
+                .thenReturn(1);
+
+        when(mapper.insertGroupAccount(
+                anyLong(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyInt(),
+                anyLong()
+        )).thenReturn(1);
+
+        when(mapper.insertGroupCreateAudit(
+                anyLong(),
+                anyLong(),
+                anyString()
+        )).thenReturn(1);
+
+        // F19 - 계좌 등록 감사 로그 정상 저장
+        when(mapper.insertAccountRegisterAudit(
+                anyLong(),
+                anyLong(),
+                anyString()
+        )).thenReturn(1);
     }
 
     @Test
     void 지오코딩_성공_시_LAT와_LNG를_함께_저장한다() {
+
         stubCommonHappyPath();
+
         BigDecimal lat = new BigDecimal("37.5663245");
         BigDecimal lng = new BigDecimal("126.9018489");
-        when(kakaoGeocodingClient.geocodeRegion("서울특별시", "마포구"))
-                .thenReturn(Optional.of(new GeoPoint(lat, lng)));
 
-        GroupCreateResponse res = service.createGroup(sampleRequest(), 1L);
+        when(kakaoGeocodingClient.geocodeRegion(
+                "서울특별시",
+                "마포구"
+        )).thenReturn(Optional.of(new GeoPoint(lat, lng)));
+
+        GroupCreateResponse res =
+                service.createGroup(sampleRequest(), 1L);
 
         assertEquals(101L, res.groupId());
+
         verify(mapper).insertGroup(
-                eq(101L), eq(1L), eq("마포 목돈 모임"), eq("SAVINGS"),
-                eq("서울특별시"), eq("마포구"),
-                eq(lat), eq(lng),
-                eq(200_000L), eq(6), eq(6), eq(5),
-                eq(new BigDecimal("3.0")), eq("PUBLIC"), anyString(),
-                eq("우리 모임 규칙"), eq("매월 5일까지 납입합니다."),
-                eq("마포구 직장인 저축 모임"), eq("ALERT_ONLY")
+                eq(101L),
+                eq(1L),
+                eq("마포 목돈 모임"),
+                eq("SAVINGS"),
+                eq("서울특별시"),
+                eq("마포구"),
+                eq(lat),
+                eq(lng),
+                eq(200_000L),
+                eq(6),
+                eq(6),
+                eq(5),
+                eq(new BigDecimal("3.0")),
+                eq("PUBLIC"),
+                anyString(),
+                eq("우리 모임 규칙"),
+                eq("매월 5일까지 납입합니다."),
+                eq("마포구 직장인 저축 모임"),
+                eq("ALERT_ONLY")
         );
     }
 
     @Test
     void 지오코딩이_실패해도_좌표를_null로_두고_모임_생성은_정상_완료된다() {
-        stubCommonHappyPath();
-        when(kakaoGeocodingClient.geocodeRegion("서울특별시", "마포구"))
-                .thenReturn(Optional.empty());
 
-        GroupCreateResponse res = service.createGroup(sampleRequest(), 1L);
+        stubCommonHappyPath();
+
+        when(kakaoGeocodingClient.geocodeRegion(
+                "서울특별시",
+                "마포구"
+        )).thenReturn(Optional.empty());
+
+        GroupCreateResponse res =
+                service.createGroup(sampleRequest(), 1L);
 
         assertEquals(101L, res.groupId());
+
         verify(mapper).insertGroup(
-                eq(101L), eq(1L), eq("마포 목돈 모임"), eq("SAVINGS"),
-                eq("서울특별시"), eq("마포구"),
-                isNull(), isNull(),
-                eq(200_000L), eq(6), eq(6), eq(5),
-                eq(new BigDecimal("3.0")), eq("PUBLIC"), anyString(),
-                eq("우리 모임 규칙"), eq("매월 5일까지 납입합니다."),
-                eq("마포구 직장인 저축 모임"), eq("ALERT_ONLY")
+                eq(101L),
+                eq(1L),
+                eq("마포 목돈 모임"),
+                eq("SAVINGS"),
+                eq("서울특별시"),
+                eq("마포구"),
+                isNull(),
+                isNull(),
+                eq(200_000L),
+                eq(6),
+                eq(6),
+                eq(5),
+                eq(new BigDecimal("3.0")),
+                eq("PUBLIC"),
+                anyString(),
+                eq("우리 모임 규칙"),
+                eq("매월 5일까지 납입합니다."),
+                eq("마포구 직장인 저축 모임"),
+                eq("ALERT_ONLY")
         );
     }
 }
