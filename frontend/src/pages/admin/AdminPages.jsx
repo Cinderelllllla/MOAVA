@@ -560,6 +560,10 @@ export function AdminOverdue() {
   };
 
   const alertOnly = c => c.overduePolicy === 'ALERT_ONLY'; // 모임 규칙이 '알림만'이면 채팅 제한 불가 (명세 F26-3)
+  // 채팅 제한은 회원 단위(GYE_MEMBER) → 같은 회원의 해소 건이 여러 개여도 1명으로 셈
+  const restrictedDone = new Set(
+      state.done.filter(c => c.chatRestrictedYn === 'Y').map(c => `${c.groupId}-${c.memberId}`)
+  ).size;
 
   return <>
     <PageHead kicker="OVERDUE CONTROL" title="관리자 미납 관리" sub="매일 02:00 배치가 납입일 + 5일 경과 &amp; 납입 확인 없음을 감지해 목록에 올립니다. 관리자는 감지 건을 선택해 조치합니다.">
@@ -596,9 +600,19 @@ export function AdminOverdue() {
       </Card>
       <div className="section"><Card>
         <details className="policy-fold">
-          <summary>해소된 건 {state.done.length}건</summary>
+          <summary>
+            해소된 건 {state.done.length}건
+            {restrictedDone > 0 && ` · 채팅 제한 남은 회원 ${restrictedDone}명`}
+          </summary>
           {state.done.length ? state.done.map(c => (
-              <p className="muted mini" key={c.overdueCaseId}>{c.groupTitle} · {c.memberName} · {monthLabel(c.payMonth)} · 해소 {formatDateTime(c.resolvedAt)}</p>
+              <p className="muted mini" key={c.overdueCaseId}>
+                {c.groupTitle} · {c.memberName} · {monthLabel(c.payMonth)} · 해소 {formatDateTime(c.resolvedAt)}
+                {/* 해소돼도 채팅 제한은 그대로 남음 → RESOLVED 건은 해제만 가능 (명세 v3.5 F26-6) */}
+                {c.chatRestrictedYn === 'Y' && <>
+                  {' · '}<b>채팅 제한 중</b>{' '}
+                  <button type="button" className="btn small soft" onClick={() => act(c, 'CHAT_RELEASE')}>채팅 제한 해제</button>
+                </>}
+              </p>
           )) : <p className="muted mini">없음</p>}
         </details>
       </Card></div>
