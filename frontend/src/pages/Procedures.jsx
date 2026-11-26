@@ -2,12 +2,14 @@
    - 수령 순서: /api/v1/groups/{groupId}/payout-requests
    - 중도 탈퇴·정산: /api/v1/groups/{groupId}/withdrawals
    - 계모임 해산: /api/v1/groups/{groupId}/dissolution
-   - 규칙·경고·승계: 준비 중 */
+   - 운영 규칙(F31): /api/v1/groups/{groupId}/rules (조회: 모임 회원 / 수정: 모임장)
+   - 경고·승계: 준비 중
+   알림 링크 /procedures?groupId=…&tab=rules 로 들어오면 규칙 탭을 연다. */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../common/store';
 import useMyGroups from '../common/useMyGroups';
-import { procedures as P } from '../api';
+import { procedures as P, groups as G } from '../api';
 import { PageHead, Card, Flow, Select, Input, Empty } from '../components/ui';
 import { LoadState } from '../components/shared';
 import { formatKrw } from '../common/format';
@@ -25,6 +27,8 @@ const CONSENT_STATUS_LABELS = {
   EXEMPT: '동의 면제',
 };
 
+const TAB_KEYS = ['order', 'withdraw', 'dissolve', 'rules'];
+
 const formatDateTime = v => {
   if (!v) return '-';
   if (typeof v === 'string') return v.replace('T', ' ').slice(0, 16);
@@ -40,8 +44,14 @@ export default function Procedures() {
   const myMemberId = Number(session?.id || 0);
 
   const urlGroupId = searchParams.get('groupId') || '';
+  const urlTab = searchParams.get('tab') || '';
   const [activeGroupId, setActiveGroupId] = useState(urlGroupId);
   const [manualInput, setManualInput] = useState(urlGroupId);
+
+  // 알림 링크(?tab=rules 등)로 들어오면 그 탭을 연다
+  useEffect(() => {
+    if (TAB_KEYS.includes(urlTab)) setUi({ procTab: urlTab });
+  }, [urlTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // URL ?groupId= 변경 시 반영, 없으면 내가 만든 첫 모임 자동 선택
   useEffect(() => {
@@ -204,15 +214,24 @@ export default function Procedures() {
       <Card>
         <Empty>절차를 진행할 모임을 선택하거나 모임 번호를 입력해 주세요.</Empty>
       </Card>
+    ) : currentTab === 'rules' ? (
+      // 규칙 탭은 수령 순서·탈퇴·해산 데이터와 따로 불러온다 (그쪽이 실패해도 규칙은 볼 수 있게)
+      <>
+        <ProcTabs tabs={tabs} currentTab={currentTab} onSelect={k => setUi({ procTab: k })} />
+        <RulesTab key={activeGroupId} groupId={Number(activeGroupId)} />
+      </>
     ) : dataState.status !== 'ready' ? (
-      <Card>
-        <LoadState
-          status={dataState.status === 'idle' ? 'loading' : dataState.status}
-          error={dataState.error}
-          onRetry={reload}
-          loadingText="모임 절차 정보를 불러오는 중이에요."
-        />
-      </Card>
+      <>
+        <ProcTabs tabs={tabs} currentTab={currentTab} onSelect={k => setUi({ procTab: k })} />
+        <Card>
+          <LoadState
+            status={dataState.status === 'idle' ? 'loading' : dataState.status}
+            error={dataState.error}
+            onRetry={reload}
+            loadingText="모임 절차 정보를 불러오는 중이에요."
+          />
+        </Card>
+      </>
     ) : (
       <>
         <div className="proc-tabs">
@@ -256,10 +275,23 @@ export default function Procedures() {
             onChanged={reload}
           />
         )}
-        {currentTab === 'rules' && <RulesTab />}
       </>
     )}
   </>;
+}
+
+/** 탭 버튼 줄 (데이터를 불러오는 중이거나 규칙 탭일 때 사용) */
+function ProcTabs({ tabs, currentTab, onSelect }) {
+  return (
+    <div className="proc-tabs">
+      {tabs.map(([k, tt, n]) => (
+        <button type="button" key={k} className={`tab ${currentTab === k ? 'active' : ''}`} onClick={() => onSelect(k)}>
+          {tt}
+          {n > 0 && <span className="cnt">{n}</span>}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChanged }) {
@@ -792,11 +824,129 @@ function DissolveTab({ groupId, isOwner, dissolution, onChanged }) {
   );
 }
 
-function RulesTab() {
-  return (
+/* F31 운영 규칙 — 모든 회원: 최신 규칙 + 채팅으로 이동 / 모임장: 화면 안 수정 폼
+   규칙은 JSX 텍스트로만 그린다(React 기본 이스케이프). dangerouslySetInnerHTML 금지. */
+function RulesTab({ groupId }) {
+  const nav = useNavigate();
+  const { toast } = useApp();
+  const [state, setState] = useState({ status: 'loading', data: null, error: '' });
+  const [form, setForm] = useState({ rulesTitle: '', rulesBody: '' });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    setState(s => ({ ...s, status: 'loading', error: '' }));
+    G.fetchRules(groupId)
+      .then(data => {
+        if (!alive) return;
+        setState({ status: 'ready', data, error: '' });
+        setForm({ rulesTitle: data?.rulesTitle || '', rulesBody: data?.rulesBody || '' });
+      })
+      .catch(e => { if (alive) setState({ status: 'error', data: null, error: e?.message || '운영 규칙을 불러오지 못했어요.' }); });
+    return () => { alive = false; };
+  }, [groupId, reloadKey]);
+
+  const rules = state.data;
+  const dissolved = rules?.groupStatus === 'DISSOLVED';
+  const canEdit = !!rules?.leader && !dissolved;
+  const titleBytes = G.utf8Bytes(form.rulesTitle);
+  const titleTooLong = titleBytes > G.RULES_TITLE_MAX_BYTES;
+  const empty = !form.rulesTitle.trim() || !form.rulesBody.trim();
+  const unchanged = rules && form.rulesTitle.trim() === (rules.rulesTitle || '').trim()
+    && form.rulesBody.trim() === (rules.rulesBody || '').trim();
+
+  const save = async e => {
+    e.preventDefault();
+    if (saving || empty || titleTooLong || unchanged) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const saved = await G.updateRules(groupId, { rulesTitle: form.rulesTitle, rulesBody: form.rulesBody });
+      setState({ status: 'ready', data: saved, error: '' });
+      setForm({ rulesTitle: saved?.rulesTitle || '', rulesBody: saved?.rulesBody || '' });
+      toast('운영 규칙을 저장했어요. 모임 회원에게 알림과 채팅 안내가 전송돼요.');
+    } catch (err) {
+      setSaveError(err?.message || '운영 규칙을 저장하지 못했어요.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <>
     <Card>
-      <h2>운영 규칙 · 경고 · 모임장 승계</h2>
-      <Empty>운영 규칙 등록, 회원 경고·강제 탈퇴, 모임장 승계 기능은 서버 API 연결 준비 중이에요.</Empty>
+      <h2>운영 규칙</h2>
+      <LoadState
+        status={state.status}
+        error={state.error}
+        onRetry={() => setReloadKey(k => k + 1)}
+        loadingText="운영 규칙을 불러오는 중이에요."
+      >
+        {rules && <>
+          <div className="policy-panel">
+            <h3>{rules.rulesTitle || '등록된 규칙 제목이 없어요'}</h3>
+            <p style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+              {rules.rulesBody || '등록된 규칙 내용이 없어요.'}
+            </p>
+          </div>
+          <div className="actions" style={{ marginTop: 12 }}>
+            <button type="button" className="btn soft" onClick={() => nav(`/chat?groupId=${groupId}`)}>채팅으로 이동</button>
+          </div>
+
+          {canEdit ? (
+            <form onSubmit={save} style={{ marginTop: 20 }}>
+              <h3>규칙 수정 (모임장)</h3>
+              <p className="muted mini">저장하면 모임 회원에게 알림이 가고, 채팅방에 변경 안내가 남아요. 수정 이력은 감사 로그에 기록돼요.</p>
+              <div className="field">
+                <label htmlFor="rules-title">규칙 제목</label>
+                <input
+                  id="rules-title"
+                  value={form.rulesTitle}
+                  onChange={e => setForm(f => ({ ...f, rulesTitle: e.target.value }))}
+                  placeholder="예: 매월 5일 납입, 지연 시 채팅으로 먼저 알리기"
+                  aria-describedby="rules-title-bytes"
+                />
+                <small id="rules-title-bytes" className={titleTooLong ? 'warning' : 'muted'}>
+                  {titleBytes} / {G.RULES_TITLE_MAX_BYTES}바이트 · 한글은 1자에 3바이트라 약 33자까지 쓸 수 있어요.
+                </small>
+              </div>
+              <div className="field">
+                <label htmlFor="rules-body">규칙 내용</label>
+                <textarea
+                  id="rules-body"
+                  rows={8}
+                  value={form.rulesBody}
+                  onChange={e => setForm(f => ({ ...f, rulesBody: e.target.value }))}
+                  placeholder="납입일, 지연 시 안내 방법, 수령 순서 정하는 방법 등을 적어 주세요."
+                />
+              </div>
+              {saveError && <p className="warning mini" role="alert">{saveError}</p>}
+              <div className="actions">
+                <button type="submit" className="btn primary" disabled={saving || empty || titleTooLong || unchanged}>
+                  {saving ? '저장 중…' : '규칙 저장'}
+                </button>
+                {!saving && !unchanged && (
+                  <button type="button" className="btn soft" onClick={() => {
+                    setForm({ rulesTitle: rules.rulesTitle || '', rulesBody: rules.rulesBody || '' });
+                    setSaveError('');
+                  }}>되돌리기</button>
+                )}
+              </div>
+              {empty && <p className="muted mini">제목과 내용을 모두 입력해야 저장할 수 있어요.</p>}
+            </form>
+          ) : rules.leader && dissolved ? (
+            <p className="muted mini" style={{ marginTop: 12 }}>해산된 모임이라 규칙을 수정할 수 없어요.</p>
+          ) : (
+            <p className="muted mini" style={{ marginTop: 12 }}>운영 규칙은 모임장만 수정할 수 있어요.</p>
+          )}
+        </>}
+      </LoadState>
     </Card>
-  );
+
+    <Card>
+      <h2>회원 경고 · 모임장 승계</h2>
+      <Empty>회원 경고·강제 탈퇴, 모임장 승계 기능은 서버 API 연결 준비 중이에요.</Empty>
+    </Card>
+  </>;
 }

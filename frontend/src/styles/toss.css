@@ -313,6 +313,10 @@
 :root[data-theme] .chat-sidebar-head p,:root[data-theme] .chat-room-copy small,:root[data-theme] .chat-sidebar-head small,:root[data-theme] .chat-main .muted,:root[data-theme] .chat-main small,:root[data-theme] .chat-demo-note{color:var(--t-text5)!important}
 :root[data-theme] .chat-room{border:0!important;border-radius:14px;color:var(--t-text)!important;box-shadow:none!important}
 :root[data-theme] .chat-room:hover{background:var(--t-fill)!important}
+/* 채팅 시스템 메시지(운영 규칙 변경 안내 등, F31·F34): 이름·말풍선 없이 가운데 회색 안내 줄 */
+:root[data-theme] .chat-system{align-self:center;max-width:min(92%,560px);display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:8px 14px;border-radius:var(--t-radius-s);background:var(--t-fill);color:var(--t-text4);font-size:13px;line-height:1.5;text-align:center}
+:root[data-theme] .chat-system small{color:var(--t-text5)!important;font-size:11px}
 :root[data-theme] .chat-room.active{background:var(--t-blue-pale)!important;box-shadow:none!important}
 :root[data-theme] .chat-room-icon{background:var(--t-blue-pale)!important;color:var(--t-blue)!important;border-radius:14px}
 :root[data-theme] .chat-room.active .chat-room-icon{background:var(--t-blue)!important;color:#fff!important}

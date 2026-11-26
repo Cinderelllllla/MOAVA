@@ -33,6 +33,11 @@ public interface ChatMapper {
                       @Param("memberId") long memberId, @Param("bodyEnc") String bodyEnc,
                       @Param("keyVer") int keyVer, @Param("sentAt") LocalDateTime sentAt);
 
+    /** 시스템 메시지 저장 (MSG_TYPE='SYSTEM', MEMBER_ID NULL). 운영 규칙 변경 안내 등 서버가 쓰는 메시지 전용. */
+    int insertSystemMessage(@Param("messageId") long messageId, @Param("groupId") long groupId,
+                            @Param("bodyEnc") String bodyEnc, @Param("keyVer") int keyVer,
+                            @Param("sentAt") LocalDateTime sentAt);
+
     String selectMemberName(@Param("memberId") long memberId);
 
     /** 채팅방 참여자(모임의 ACTIVE 회원). 모임장 먼저, 그다음 가입 순. */
