@@ -99,6 +99,83 @@ export const groupStatusLabel = (s, currentMembers, maxMembers) => {
 export const PURPOSE_LABEL = { SAVINGS: '목돈 마련', INVEST: '재테크', SOCIAL: '친목', STARTUP: '창업', TRAVEL: '여행' };
 export const purposeLabel = p => PURPOSE_LABEL[p] || p || '-';
 
+/** 서버 공개 모임 DTO(PublicGroupResponse) → 화면(Groups / KakaoGroupMap / GroupCard / GroupInfo) 형식 변환 */
+export function mapPublicGroup(dto) {
+  const maxMembers = Number(dto.maxMembers || 0);
+  const currentMembers = Number(dto.currentMembers ?? 1);
+  const amountKrw = Number(dto.amount || 0);
+  const regionSido = String(dto.regionSido || '').trim();
+  const regionSigungu = String(dto.regionSigungu || '').trim();
+  const lat = dto.lat != null && dto.lat !== '' && Number.isFinite(Number(dto.lat)) ? Number(dto.lat) : null;
+  const lng = dto.lng != null && dto.lng !== '' && Number.isFinite(Number(dto.lng)) ? Number(dto.lng) : null;
+
+  return {
+    id: dto.groupId,
+    groupId: dto.groupId,
+    title: dto.title || '',
+    ownerId: dto.ownerId,
+    ownerName: dto.ownerName || '회원',
+    statusCode: dto.status || 'RECRUITING',
+    status: groupStatusLabel(dto.status, currentMembers, maxMembers),
+    purposeCode: dto.purpose || '',
+    purpose: purposeLabel(dto.purpose),
+    regionSido,
+    regionSigungu,
+    region: [regionSido, regionSigungu].filter(Boolean).join(' '),
+    lat,
+    lng,
+    amountKrw,
+    amount: amountKrw / 10000,
+    max: maxMembers,
+    maxMembers,
+    currentMembers,
+    months: Number(dto.months || 0),
+    payDay: Number(dto.payDay || 0),
+    rate: Number(dto.assumedRate ?? 0),
+    visibility: dto.visibility || 'PUBLIC',
+    description: dto.description || '',
+    rulesTitle: dto.rulesTitle || '운영 규칙',
+    rules: dto.rulesBody || '',
+    rulesBody: dto.rulesBody || '',
+    orderConfirmed: Boolean(dto.orderConfirmed),
+    role: dto.role || 'NONE',
+    source: 'SERVER'
+  };
+}
+
+/** 공개 모임 목록·지도 조회 (GET /api/groups?region=&purpose=&q=) */
+export async function fetchPublicGroups({ region, purpose, q } = {}) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const params = new URLSearchParams();
+
+  const normalizedRegion = String(region || '').trim();
+  if (normalizedRegion && normalizedRegion !== '전체') {
+    params.set('region', normalizedRegion);
+  }
+
+  const normalizedPurpose = String(purpose || '').trim();
+  if (normalizedPurpose && normalizedPurpose !== '전체') {
+    params.set('purpose', PURPOSE_CODES[normalizedPurpose] || normalizedPurpose);
+  }
+
+  const normalizedQuery = String(q || '').trim();
+  if (normalizedQuery) {
+    params.set('q', normalizedQuery);
+  }
+
+  const qs = params.toString();
+  const data = await apiFetch(qs ? `/api/groups?${qs}` : '/api/groups');
+
+  if (!Array.isArray(data)) {
+    throw new Error('공개 모임 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.');
+  }
+
+  return data.map(mapPublicGroup);
+}
+
 export const endedGroups = () =>
     db.groups.filter(g => D.joined(g) && D.isEnded(g));
 

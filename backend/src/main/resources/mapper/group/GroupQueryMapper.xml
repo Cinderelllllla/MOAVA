@@ -5,6 +5,101 @@
 
 <mapper namespace="com.moava.group.query.mapper.GroupQueryMapper">
 
+    <!-- F11~F14: 공개 모임 목록·지도 조회 결과 매핑 (RULES_BODY CLOB 포함) -->
+    <resultMap id="publicGroupRowMap"
+               type="com.moava.group.query.dto.PublicGroupRow">
+        <constructor>
+            <arg column="groupId" javaType="java.lang.Long"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="ownerId" javaType="java.lang.Long"/>
+            <arg column="ownerName" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="purpose" javaType="java.lang.String"/>
+            <arg column="regionSido" javaType="java.lang.String"/>
+            <arg column="regionSigungu" javaType="java.lang.String"/>
+            <arg column="lat" javaType="java.math.BigDecimal"/>
+            <arg column="lng" javaType="java.math.BigDecimal"/>
+            <arg column="amount" javaType="java.lang.Long"/>
+            <arg column="maxMembers" javaType="java.lang.Integer"/>
+            <arg column="currentMembers" javaType="java.lang.Integer"/>
+            <arg column="months" javaType="java.lang.Integer"/>
+            <arg column="payDay" javaType="java.lang.Integer"/>
+            <arg column="assumedRate" javaType="java.math.BigDecimal"/>
+            <arg column="visibility" javaType="java.lang.String"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="rulesTitle" javaType="java.lang.String"/>
+            <arg column="rulesBody" javaType="java.lang.String" jdbcType="CLOB"/>
+            <arg column="orderConfirmedYn" javaType="java.lang.String"/>
+            <arg column="role" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <!-- F11~F14: 공개 모임 목록·지도 조회 (VISIBILITY = 'PUBLIC' 고정, 해산 완료 제외) -->
+    <select id="findPublicGroups"
+            resultMap="publicGroupRowMap">
+
+        SELECT
+            G.GROUP_ID AS "groupId",
+            G.TITLE AS "title",
+            G.OWNER_ID AS "ownerId",
+            M.NAME AS "ownerName",
+            G.STATUS AS "status",
+            G.PURPOSE AS "purpose",
+            G.REGION_SIDO AS "regionSido",
+            G.REGION_SIGUNGU AS "regionSigungu",
+            G.LAT AS "lat",
+            G.LNG AS "lng",
+            G.AMOUNT AS "amount",
+            G.MAX_MEMBERS AS "maxMembers",
+            (
+                SELECT COUNT(DISTINCT GM.MEMBER_ID)
+                FROM GYE_MEMBER GM
+                WHERE GM.GROUP_ID = G.GROUP_ID
+                  AND GM.STATUS = 'ACTIVE'
+                  AND GM.MEMBER_ID != G.OWNER_ID
+            ) + 1 AS "currentMembers",
+            G.MONTHS AS "months",
+            G.PAY_DAY AS "payDay",
+            G.ASSUMED_RATE AS "assumedRate",
+            G.VISIBILITY AS "visibility",
+            G.DESCRIPTION AS "description",
+            G.RULES_TITLE AS "rulesTitle",
+            G.RULES_BODY AS "rulesBody",
+            G.ORDER_CONFIRMED_YN AS "orderConfirmedYn",
+            CASE
+                WHEN G.OWNER_ID = #{memberId, jdbcType=NUMERIC} THEN 'OWNER'
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM GYE_MEMBER GM
+                    WHERE GM.GROUP_ID = G.GROUP_ID
+                      AND GM.MEMBER_ID = #{memberId, jdbcType=NUMERIC}
+                      AND GM.STATUS = 'ACTIVE'
+                ) THEN 'MEMBER'
+                ELSE 'NONE'
+            END AS "role"
+        FROM GYE_GROUP G
+        LEFT JOIN MEMBER M
+          ON M.MEMBER_ID = G.OWNER_ID
+        WHERE G.VISIBILITY = 'PUBLIC'
+          AND G.STATUS != 'DISSOLVED'
+        <if test="region != null and region != ''">
+          AND (
+              G.REGION_SIDO LIKE '%' || #{region} || '%' ESCAPE '\'
+              OR G.REGION_SIGUNGU LIKE '%' || #{region} || '%' ESCAPE '\'
+              OR (G.REGION_SIDO || ' ' || G.REGION_SIGUNGU) LIKE '%' || #{region} || '%' ESCAPE '\'
+          )
+        </if>
+        <if test="purpose != null and purpose != ''">
+          AND G.PURPOSE = #{purpose}
+        </if>
+        <if test="q != null and q != ''">
+          AND LOWER(G.TITLE) LIKE '%' || LOWER(#{q}) || '%' ESCAPE '\'
+        </if>
+        ORDER BY G.GROUP_ID DESC
+
+    </select>
+
+
     <!-- 내가 모임장인 모임 조회 -->
     <select id="findMyOwnedGroups"
             resultType="com.moava.group.query.dto.GroupListResponse">
