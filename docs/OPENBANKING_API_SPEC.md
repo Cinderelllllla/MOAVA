@@ -12,11 +12,11 @@
 # MOAVA 메인 백엔드 서버 포트 (프론트엔드 Vite 프록시 8080 유지)
 server.port=8080
 
-# 오픈뱅킹 연동 대상 Base URL (별도 모의은행 인스턴스 포트 8081 기준)
-# - 단일 서버(8080)에서 로컬 테스트 시: http://localhost:8080 으로 변경
-# - 별도 모의은행 프로세스 기동 시:    java -jar moava.jar --server.port=8081
-# - KFTC 테스트베드 전환 시:          https://testapi.openbanking.or.kr
-moava.openbanking.base-url=http://localhost:8081
+# 오픈뱅킹 연동 대상 Base URL (기본 단일 서버 8080 기준)
+# - 기본 로컬 개발(start-dev.bat 8080):  http://localhost:8080
+# - 별도 모의은행 프로세스 기동 시:       java -jar moava.jar --server.port=8081 (URL만 8081로 변경)
+# - KFTC 테스트베드 전환 시:              https://testapi.openbanking.or.kr
+moava.openbanking.base-url=http://localhost:8080
 moava.openbanking.org-code=M202600001
 ```
 

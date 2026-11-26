@@ -19,7 +19,7 @@ public class OpenBankingProperties {
     private final String clientSecret;
 
     public OpenBankingProperties(
-            @Value("${moava.openbanking.base-url:http://localhost:8081}") String baseUrl,
+            @Value("${moava.openbanking.base-url:http://localhost:8080}") String baseUrl,
             @Value("${moava.openbanking.org-code:M202600001}") String orgCode,
             @Value("${moava.openbanking.client-id:moava-demo-client}") String clientId,
             @Value("${moava.openbanking.client-secret:moava-demo-secret}") String clientSecret
