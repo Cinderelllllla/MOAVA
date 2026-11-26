@@ -4,7 +4,11 @@ package com.moava.group.create.service;
 import com.moava.group.create.dto.GroupCreateRequest;
 import com.moava.group.create.dto.GroupCreateResponse;
 import com.moava.group.create.mapper.GroupCreateMapper;
+import com.moava.group.map.GeoPoint;
+import com.moava.group.map.KakaoGeocodingClient;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,13 +17,16 @@ public class GroupCreateService {
 
     private final GroupCreateMapper mapper;
     private final GroupAccountCrypto crypto;
+    private final KakaoGeocodingClient kakaoGeocodingClient;
 
     public GroupCreateService(
             GroupCreateMapper mapper,
-            GroupAccountCrypto crypto
+            GroupAccountCrypto crypto,
+            KakaoGeocodingClient kakaoGeocodingClient
     ) {
         this.mapper = mapper;
         this.crypto = crypto;
+        this.kakaoGeocodingClient = kakaoGeocodingClient;
     }
 
     public void validateCreateRequest(GroupCreateRequest request) {
@@ -51,9 +58,15 @@ public class GroupCreateService {
             );
         }
 
-        // 3. 모임 ID 및 초대 코드 생성
+        // 3. 모임 ID, 초대 코드 및 지역 좌표(Kakao Local 지오코딩) 조회
         Long groupId = mapper.nextGroupId();
         String inviteCode = GroupInviteCodeGenerator.generate();
+        String regionSido = request.regionSido().strip();
+        String regionSigungu = request.regionSigungu().strip();
+        Optional<GeoPoint> geoPoint =
+                kakaoGeocodingClient.geocodeRegion(regionSido, regionSigungu);
+        BigDecimal lat = geoPoint.map(GeoPoint::lat).orElse(null);
+        BigDecimal lng = geoPoint.map(GeoPoint::lng).orElse(null);
 
         // 4. 모임 저장
         int groupInserted = mapper.insertGroup(
@@ -61,8 +74,10 @@ public class GroupCreateService {
                 authenticatedMemberId,
                 request.title().strip(),
                 request.purpose(),
-                request.regionSido().strip(),
-                request.regionSigungu().strip(),
+                regionSido,
+                regionSigungu,
+                lat,
+                lng,
                 request.amount(),
                 request.maxMembers(),
                 request.months(),
