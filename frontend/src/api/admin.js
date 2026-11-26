@@ -164,6 +164,7 @@ export async function assignAdminRefNo(proofId, refNo) {
 /** A05 참조번호 정정 (새 번호·사유 필수) */
 export async function correctAdminRefNo(proofId, refNo, reason) {
   if (!refNo?.trim()) throw new Error('변경할 참조번호를 입력해 주세요.');
+  if (!/^MOAVA-\d{5}$/.test(refNo.trim())) throw new Error('참조번호는 MOAVA-00001 형식이어야 합니다.');
   if (!reason?.trim()) throw new Error('정정 사유를 입력해 주세요.');
   return apiFetch(`/api/v1/admin/payment-proofs/${Number(proofId)}/ref-no/correction`, {
     method: 'PATCH',
