@@ -1,7 +1,9 @@
+
 package com.moava.group.create.service;
 
 import com.moava.crypto.service.CryptoKeyService;
 import com.moava.group.create.mapper.GroupJoinCodeIssueMapper;
+import com.moava.group.create.mapper.GroupJoinRequestMapper;
 import com.moava.group.create.dto.GroupJoinCodeIssueResponse;
 
 import org.springframework.stereotype.Service;
@@ -14,13 +16,16 @@ public class GroupJoinCodeIssueService {
 
     private final GroupJoinCodeIssueMapper mapper;
     private final CryptoKeyService cryptoKeyService;
+    private final GroupJoinRequestMapper auditMapper;
 
     public GroupJoinCodeIssueService(
             GroupJoinCodeIssueMapper mapper,
-            CryptoKeyService cryptoKeyService
+            CryptoKeyService cryptoKeyService,
+            GroupJoinRequestMapper auditMapper
     ) {
         this.mapper = mapper;
         this.cryptoKeyService = cryptoKeyService;
+        this.auditMapper = auditMapper;
     }
 
     /**
@@ -118,6 +123,47 @@ public class GroupJoinCodeIssueService {
     }
 
     /**
+     * F18 - 인증코드 발급 및 재발급 감사 로그
+     *
+     * 인증코드 원문, 암호문, 암호화 키는 기록하지 않는다.
+     */
+    private void saveIssueAuditLog(
+            Long groupId,
+            Long memberId,
+            boolean firstIssue,
+            int previousVersion,
+            int newVersion
+    ) {
+
+        String action = firstIssue
+                ? "최초 발급"
+                : "재발급";
+
+        String description =
+                "비공개 모임 인증코드 " + action
+                        + " (버전: "
+                        + previousVersion
+                        + " -> "
+                        + newVersion
+                        + ")";
+
+        int inserted = auditMapper.insertAuditLog(
+                groupId,
+                memberId,
+                null,
+                "JOIN_CODE_REISSUE",
+                description
+        );
+
+        if (inserted != 1) {
+
+            throw new IllegalStateException(
+                    "인증코드 발급 감사 로그 저장에 실패했습니다."
+            );
+        }
+    }
+
+    /**
      * F18 - 비공개 모임 인증코드 발급 및 재발급
      *
      * 1. 모임장 권한 확인
@@ -125,6 +171,7 @@ public class GroupJoinCodeIssueService {
      * 3. 기존 코드와 다른 6자리 코드 생성
      * 4. AES-256-GCM 암호화
      * 5. 인증코드 저장 및 버전 증가
+     * 6. 감사 로그 저장
      *
      * 회원별 인증 시도 기록은 다음 인증 상태 조회 또는
      * 인증 시도 시 새로운 버전에 맞춰 초기화된다.
@@ -155,6 +202,10 @@ public class GroupJoinCodeIssueService {
 
         Object previousEncryptedCode =
                 group.get("JOIN_CODE_ENC");
+
+        // 기존 인증코드 존재 여부로 최초 발급과 재발급 구분
+        boolean firstIssue =
+                previousEncryptedCode == null;
 
         if (previousEncryptedCode != null) {
 
@@ -232,11 +283,22 @@ public class GroupJoinCodeIssueService {
             );
         }
 
-        // 7. 모임장에게 발급 결과 반환
+        // 7. 인증코드 발급 및 재발급 감사 로그 저장
+        int newVersion = currentVersion + 1;
+
+        saveIssueAuditLog(
+                groupId,
+                memberId,
+                firstIssue,
+                currentVersion,
+                newVersion
+        );
+
+        // 8. 모임장에게 발급 결과 반환
         return new GroupJoinCodeIssueResponse(
                 groupId,
                 joinCode,
-                currentVersion + 1,
+                newVersion,
                 null,
                 "인증코드가 발급되었습니다."
         );

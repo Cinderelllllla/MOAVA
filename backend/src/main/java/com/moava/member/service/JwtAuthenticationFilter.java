@@ -14,12 +14,17 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import com.moava.member.mapper.MemberMapper;
+import com.moava.member.dto.MemberResponse;
+
 @Component 
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     // This class is currently empty, but it can be used to implement JWT authentication logic in the future.
     private final JwtTokenProvider jwtTokenProvider;
-    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {
+    private final MemberMapper memberMapper;
+    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider, MemberMapper memberMapper) {
         this.jwtTokenProvider = jwtTokenProvider;
+        this.memberMapper = memberMapper;
     }
 
     @Override
@@ -45,6 +50,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
             String id = jwtTokenProvider.getId(token);
             String role = jwtTokenProvider.getRole(token);
+            if(!"MEMBER".equals(role) && !"ADMIN".equals(role)){
+                unauthorized(response);
+                return;
+            }
+            if("MEMBER".equals(role)){
+                MemberResponse member = memberMapper.findById(Long.valueOf(id));
+                if(member == null || !"ACTIVE".equals(member.status()) || !"N".equals(member.bannedYn())){
+                    SecurityContextHolder.clearContext();
+                    unauthorized(response);
+                    return;
+                }
+            }
             var authentication = new UsernamePasswordAuthenticationToken(id, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
             SecurityContextHolder.getContext().setAuthentication(authentication);
         } catch (Exception e) {
@@ -55,6 +72,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private void unauthorized(HttpServletResponse response)throws IOException{
+        SecurityContextHolder.clearContext();
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write("{\"message\":\"로그인 정보가 만료되었거나 유효하지않습니다. 다시 로그인해 주세요.\"}");

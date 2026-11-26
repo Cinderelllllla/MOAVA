@@ -149,7 +149,8 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
   - 키가 비었거나 노션 placeholder(`★…`)면 켜 두어도 보내지 않습니다.
   - 받는 사람: `MEMBER.STATUS='ACTIVE'`이고 `PHONE_ENC`가 있는 회원만. 번호는 발송 직전에만 복호화하고 로그에 남기지 않습니다.
   - 본문: `[MOAVA] ` + 알림 본문 (90바이트 초과 시 SOLAPI가 LMS로 자동 전환).
-  - 성공 시 `NOTIFICATION.SMS_SENT_YN='Y'`. 실패는 로그만 남기고 업무에는 영향 없음.
+  - SOLAPI 응답 `statusCode=2000`(정상 접수)일 때만 성공으로 보고 `NOTIFICATION.SMS_SENT_YN='Y'`. 실패는 로그만 남기고 업무에는 영향 없음.
+  - 로그에 `messageId`가 남습니다. 실제 도착 여부는 SOLAPI 콘솔 메시지 로그에서 `messageId`로 확인 (발신번호 미승인·번호도용 차단 등은 접수 후 실패할 수 있음).
   - 서비스 필수 알림이라 마케팅 수신 동의(MKT_SMS_OPT)와 무관하게 보냅니다 (기능명세서 F36).
 
 ---
@@ -180,8 +181,8 @@ API 명세서 v0.5 F35 기준. **회원(S13)·관리자(A07) 공용** — 로그
 
 | 대상 | 기준 | 처리 |
 |---|---|---|
-| 읽은 알림 | 만든 지 30일 경과 | `DELETED_YN='Y'` (숨김) |
-| 안 읽은 알림 | 만든 지 90일 경과 | `DELETED_YN='Y'` (숨김) |
+| 읽은 알림 | 만든 지 14일 경과 | `DELETED_YN='Y'` (숨김) |
+| 안 읽은 알림 | 만든 지 30일 경과 | `DELETED_YN='Y'` (숨김) |
 
 - 실제 DELETE가 아니라 숨김이라 운영 감사 이력은 DB에 남습니다.
 - 기준 시각은 `CREATED_AT`입니다 (테이블에 읽은 시각 컬럼이 없음).

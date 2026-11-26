@@ -67,7 +67,7 @@ class SolapiSmsSenderTest {
               .andExpect(header("Authorization", Matchers.startsWith("HMAC-SHA256 apiKey=KEY, date=2026-11-24T08:00:00Z, salt=")))
               .andExpect(content().string(Matchers.containsString("\"to\":\"01012345678\"")))
               .andExpect(content().string(Matchers.containsString("\"from\":\"0212345678\"")))
-              .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+              .andRespond(withSuccess("{\"statusCode\":\"2000\",\"statusMessage\":\"정상 접수\",\"messageId\":\"M4VTEST\"}", MediaType.APPLICATION_JSON));
 
         SolapiSmsSender s = new SolapiSmsSender("KEY", "SECRET", "02-1234-5678", URL, builder.build(), FIXED);
         assertThat(s.send("010-1234-5678", "[MOAVA] 테스트")).isTrue();
@@ -83,5 +83,26 @@ class SolapiSmsSenderTest {
 
         SolapiSmsSender s = new SolapiSmsSender("KEY", "SECRET", "0212345678", URL, builder.build(), FIXED);
         assertThat(s.send("01012345678", "x")).isFalse();
+    }
+
+    @Test
+    @DisplayName("HTTP 200이어도 statusCode가 2000이 아니면 false")
+    void send_not_accepted() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(URL))
+              .andRespond(withSuccess("{\"statusCode\":\"3059\",\"statusMessage\":\"변작된 발신번호\",\"messageId\":\"M4VFAIL\"}", MediaType.APPLICATION_JSON));
+
+        SolapiSmsSender s = new SolapiSmsSender("KEY", "SECRET", "0212345678", URL, builder.build(), FIXED);
+        assertThat(s.send("01012345678", "x")).isFalse();
+    }
+
+    @Test
+    @DisplayName("응답 판정: 2000만 성공, 빈 응답·다른 코드는 실패")
+    void accepted_rule() {
+        assertThat(SolapiSmsSender.accepted(java.util.Map.of("statusCode", "2000"))).isTrue();
+        assertThat(SolapiSmsSender.accepted(java.util.Map.of("statusCode", "4000"))).isFalse();
+        assertThat(SolapiSmsSender.accepted(java.util.Map.of())).isFalse();
+        assertThat(SolapiSmsSender.accepted(null)).isFalse();
     }
 }
