@@ -197,6 +197,65 @@ class ChatServiceTest {
     }
 
     @Test
+    void 대화_기록에_시스템_메시지가_섞여도_보낸_사람_없이_system_true_로_준다() {
+        access("ACTIVE", "ACTIVE", "N", null);
+        LocalDateTime t = LocalDateTime.now();
+        when(mapper.selectMessages(GROUP, null, 31)).thenReturn(List.of(
+                new ChatMessageRow(3, GROUP, null, null, "ES", 1, t, true),
+                new ChatMessageRow(2, GROUP, ME, "이모아", "EU", 1, t)));
+        when(crypto.decrypt("ES", 1)).thenReturn("📌 운영 규칙이 '새 규칙'(으)로 업데이트됐어요.");
+        when(crypto.decrypt("EU", 1)).thenReturn("확인했어요");
+
+        var items = service.history(ME, GROUP, null, null).items();
+
+        assertFalse(items.get(0).system());
+        assertEquals(Long.valueOf(ME), items.get(0).memberId());
+        assertTrue(items.get(1).system());
+        assertNull(items.get(1).memberId());
+        assertNull(items.get(1).senderName());
+        assertEquals("📌 운영 규칙이 '새 규칙'(으)로 업데이트됐어요.", items.get(1).body());
+    }
+
+    // ---- 시스템 메시지 ----
+
+    @Test
+    void 시스템_메시지는_회원_검사_없이_암호화해서_SYSTEM_으로_저장한다() {
+        when(crypto.getCurrentKeyVersion()).thenReturn(2);
+        when(crypto.encrypt("📌 안내", 2)).thenReturn("ENC");
+        when(mapper.nextMessageId()).thenReturn(77L);
+
+        var res = service.postSystem(GROUP, "📌 안내");
+
+        verify(mapper).insertSystemMessage(eq(77L), eq(GROUP), eq("ENC"), eq(2), any(LocalDateTime.class));
+        verify(mapper, never()).selectAccess(anyLong(), anyLong());
+        verify(mapper, never()).insertMessage(anyLong(), anyLong(), anyLong(), any(), anyInt(), any());
+        assertTrue(res.system());
+        assertNull(res.memberId());
+        assertNull(res.senderName());
+        assertEquals(77L, res.messageId());
+        assertEquals("📌 안내", res.body());
+    }
+
+    @Test
+    void 시스템_메시지도_빈_본문과_500자_초과는_거부() {
+        assertEquals("EMPTY_MESSAGE", assertThrows(ChatException.class, () -> service.postSystem(GROUP, " ")).getCode());
+        assertEquals("MESSAGE_TOO_LONG",
+                assertThrows(ChatException.class, () -> service.postSystem(GROUP, "가".repeat(501))).getCode());
+        verify(mapper, never()).insertSystemMessage(anyLong(), anyLong(), any(), anyInt(), any());
+    }
+
+    @Test
+    void 일반_메시지는_system_false() {
+        access("ACTIVE", "ACTIVE", "N", null);
+        when(crypto.getCurrentKeyVersion()).thenReturn(1);
+        when(crypto.encrypt(anyString(), anyInt())).thenReturn("ENC");
+        var res = service.send(ME, GROUP, "안녕");
+        assertFalse(res.system());
+        assertEquals(Long.valueOf(ME), res.memberId());
+        verify(mapper, never()).insertSystemMessage(anyLong(), anyLong(), any(), anyInt(), any());
+    }
+
+    @Test
     void 한_번에_불러올_개수는_1에서_100() {
         access("ACTIVE", "ACTIVE", "N", null);
         assertEquals("INVALID_SIZE", assertThrows(ChatException.class, () -> service.history(ME, GROUP, null, 0)).getCode());
