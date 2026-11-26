@@ -2,8 +2,9 @@
 -- MOAVA (모아바) Oracle DDL  v2.1  2026-11-26 (v2.0 + 11/26 F31·F34·F35 변경분. 기준: develop MOA-76 PR 병합분, 테이블 정의서 v2.1)
 -- 11/26 변경(v2.1): CHAT_MESSAGE.MSG_TYPE 추가(USER/SYSTEM), MEMBER_ID NULL 허용(SYSTEM 메시지는 발신자 없음), CK_CHAT_MESSAGE_1·2 추가 (F31·F34)
 --           NOTIFICATION.NOTIF_TYPE 알림 코드표 v3.2(23종) 주석: RULE_UPDATED(F31 운영 규칙 수정 알림, 인앱만) 추가 — 코드값만 추가, 제약 변경 없음
---           GYE_GROUP.RULES_TITLE·RULES_BODY, TERMS_POLICY.BODY 주석: 원문 저장·화면 출력 시 이스케이프 / AUDIT_LOG.EVENT_TYPE 주석: RULE_UPDATE 사용 중으로 이동
---           기존 DB 적용: MIGRATION_1126
+--           GYE_GROUP.RULES_BODY 주석: 원문 저장·화면 출력 시 이스케이프 / AUDIT_LOG.EVENT_TYPE 주석: RULE_UPDATE 사용 중으로 이동
+--           MEMBER.REGION_DONG·GYE_GROUP.REGION_DONG VARCHAR2(40) 추가 (읍/면/동, NULL 허용 — 기존 회원·모임 호환)
+--           기존 DB 적용: MOAVA_MIGRATION_1126.sql(드라이브 보관)
 -- 11/26 변경(v2.0): GYE_ACCOUNT.HOLDER_NAME_ENC VARCHAR2(80) → VARCHAR2(120 BYTE) (예금주 MEMBER.NAME 최대 50바이트 암호화 시 Base64 104자)
 --           계좌 중복 방지 유일 인덱스 UX_GYE_ACCOUNT_ACTIVE_HASH 신규 (ACCOUNT_STATUS가 CURRENT·PENDING인 계좌만 대상, RETIRED 제외)
 --           ※ DB 제약만 추가. 서비스 코드의 중복 검사(사용자용 오류 문구)는 미구현 — 중복 시 ORA-00001로 생성 실패
@@ -11,7 +12,7 @@
 --           회원 탈퇴 30일 유예: MEMBER.STATUS에 DELETED 추가, PURGE_DUE_AT·PURGED_AT 추가 (탈퇴 신청 → 30일 데이터 유지·복구 가능 → 개인정보 파기)
 --           간편 로그인(구글·네이버·카카오): MEMBER.SIGNUP_TYPE 추가, PASSWORD_HASH NULL 허용(소셜 전용 회원), MEMBER_SOCIAL_ACCOUNT 신규
 --           ※ 탈퇴 유예·간편 로그인은 정책 확정(11/26), 코드 미구현. 이 두 항목은 마이그레이션 없이 로컬 DB 재생성으로 반영
--- 기존 DB 적용: MIGRATION_1126. 신규 설치는 이 파일 하나로 충분
+-- 신규 설치는 이 파일 하나로 충분. 레포 infra/sql에는 이 파일(01_moava_ddl.sql)만 두고, 기존 DB용 마이그레이션은 드라이브에 보관
 -- 11/25 변경: CHAT_MESSAGE.BODY_ENC 2000→2800 확정 / JOIN_REQUEST.STATUS EXPIRED 추가(7일 미처리 자동 만료) / JOIN_CODE_ATTEMPT.FAIL_COUNT 0~3(3회 실패 시 재발급 전까지 차단, LOCKED_UNTIL 미사용)
 --           NOTIFICATION.NOTIF_TYPE 알림 코드표 v3.1(22종) 주석 / AUDIT_LOG.EVENT_TYPE 코드 주석 갱신 / 오픈뱅킹 모의 원장·OAuth·CODEF 테이블 5개 신규(8번 섹션)
 -- 11/20 변경: WITHDRAWAL_CONSENT_TARGET 신규(F29 정산안 고정 동의 대상 + 관리자 면제 기록) / CONSENT 수령순서(ORDER) 미응답 'P' 허용 + AGREED_AT NULL 허용
@@ -184,6 +185,7 @@ CREATE TABLE MEMBER (
                         PHONE_ENC              VARCHAR2(80),
                         REGION_SIDO            VARCHAR2(30)   NOT NULL,
                         REGION_SIGUNGU         VARCHAR2(30)   NOT NULL,
+                        REGION_DONG            VARCHAR2(40),
                         BANNED_YN              CHAR(1)        DEFAULT 'N' NOT NULL,
                         SYN_ID                 VARCHAR2(30),
                         THEME_CODE             VARCHAR2(20)   DEFAULT 'v9' NOT NULL,
@@ -210,6 +212,7 @@ COMMENT ON COLUMN MEMBER.NAME IS '이름. 타인 조회 시 가운데 마스킹'
 COMMENT ON COLUMN MEMBER.PHONE_ENC IS '연락처 AES-256-GCM 암호문(Base64). SMS 발송·본인 조회 시만 복호화, 화면 010-****-5678. 가입 시 필수(앱 검증), 탈퇴 익명화 시 NULL';
 COMMENT ON COLUMN MEMBER.REGION_SIDO IS '활동 지역 시/도 (예: 서울)';
 COMMENT ON COLUMN MEMBER.REGION_SIGUNGU IS '활동 지역 시/군/구 (예: 마포구)';
+COMMENT ON COLUMN MEMBER.REGION_DONG IS '활동 지역 읍/면/동 (예: 망원동). NULL 허용 — 기존 회원 호환';
 COMMENT ON COLUMN MEMBER.BANNED_YN IS '플랫폼 가입 제한 여부 (F32)';
 COMMENT ON COLUMN MEMBER.SYN_ID IS '가입 시 매핑된 가상 신용 ID (F01)';
 COMMENT ON COLUMN MEMBER.THEME_CODE IS 'v9(밝음) / v9meeting(어두움) (F04)';
@@ -326,6 +329,7 @@ CREATE TABLE GYE_GROUP (
                            PURPOSE                VARCHAR2(20)   NOT NULL,
                            REGION_SIDO            VARCHAR2(30)   NOT NULL,
                            REGION_SIGUNGU         VARCHAR2(30)   NOT NULL,
+                           REGION_DONG            VARCHAR2(40),
                            LAT                    NUMBER(10,7),
                            LNG                    NUMBER(10,7),
                            AMOUNT                 NUMBER(12)     NOT NULL,
@@ -367,6 +371,7 @@ COMMENT ON COLUMN GYE_GROUP.TITLE IS '모임명';
 COMMENT ON COLUMN GYE_GROUP.PURPOSE IS 'SAVINGS(목돈) / INVEST(재테크) / SOCIAL(친목) / STARTUP(창업) / TRAVEL(여행)';
 COMMENT ON COLUMN GYE_GROUP.REGION_SIDO IS '시/도';
 COMMENT ON COLUMN GYE_GROUP.REGION_SIGUNGU IS '시/군/구. 지도 핀 묶음 단위 (F13)';
+COMMENT ON COLUMN GYE_GROUP.REGION_DONG IS '읍/면/동 (예: 망원동). NULL 허용 — 기존 모임 호환';
 COMMENT ON COLUMN GYE_GROUP.LAT IS '위도. 생성 시 Kakao Local 지오코딩';
 COMMENT ON COLUMN GYE_GROUP.LNG IS '경도';
 COMMENT ON COLUMN GYE_GROUP.AMOUNT IS '월 납입액 (원)';
@@ -885,7 +890,7 @@ COMMENT ON COLUMN TERMS_POLICY.TERMS_CODE IS '약관 종류 코드(TOS_SERVICE �
 COMMENT ON COLUMN TERMS_POLICY.VERSION IS '약관 버전(개정 시 버전업 및 재동의 유도 기준)';
 COMMENT ON COLUMN TERMS_POLICY.REGULATION_LAW IS '관련 법령 근거(신용정보법 제32조, 개인정보보호법 제 15조, 정보통신망법 제 50조 등)';
 COMMENT ON COLUMN TERMS_POLICY.TITLE IS '화면 표시용 약관 제목';
-COMMENT ON COLUMN TERMS_POLICY.BODY IS '약관 전문 본문. 원문 저장, 화면 출력 시 이스케이프(React)';
+COMMENT ON COLUMN TERMS_POLICY.BODY IS '약관 전문 본문 (XSS 이스케이프)';
 COMMENT ON COLUMN TERMS_POLICY.REQUIRED_YN IS '필수 동의 여부(Y 필수 / N 선택)';
 COMMENT ON COLUMN TERMS_POLICY.ACTIVE_YN IS '현재 시행 중인 활성 버전 여부(Y/N)';
 COMMENT ON COLUMN TERMS_POLICY.RETENTION_MONTHS IS '법정 의무 보관 개월 수(금융분쟁 대비 기분 60개월=5년)';
