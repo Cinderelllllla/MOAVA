@@ -1,7 +1,8 @@
-/* S10 운영 홈 — /operations · F20 F28 F33 F18 */
+/* S10 운영 홈 — /operations · F16 F18 F19 F20 F28 F33 */
 
 import PaymentStatusPanel from '../components/PaymentStatusPanel';
 import GroupManagementPanel from '../components/GroupManagementPanel';
+import GroupAccountPanel from '../components/GroupAccountPanel';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import useMyGroups from '../common/useMyGroups';
 import { useApp } from '../common/store';
@@ -240,6 +241,14 @@ function ServerOperations() {
                     key={`management-${g.groupId}`}
                     g={g}
                     onReload={myGroups.reload}
+                  />
+                )}
+
+                {/* F19 모임장 전용 계좌 관리 */}
+                {g.role === 'OWNER' && (
+                  <GroupAccountPanel
+                    key={`account-${g.groupId}`}
+                    g={g}
                   />
                 )}
 

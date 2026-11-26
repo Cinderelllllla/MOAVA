@@ -1,8 +1,10 @@
+
 package com.moava.group.create.service;
 
 import com.moava.crypto.service.CryptoKeyService;
 import com.moava.group.create.dto.JoinCodeVerifyResponse;
 import com.moava.group.create.mapper.JoinCodeAttemptMapper;
+import com.moava.group.create.mapper.GroupJoinRequestMapper;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,13 +24,45 @@ public class JoinCodeVerifyService {
 
     private final JoinCodeAttemptMapper mapper;
     private final CryptoKeyService cryptoKeyService;
+    private final GroupJoinRequestMapper auditMapper;
 
     public JoinCodeVerifyService(
             JoinCodeAttemptMapper mapper,
-            CryptoKeyService cryptoKeyService
+            CryptoKeyService cryptoKeyService,
+            GroupJoinRequestMapper auditMapper
     ) {
         this.mapper = mapper;
         this.cryptoKeyService = cryptoKeyService;
+        this.auditMapper = auditMapper;
+    }
+
+    /**
+     * F18 - 인증 관련 공통 감사 로그 저장
+     *
+     * 인증코드 원문, 입력 코드, 암호문, 암호화 키,
+     * 초대 토큰은 기록하지 않는다.
+     */
+    private void saveVerificationAuditLog(
+            Long groupId,
+            Long memberId,
+            String eventType,
+            String description
+    ) {
+
+        int inserted = auditMapper.insertAuditLog(
+                groupId,
+                memberId,
+                memberId,
+                eventType,
+                description
+        );
+
+        if (inserted != 1) {
+
+            throw new IllegalStateException(
+                    "인증코드 감사 로그 저장에 실패했습니다."
+            );
+        }
     }
 
     /**
@@ -36,12 +70,15 @@ public class JoinCodeVerifyService {
      *
      * 현재 인증코드 버전과 회원별 인증 상태를 확인한다.
      * 실제 인증코드를 비교하지 않는다.
+     *
+     * 단순 상태 조회는 감사 로그에 기록하지 않는다.
      */
     @Transactional
     public JoinCodeVerifyResponse checkVerificationState(
             Long groupId,
             Long memberId
     ) {
+
         Map<String, Object> attempt =
                 prepareVerification(groupId, memberId);
 
@@ -71,6 +108,7 @@ public class JoinCodeVerifyService {
                 buildVerificationState(attempt);
 
         // 3회 실패한 회원은 재발급 전까지 인증 차단
+        // 이미 잠긴 상태의 반복 요청은 추가 로그를 저장하지 않는다.
         if ("LOCKED".equals(state.status())) {
             return state;
         }
@@ -138,6 +176,18 @@ public class JoinCodeVerifyService {
 
         // 8. 이미 인증한 회원의 올바른 코드 재입력
         if (alreadyVerified) {
+
+            // 기존 인증 완료 회원의 재확인 성공 감사 로그
+            saveVerificationAuditLog(
+                    groupId,
+                    memberId,
+                    "JOIN_CODE_VERIFY",
+                    "비공개 모임 인증코드 재확인 성공"
+                            + " (버전: "
+                            + attempt.get("CODE_VERSION")
+                            + ")"
+            );
+
             return new JoinCodeVerifyResponse(
                     true,
                     JoinCodeVerifyStatus.ALREADY_VERIFIED.name(),
@@ -155,6 +205,17 @@ public class JoinCodeVerifyService {
                     "인증 성공 처리에 실패했습니다."
             );
         }
+
+        // 10. 인증 성공 감사 로그 저장
+        saveVerificationAuditLog(
+                groupId,
+                memberId,
+                "JOIN_CODE_VERIFY",
+                "비공개 모임 인증코드 검증 성공"
+                        + " (버전: "
+                        + attempt.get("CODE_VERSION")
+                        + ")"
+        );
 
         return new JoinCodeVerifyResponse(
                 true,
@@ -346,6 +407,9 @@ public class JoinCodeVerifyService {
      *
      * 실패 결과를 정상 응답으로 반환하여
      * FAIL_COUNT 변경이 트랜잭션에 반영되도록 한다.
+     *
+     * 인증 실패 및 3회 실패 잠금 감사 로그도
+     * 동일한 트랜잭션에서 저장한다.
      */
     private JoinCodeVerifyResponse recordInvalidCode(
             Long groupId,
@@ -384,8 +448,35 @@ public class JoinCodeVerifyService {
         int remaining =
                 Math.max(0, MAX_ATTEMPTS - failures);
 
-        // 3. 최대 실패 횟수 도달
+        // 3. 인증 실패 감사 로그 저장
+        // 실제 입력한 인증코드는 기록하지 않는다.
+        saveVerificationAuditLog(
+                groupId,
+                memberId,
+                "JOIN_CODE_VERIFY",
+                "비공개 모임 인증코드 검증 실패"
+                        + " (버전: "
+                        + attempt.get("CODE_VERSION")
+                        + ", 실패 횟수: "
+                        + failures
+                        + "/"
+                        + MAX_ATTEMPTS
+                        + ")"
+        );
+
+        // 4. 최대 실패 횟수 도달
         if (remaining == 0) {
+
+            // 3회 실패 잠금 감사 로그 저장
+            saveVerificationAuditLog(
+                    groupId,
+                    memberId,
+                    "JOIN_CODE_LOCK",
+                    "인증코드 3회 실패로 회원별 인증 잠금"
+                            + " (버전: "
+                            + attempt.get("CODE_VERSION")
+                            + ")"
+            );
 
             return new JoinCodeVerifyResponse(
                     false,
@@ -395,7 +486,7 @@ public class JoinCodeVerifyService {
             );
         }
 
-        // 4. 일반 인증 실패
+        // 5. 일반 인증 실패
         return new JoinCodeVerifyResponse(
                 false,
                 JoinCodeVerifyStatus.INVALID_CODE.name(),
