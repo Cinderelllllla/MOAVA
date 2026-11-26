@@ -3,7 +3,8 @@
    - 중도 탈퇴·정산: /api/v1/groups/{groupId}/withdrawals
    - 계모임 해산: /api/v1/groups/{groupId}/dissolution
    - 운영 규칙(F31): /api/v1/groups/{groupId}/rules (조회: 모임 회원 / 수정: 모임장)
-   - 경고·승계: 준비 중
+   - 회원 경고·강제 탈퇴(F30): /api/v1/groups/{groupId}/members/{memberId}/warnings · /expulsion (모임장)
+   - 모임장 승계: 준비 중
    알림 링크 /procedures?groupId=…&tab=rules 로 들어오면 규칙 탭을 연다. */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -944,9 +945,152 @@ function RulesTab({ groupId }) {
       </LoadState>
     </Card>
 
+    {rules && <WarningCard groupId={groupId} leader={!!rules.leader} dissolved={dissolved} />}
+
     <Card>
-      <h2>회원 경고 · 모임장 승계</h2>
-      <Empty>회원 경고·강제 탈퇴, 모임장 승계 기능은 서버 API 연결 준비 중이에요.</Empty>
+      <h2>모임장 승계</h2>
+      <Empty>모임장 승계 기능은 서버 API 연결 준비 중이에요.</Empty>
     </Card>
+
   </>;
+
+}
+/**
+ * F30 회원 경고·강제 탈퇴 (모임장 전용)
+ * - 대상: 모임장 제외 ACTIVE 회원. 목록은 GET /api/groups/{groupId}/members (warningCount 포함, 모임장 전용)
+ * - 경고 최대 2회. 2회가 돼도 자동 탈퇴 없이 '강제 탈퇴 검토 대상' 표시만
+ * - 강제 탈퇴는 경고 2회 회원에게만 버튼 노출, 확인창에서 소명·정산 확인을 안내
+ * - 최종 검증(모임장·2회 상한·대상 상태)은 서버가 한다. 화면 버튼 숨김은 편의용
+ */
+function WarningCard({ groupId, leader, dissolved }) {
+  const { run } = useApp();
+  const [state, setState] = useState({ status: 'loading', data: [], error: '' });
+  const [reloadKey, setReloadKey] = useState(0);
+  const [form, setForm] = useState(null);   // { memberId, memberName, action: 'warn' | 'expel', reason }
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!leader) return undefined;
+    let alive = true;
+    setState(s => ({ ...s, status: 'loading', error: '' }));
+    G.fetchGroupMembers(groupId)
+        .then(list => {
+          if (alive) setState({ status: 'ready', data: list.filter(m => m.role !== 'OWNER'), error: '' });
+        })
+        .catch(e => { if (alive) setState({ status: 'error', data: [], error: e?.message || '참여 회원 목록을 불러오지 못했어요.' }); });
+    return () => { alive = false; };
+  }, [groupId, leader, reloadKey]);
+
+  const submit = async () => {
+    if (!form || !form.reason.trim()) return;
+    const isWarn = form.action === 'warn';
+    const message = isWarn
+        ? `${form.memberName}님에게 경고를 등록할까요? 경고는 모임별 최대 2회이며 취소할 수 없어요.`
+        : `${form.memberName}님을 강제 탈퇴시킬까요?\n본인 소명과 정산 내용을 먼저 확인했는지 다시 확인해 주세요. 탈퇴 후에는 같은 모임에 다시 가입할 수 없어요.`;
+    if (!confirm(message)) return;
+
+    setBusy(true);
+    const r = await run(
+        () => isWarn
+            ? G.warnMember(groupId, form.memberId, form.reason.trim())
+            : G.expelMember(groupId, form.memberId, form.reason.trim()),
+        res => isWarn
+            ? `경고를 등록했어요. (누적 ${res?.warningCount ?? '-'}/2회)`
+            : '강제 탈퇴 처리했어요. 대상 회원에게 이의 신청 안내가 전송돼요.'
+    );
+    setBusy(false);
+    if (r.ok) {
+      setForm(null);
+      setReloadKey(k => k + 1);
+    }
+  };
+
+  if (!leader) {
+    return (
+        <Card>
+          <h2>회원 경고 · 강제 탈퇴</h2>
+          <p className="muted mini">회원 경고와 강제 탈퇴는 모임장만 할 수 있어요.</p>
+        </Card>
+    );
+  }
+
+  return (
+      <Card>
+        <h2>회원 경고 · 강제 탈퇴</h2>
+        <p className="muted mini">경고는 모임별 최대 2회예요. 2회가 되면 '강제 탈퇴 검토 대상'으로 표시되고, 자동으로 탈퇴되지는 않아요.</p>
+        {dissolved ? (
+            <p className="muted mini">해산된 모임에서는 경고·강제 탈퇴를 할 수 없어요.</p>
+        ) : (
+            <LoadState
+                status={state.status}
+                error={state.error}
+                onRetry={() => setReloadKey(k => k + 1)}
+                loadingText="참여 회원을 불러오는 중이에요."
+            >
+              {state.data.length === 0 ? (
+                  <Empty>경고할 수 있는 참여 회원이 없어요.</Empty>
+              ) : (
+                  <div className="list">
+                    {state.data.map(m => {
+                      const count = m.warningCount ?? 0;
+                      const reviewable = count >= 2;
+                      const editing = form?.memberId === m.memberId;
+                      return (
+                          <div className="list-item" key={m.memberId}>
+                            <div className="item-head">
+                              <b>{m.memberName || `회원 #${m.memberId}`}</b>
+                              <span className="actions">
+                        <span className={`pill ${reviewable ? 'danger' : count === 1 ? 'warn' : ''}`}>경고 {count}/2회</span>
+                                {reviewable && <span className="pill danger">강제 탈퇴 검토 대상</span>}
+                      </span>
+                            </div>
+
+                            {!editing && (
+                                <div className="actions" style={{ marginTop: 10 }}>
+                                  {!reviewable && (
+                                      <button type="button" className="btn small soft" disabled={busy}
+                                              onClick={() => setForm({ memberId: m.memberId, memberName: m.memberName, action: 'warn', reason: '' })}>
+                                        경고하기
+                                      </button>
+                                  )}
+                                  {reviewable && (
+                                      <button type="button" className="btn small danger" disabled={busy}
+                                              onClick={() => setForm({ memberId: m.memberId, memberName: m.memberName, action: 'expel', reason: '' })}>
+                                        강제 탈퇴
+                                      </button>
+                                  )}
+                                </div>
+                            )}
+
+                            {editing && (
+                                <div style={{ marginTop: 10 }}>
+                                  <div className="field">
+                                    <label htmlFor={`sanction-reason-${m.memberId}`}>
+                                      {form.action === 'warn' ? '경고 사유' : '강제 탈퇴 사유'}
+                                    </label>
+                                    <textarea
+                                        id={`sanction-reason-${m.memberId}`}
+                                        value={form.reason}
+                                        onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
+                                        placeholder="사유는 대상 회원의 제재 기록에 남아요."
+                                    />
+                                  </div>
+                                  <div className="actions" style={{ marginTop: 8 }}>
+                                    <button type="button" className={`btn small ${form.action === 'warn' ? 'primary' : 'danger'}`}
+                                            disabled={busy || !form.reason.trim()} onClick={submit}>
+                                      {form.action === 'warn' ? '경고 등록' : '강제 탈퇴 확정'}
+                                    </button>
+                                    <button type="button" className="btn small soft" disabled={busy} onClick={() => setForm(null)}>취소</button>
+                                  </div>
+                                </div>
+                            )}
+                          </div>
+                      );
+                    })}
+                  </div>
+              )}
+            </LoadState>
+        )}
+      </Card>
+  );
 }
