@@ -13,6 +13,7 @@ import { NOTIFICATIONS_CHANGED } from '../common/notificationEvents';
 import { PageHead, Card } from '../components/ui';
 import { FinanceAssessmentStatus, LoadState, MonthlyChart, RiskLabel } from '../components/shared';
 import { won, wonFromKrw } from '../common/format';
+import Icon from '../components/Icon';
 
 /** 서버의 안 읽은 알림 개수. 실패하면 null(화면에는 '-' 표시) */
 function useUnreadCount() {
@@ -59,7 +60,7 @@ export default function Dashboard() {
       }}
       onClick={() => nav(to)}
     >
-      <div className="symbol">{ico}</div>
+      <div className="symbol"><Icon g={ico} size={22} /></div>
       <small>{label}</small>
       <div className="value">{val}</div>
       <small>자세히 보기 →</small>
@@ -69,20 +70,20 @@ export default function Dashboard() {
   return (
     <>
       <PageHead
-        kicker="MY FINANCIAL SKY"
-        title={`안녕하세요, ${user?.name || '회원'}님 ☁`}
+        kicker="MY OVERVIEW"
+        title={`안녕하세요, ${user?.name || '회원'}님`}
         sub="오늘도 내 속도에 맞춰, 부담 없이 함께 모아봐요."
       />
 
       {/* 맞춤 추천 영역 */}
       <div className="hero">
         <span className="pill">
-          ✦ MOAVA SMART RECOMMENDATION
+          AI 맞춤 추천
         </span>
 
         {a && a.rec > 0 ? (
           <h2>
-            나에게 맞는 월 납입액
+            나에게 맞는 월 납입액{' '}
             <br />
             {won(a.rec)}부터 시작해 보세요.
           </h2>
@@ -94,7 +95,7 @@ export default function Dashboard() {
           </h2>
         ) : (
           <h2>
-            금융정보를 입력하면
+            금융정보를 입력하면{' '}
             <br />
             나에게 맞는 월 납입액을 추천해 드려요.
           </h2>
@@ -124,7 +125,7 @@ export default function Dashboard() {
         <Stat
           label="추천 월 납입액"
           val={a ? (a.rec > 0 ? won(a.rec) : '추천 없음') : '-'}
-          ico="✧"
+          ico="₩"
           to="/journey"
         />
 

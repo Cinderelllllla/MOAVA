@@ -14,7 +14,8 @@
 import { create } from 'zustand';
 import { db, subscribe, getVersion, currentUser, isAdmin as adminCheck } from '../api';
 
-const THEME_KEY = 'moava-ui-theme';
+const THEME_KEY = 'moava-ui-theme';   // 테마는 sessionStorage 에 둔다 → 새로 접속하면 항상 밝음(v9)으로 시작, 같은 탭 새로고침 때만 유지
+try { localStorage.removeItem(THEME_KEY); } catch { }   // 예전 버전이 영구 저장해 둔 테마 값 정리
 const UI_KEY = 'moava-ui';
 // selected·focus(선택 모임)는 처음엔 없음, financeMonth 는 비워 두면 화면이 이번 달을 쓴다
 const UI_DEFAULT = { selected: null, focus: null, search: '', region: '전체', purpose: '전체', sim: { amount: 20, members: 6, round: 3, rate: 3 }, procTab: 'order', financeMonth: '', inlineSimGroup: null, reportFilter: 'all' };
@@ -25,12 +26,12 @@ let toastTimer;
 export const useAppStore = create((set, get) => ({
   /* ---- 상태 ---- */
   version: getVersion(),                 // mock DB(또는 API 캐시)가 바뀔 때마다 증가 → 세션·사용자 재계산
-  theme: (() => { try { return localStorage.getItem(THEME_KEY) === 'v9meeting' ? 'v9meeting' : 'v9'; } catch { return 'v9'; } })(),
+  theme: (() => { try { return sessionStorage.getItem(THEME_KEY) === 'v9meeting' ? 'v9meeting' : 'v9'; } catch { return 'v9'; } })(),
   ui: load(UI_KEY, UI_DEFAULT),          // 화면 간 공유 상태(선택 모임·탭·시뮬레이터 값), 새로고침해도 유지
   toastMsg: '',
 
   /* ---- 액션 ---- */
-  setTheme: t => { document.documentElement.dataset.theme = t; try { localStorage.setItem(THEME_KEY, t); } catch { } set({ theme: t }); },
+  setTheme: t => { document.documentElement.dataset.theme = t; try { sessionStorage.setItem(THEME_KEY, t); } catch { } set({ theme: t }); },
   setUi: patch => set(s => { const ui = { ...s.ui, ...(typeof patch === 'function' ? patch(s.ui) : patch) }; try { sessionStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch { } return { ui }; }),
   toast: msg => { clearTimeout(toastTimer); set({ toastMsg: msg }); toastTimer = setTimeout(() => set({ toastMsg: '' }), 3300); },
   /** API 호출 + 오류 토스트 공통 처리: const r = await run(() => groups.approveJoin(id, rid), '승인했어요.'); if (r.ok) ... */

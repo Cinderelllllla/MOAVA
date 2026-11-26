@@ -7,6 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { chat, groups, me } from '../api';
 import { PageHead } from '../components/ui';
 import { LoadState } from '../components/shared';
+import Icon from '../components/Icon';
 
 const STATUS_TEXT = { connecting: '연결 중…', open: '실시간 연결됨', closed: '연결이 끊겼어요. 다시 연결하는 중…', 'auth-error': '로그인이 만료되었어요. 다시 로그인해 주세요.' };
 
@@ -114,9 +115,9 @@ export default function Chat() {
         <div className="chat-room-list">
           <LoadState status={rooms.status} error={rooms.error} onRetry={loadRooms} loadingText="채팅방을 불러오는 중이에요.">
             {rooms.items.length ? rooms.items.map(r => <button type="button" key={r.groupId} className={`chat-room ${r.groupId === selectedId ? 'active' : ''}`} onClick={() => setParams({ groupId: String(r.groupId) })}>
-              <span className="chat-room-icon">☁</span>
+              <span className="chat-room-icon"><Icon name="users" /></span>
               <span className="chat-room-copy"><b>{r.title}</b><small>{groups.groupStatusLabel(r.status)} · {r.memberCount}명{r.lastSentAt ? ` · ${timeText(r.lastSentAt)}` : ''}</small></span>
-              <span className="chat-room-arrow">›</span>
+              <span className="chat-room-arrow"><Icon name="right" size={16} /></span>
             </button>) : <div className="empty">가입한 계모임이 없어요.</div>}
           </LoadState>
         </div>
@@ -125,10 +126,10 @@ export default function Chat() {
       {/* overflow:hidden → 이 칸이 메시지 양만큼 늘어나지 않고 틀 높이에 맞춰진다. 그래서 대화 목록(.chatlog)만 스크롤되고 입력칸은 항상 보인다 */}
       <section className="chat-main" style={{ overflow: 'hidden' }}>{room ? <>
         <div className="chat-main-head">
-          <div className="chat-room-icon large">☁</div>
+          <div className="chat-room-icon large"><Icon name="users" size={22} /></div>
           <div><h2>{room.title}</h2><p className="muted mini">{groups.groupStatusLabel(room.status)} · {room.memberCount}명 참여 · <span role="status">{STATUS_TEXT[conn]}</span></p></div>
           <button type="button" className="btn soft small" aria-expanded={showPeople} onClick={() => setShowPeople(v => !v)}>
-            참여자 {people.status === 'ready' ? `${people.items.length}명` : ''} {showPeople ? '▲' : '▼'}
+            참여자 {people.status === 'ready' ? `${people.items.length}명` : ''} <Icon name="down" size={14} style={{ verticalAlign: 'middle', transform: showPeople ? 'rotate(180deg)' : 'none' }} />
           </button>
           <button className="btn soft small" onClick={() => nav(`/operations?groupId=${room.groupId}`)}>운영 홈으로</button>
         </div>
@@ -151,7 +152,7 @@ export default function Chat() {
                 <small>{m.memberId === myId ? '나' : (m.senderName || '회원')} · {timeText(m.sentAt)}</small>
                 <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</span>
               </div>)
-                : <div className="chat-empty"><span>☁</span><b>대화를 시작해 보세요</b><small>납입 일정이나 모임 소식을 나눠 보세요.</small></div>}
+                : <div className="chat-empty"><span><Icon name="chat" size={32} /></span><b>대화를 시작해 보세요</b><small>납입 일정이나 모임 소식을 나눠 보세요.</small></div>}
         </div>
 
         {notice && <p className="warning mini" role="alert">{notice}</p>}

@@ -16,5 +16,5 @@ export const Empty = ({ children }) => <div className="empty">{children}</div>;
 /** 서버 API가 아직 없는 화면에 보여 주는 "준비 중" 안내 */
 export function ComingSoon({ kicker, title, text, children }) {
   return <><PageHead kicker={kicker} title={title} sub="" />
-    <Card><div className="empty"><span className="empty-cloud">☁</span><h3>아직 준비 중이에요</h3><p>{text}</p>{children && <div className="actions" style={{ justifyContent: 'center' }}>{children}</div>}</div></Card></>;
+    <Card><div className="empty"><h3>아직 준비 중이에요</h3><p>{text}</p>{children && <div className="actions" style={{ justifyContent: 'center' }}>{children}</div>}</div></Card></>;
 }

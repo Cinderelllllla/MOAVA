@@ -117,6 +117,11 @@
         ORDER BY o.DUE_DATE, o.GROUP_ID, o.MEMBER_ID
     </select>
 
+    <!-- 관리자 확인 — ACTIVE 관리자인지 (목록·조치 공통, 회원 번호와 겹쳐도 관리자 테이블 기준으로 재확인) -->
+    <select id="countActiveAdmin" resultType="int">
+        SELECT COUNT(*) FROM ADMIN WHERE ADMIN_ID = #{adminId} AND STATUS = 'ACTIVE'
+    </select>
+
     <!-- 조치 대상 1건 — 미납 건 행을 잠금 (증빙 승인의 RESOLVED 처리와 동시에 바뀌지 않게, 조치 트랜잭션 끝까지 유지) -->
     <select id="findOverdueCaseById" resultType="com.moava.overdue.dto.OverdueCaseDto">
         <include refid="overdueCaseSelect"/>
