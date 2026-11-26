@@ -19,6 +19,12 @@ public interface GroupWarningMapper {
     /** 강제 탈퇴. ACTIVE이고 경고 2회일 때만 바뀜 → 반환값 0이면 조건 미충족 */
     int expel(@Param("groupId") long groupId, @Param("targetMemberId") long targetMemberId);
 
+    /** 모임 행 잠금. F29 중도 탈퇴 신청(requestWithdrawal)과 같은 GYE_GROUP 행을 잠가 동시 요청을 순서대로 처리 */
+    Long lockGroup(@Param("groupId") long groupId);
+
+    /** 대상 회원의 진행 중 중도 탈퇴 신청 수 (SETTLEMENT_PENDING·CONSENT_PENDING) */
+    int countActiveWithdrawal(@Param("groupId") long groupId, @Param("targetMemberId") long targetMemberId);
+
     /** SANCTION 기록 (모임장 조치라 ISSUED_ADMIN_ID 는 NULL) */
     int insertSanction(@Param("sanctionType") String sanctionType, @Param("targetMemberId") long targetMemberId,
                        @Param("groupId") long groupId, @Param("issuedMemberId") long issuedMemberId,

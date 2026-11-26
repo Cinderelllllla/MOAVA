@@ -18,7 +18,7 @@ import java.util.Map;
  * <ul>
  *   <li>모임장만, 대상은 모임장이 아닌 이 모임의 ACTIVE 회원. 해산 완료 모임은 불가</li>
  *   <li>경고: WARNING_COUNT &lt; 2 일 때만 +1. 2회가 돼도 자동 탈퇴 없음</li>
- *   <li>강제 탈퇴: WARNING_COUNT = 2 일 때만 EXPELLED</li>
+ *   <li>강제 탈퇴: WARNING_COUNT = 2 이고 진행 중 중도 탈퇴 신청이 없을 때만 EXPELLED (GYE_GROUP 행 잠금으로 F29 신청과 순서 보장)</li>
  *   <li>한 트랜잭션: GYE_MEMBER 변경 + SANCTION + AUDIT_LOG + 대상 알림(SANCTION)</li>
  * </ul>
  * F26 관리자 미납 경고(OVERDUE_WARN)와 별개 — 그쪽은 WARNING_COUNT 를 바꾸지 않는다.
@@ -66,15 +66,21 @@ public class GroupWarningService {
     /** POST /groups/{groupId}/members/{memberId}/expulsion */
     @Transactional
     public GroupWarningResponse expel(long leaderId, long groupId, long targetId, GroupWarningRequest request) {
+        mapper.lockGroup(groupId);   // F29 중도 탈퇴 신청과 같은 행을 잠가 동시 처리 방지 (모임이 없으면 아래에서 404)
         GroupWarningTarget target = requireTarget(leaderId, groupId, targetId);
         String reason = validReason(request);
 
         if (target.warningCount() < MAX_WARNINGS) {
             throw notEnoughWarnings();
         }
-        if (mapper.expel(groupId, targetId) == 0) {   // 그사이 다른 요청으로 이미 탈퇴 처리됨
+        // 명세서 외 추가 방어: 진행 중 탈퇴 신청이 있으면 강제 탈퇴 시 그 신청이 처리 불가 상태로 남음 (팀 합의 11/26)
+        if (mapper.countActiveWithdrawal(groupId, targetId) > 0) {
+            throw new GroupWarningException(HttpStatus.CONFLICT, "WITHDRAWAL_IN_PROGRESS", "중도 탈퇴가 진행 중인 회원이에요.");
+        }
+        if (mapper.expel(groupId, targetId) == 0) {
             throw notEnoughWarnings();
         }
+        // ↓ 아래(insertSanction부터)는 그대로
 
         mapper.insertSanction("EXPEL", targetId, groupId, leaderId, reason);
         mapper.insertAuditLog(groupId, leaderId, targetId, "EXPEL", "강제 탈퇴: " + reason);
@@ -84,6 +90,7 @@ public class GroupWarningService {
 
         return new GroupWarningResponse(groupId, targetId, MAX_WARNINGS, "EXPELLED", false);
     }
+
 
     /** 공통 검증: 모임 존재 → 모임장 → 해산 여부 → 대상이 모임장 아님 → 대상이 ACTIVE 회원 */
     private GroupWarningTarget requireTarget(long leaderId, long groupId, long targetId) {
