@@ -5,11 +5,14 @@ import com.moava.group.create.dto.GroupCreateResponse;
 import com.moava.group.create.mapper.GroupCreateMapper;
 import com.moava.group.map.GeoPoint;
 import com.moava.group.map.KakaoGeocodingClient;
+import com.moava.notification.common.domain.NotifType;
+import com.moava.notification.common.service.NotificationService;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.dao.DuplicateKeyException;
@@ -23,22 +26,25 @@ public class GroupCreateService {
     private static final int HOLDER_NAME_ENC_MAX_BYTES = 120;
     private static final int ACCOUNT_NO_ENC_MAX_BYTES = 100;
 
-    // DDL v2.0 계좌 중복 방지 인덱스
+    // 계좌 중복 방지 인덱스
     private static final String ACCOUNT_UNIQUE_INDEX =
             "UX_GYE_ACCOUNT_ACTIVE_HASH";
 
     private final GroupCreateMapper mapper;
     private final GroupAccountCrypto crypto;
     private final KakaoGeocodingClient kakaoGeocodingClient;
+    private final NotificationService notificationService;
 
     public GroupCreateService(
             GroupCreateMapper mapper,
             GroupAccountCrypto crypto,
-            KakaoGeocodingClient kakaoGeocodingClient
+            KakaoGeocodingClient kakaoGeocodingClient,
+            NotificationService notificationService
     ) {
         this.mapper = mapper;
         this.crypto = crypto;
         this.kakaoGeocodingClient = kakaoGeocodingClient;
+        this.notificationService = notificationService;
     }
 
     public void validateCreateRequest(GroupCreateRequest request) {
@@ -116,7 +122,7 @@ public class GroupCreateService {
     }
 
     @Transactional
-    // 모임, 모임장, 계좌, 감사 로그 저장을
+    // 모임, 모임장, 계좌, 감사 로그, 알림 저장을
     // 하나의 트랜잭션으로 처리한다.
     // 오류 발생 시 전체 롤백
     public GroupCreateResponse createGroup(
@@ -159,7 +165,7 @@ public class GroupCreateService {
                 crypto.hashAccountNumber(accountNumber);
 
         // 4. F19 - 동일 계좌 중복 등록 확인
-        // DDL v2.0과 동일하게 계좌 해시만 비교
+        // 계좌 해시만 비교
         // 모임 생성 전에 검증하여 불필요한 INSERT 방지
         validateDuplicateAccount(accountNoHash);
 
@@ -270,8 +276,6 @@ public class GroupCreateService {
         } catch (DuplicateKeyException e) {
 
             // F19 - 동시 계좌 등록 요청에 대한 DB 중복 방어
-            // 사전 조회를 동시에 통과한 경우에도
-            // UNIQUE INDEX에서 중복 등록을 차단한다.
             if (isDuplicateAccountViolation(e)) {
 
                 throw new IllegalStateException(
@@ -321,7 +325,20 @@ public class GroupCreateService {
             );
         }
 
-        // 12. 결과 반환
+        // 12. F19 - 활성 관리자 전원에게 계좌 소유 확인 요청
+        // 전체 계좌번호 및 예금주 정보는 전달하지 않는다.
+        // 모임 생성 트랜잭션에 포함되므로 실패 시 함께 롤백된다.
+        notificationService.notifyAdmins(
+                NotifType.ACCOUNT_VERIFY_REQ,
+                groupId,
+                Map.of(
+                        "group", request.title().strip(),
+                        "bank", bankName,
+                        "last4", accountNoLast4
+                )
+        );
+
+        // 13. 결과 반환
         return new GroupCreateResponse(
                 groupId,
                 authenticatedMemberId,
