@@ -48,10 +48,14 @@
         ON (T.MEMBER_ID = S.MEMBER_ID AND T.ORGANIZATION = S.ORGANIZATION)
         WHEN MATCHED THEN
             UPDATE SET
-                T.CONNECTED_ID_ENC = #{connectedIdEnc},
-                T.KEY_VER          = #{keyVer},
-                T.VERIFIED_YN      = 'N',
-                T.UPDATED_AT       = #{updatedAt, jdbcType=TIMESTAMP}
+                T.CONNECTED_ID_ENC       = #{connectedIdEnc},
+                T.KEY_VER                = #{keyVer},
+                T.VERIFIED_YN            = 'N',
+                T.VERIFIED_ACCOUNT_ENC   = NULL,
+                T.VERIFIED_ACCOUNT_LAST4 = NULL,
+                T.VERIFIED_HOLDER_NAME   = NULL,
+                T.VERIFIED_AT            = NULL,
+                T.UPDATED_AT             = #{updatedAt, jdbcType=TIMESTAMP}
         WHEN NOT MATCHED THEN
             INSERT (
                 MEMBER_ID, ORGANIZATION, CONNECTED_ID_ENC, KEY_VER,

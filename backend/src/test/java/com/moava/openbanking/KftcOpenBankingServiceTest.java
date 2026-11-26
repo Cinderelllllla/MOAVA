@@ -1,5 +1,6 @@
 package com.moava.openbanking;
 
+import com.moava.member.mapper.MemberMapper;
 import com.moava.member.service.JwtAuthenticationFilter;
 import com.moava.member.service.JwtTokenProvider;
 import com.moava.openbanking.client.OpenBankingProperties;
@@ -225,14 +226,14 @@ class KftcOpenBankingServiceTest {
                 assertThrows(KftcOpenBankingException.class,
                         () -> openBankingService.inquireBalance(WD_FIN_NUM, null, otherUserToken, "127.0.0.1")).getResponseCode());
 
-        // 정상 사용자 토큰으로 거래내역 조회 + DB에 오염된 텍스트가 있어도 출력 XSS 이스케이프
+        // 정상 사용자 토큰으로 거래내역 조회 + DB에 오염된 텍스트가 있어도 태그/스크립트는 제거하고 일반 특수문자는 이중 이스케이프하지 않음
         KftcRecordDto.TransactionRecord tx = new KftcRecordDto.TransactionRecord();
         tx.setBankTranId(BANK_TRAN_ID);
         tx.setFintechUseNum(WD_FIN_NUM);
         tx.setInoutType("출금");
         tx.setTranAmt(50_000L);
         tx.setAfterBalanceAmt(900_000L);
-        tx.setPrintContent("<img src=x onerror=alert(1)>");
+        tx.setPrintContent("<img src=x onerror=alert(1)>A&B's \"카페\"");
         tx.setCounterpartyName("김모임");
         tx.setBranchName("모아바모의점");
         tx.setTranAt(LocalDateTime.of(2026, 11, 24, 10, 30, 0));
@@ -246,8 +247,11 @@ class KftcOpenBankingServiceTest {
         assertEquals("A0000", res.getRspCode());
         assertEquals(900_000L, res.getBalanceAmt());
         assertEquals(1, res.getPageRecordCnt());
-        assertFalse(res.getResList().get(0).getPrintContent().contains("<img"));
-        assertTrue(res.getResList().get(0).getPrintContent().contains("&lt;img"));
+        String sanitized = res.getResList().get(0).getPrintContent();
+        assertFalse(sanitized.contains("<img"));
+        assertFalse(sanitized.contains("&lt;"));
+        assertFalse(sanitized.contains("&amp;"));
+        assertEquals("A&B's \"카페\"", sanitized);
     }
 
     // ==================== 3. 출금이체 / 입금이체 원자성·락순서·예외 ====================
@@ -352,7 +356,8 @@ class KftcOpenBankingServiceTest {
     @Test
     void jwtFilter는_오픈뱅킹_경로만_우회하고_기존_API는_유지한다() throws Exception {
         JwtTokenProvider provider = mock(JwtTokenProvider.class);
-        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(provider);
+        MemberMapper memberMapper = mock(MemberMapper.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(provider, memberMapper);
         Method shouldNotFilter = JwtAuthenticationFilter.class.getDeclaredMethod("shouldNotFilter", jakarta.servlet.http.HttpServletRequest.class);
         shouldNotFilter.setAccessible(true);
 

@@ -41,14 +41,15 @@ public class ExampleConsumerService {
 
 ---
 
-## 2. Oracle 가상 원장 DB 준비 (`infra/sql/05_moava_openbank_ddl.sql`)
+## 2. Oracle 가상 원장 DB 스키마 (공용 DB `C##MOAVA` 적용 완료)
 
 | 테이블명 | 역할 | 핵심 제약조건 |
 |---|---|---|
 | `MOCK_KFTC_ACCOUNT` | 모의 계좌 마스터 | `PK(FINTECH_USE_NUM)`, `UK(BANK_CODE, ACCOUNT_NO)`, `CHECK(BALANCE >= 0)` |
-| `MOCK_KFTC_TRANSACTION` | 모의 입출금 거래 원장 | `UK(BANK_TRAN_ID, FINTECH_USE_NUM, INOUT_TYPE)`(이중 이체 방지), `CHECK(TRAN_AMT > 0)` |
+| `MOCK_KFTC_TRANSACTION` | 모의 입출금 거래 원장 | `UK(BANK_TRAN_ID, INOUT_TYPE)`(이중 이체 방지), `CHECK(TRAN_AMT > 0)` |
 | `MOCK_KFTC_OAUTH_CODE` | OAuth 인가 코드 (일회용, 3분 TTL) | `PK(AUTH_CODE)`, `USED_YN IN ('Y','N')` |
 | `MOCK_KFTC_OAUTH_TOKEN` | OAuth Access Token (SHA-256 해시 저장) | `PK(TOKEN_HASH)`, `REVOKED_YN IN ('Y','N')` |
+| `CODEF_CONNECTION` | CODEF 은행 연결 및 실계좌 인증 이력 | `PK(CONNECTION_ID)`, `UK(MEMBER_ID, ORGANIZATION)`, `VERIFIED_YN IN ('Y','N')` |
 
 ### 시연용 샘플 계좌 시드 SQL 예시
 

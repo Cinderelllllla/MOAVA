@@ -47,6 +47,9 @@ public class KftcSecurityGuard {
     private static final Pattern DATE_YYYYMMDD_PATTERN = Pattern.compile("^[0-9]{8}$");
     private static final Pattern CONTROL_CHAR_PATTERN = Pattern.compile("[\\x00-\\x1F\\x7F]");
     private static final Pattern DANGEROUS_URI_PATTERN = Pattern.compile("(?i)(javascript|vbscript|data)\\s*:");
+    private static final Pattern SCRIPT_STYLE_BLOCK_PATTERN = Pattern.compile("(?is)<(script|style)[^>]*>.*?</\\1>");
+    private static final Pattern HTML_TAG_PATTERN = Pattern.compile("<[^>]*>");
+    private static final Pattern ANGLE_BRACKET_PATTERN = Pattern.compile("[<>]");
     private static final Pattern SCRIPT_OR_TAG_PATTERN = Pattern.compile("[<>\"'`]");
     private static final Set<String> ALLOWED_SCOPES = Set.of("login", "inquiry", "transfer", "oob");
 
@@ -211,21 +214,12 @@ public class KftcSecurityGuard {
         if (raw == null) {
             return "";
         }
-        String cleaned = CONTROL_CHAR_PATTERN.matcher(raw).replaceAll("").trim();
+        String cleaned = CONTROL_CHAR_PATTERN.matcher(raw).replaceAll("");
+        cleaned = SCRIPT_STYLE_BLOCK_PATTERN.matcher(cleaned).replaceAll("");
+        cleaned = HTML_TAG_PATTERN.matcher(cleaned).replaceAll("");
+        cleaned = ANGLE_BRACKET_PATTERN.matcher(cleaned).replaceAll("");
         cleaned = DANGEROUS_URI_PATTERN.matcher(cleaned).replaceAll("blocked:");
-        StringBuilder out = new StringBuilder(cleaned.length() + 16);
-        for (int i = 0; i < cleaned.length(); i++) {
-            char c = cleaned.charAt(i);
-            switch (c) {
-                case '&' -> out.append("&amp;");
-                case '<' -> out.append("&lt;");
-                case '>' -> out.append("&gt;");
-                case '"' -> out.append("&quot;");
-                case '\'' -> out.append("&#x27;");
-                default -> out.append(c);
-            }
-        }
-        return out.toString();
+        return cleaned.trim();
     }
 
     // ==================== 2. 암호학 유틸 & 채번 ====================

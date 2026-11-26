@@ -88,11 +88,14 @@ public class CodefBankService {
             CodefDto.ConnectionSummary s = new CodefDto.ConnectionSummary();
             s.setOrganization(r.getOrganization());
             s.setBankName(safeBankName(r.getOrganization()));
-            s.setVerified("Y".equals(r.getVerifiedYn()));
-            s.setVerifiedAccountMasked(r.getVerifiedAccountLast4() != null ? "****" + r.getVerifiedAccountLast4() : null);
-            s.setVerifiedHolderName(r.getVerifiedHolderName() != null
-                    ? securityGuard.sanitizeOutputText(r.getVerifiedHolderName()) : null);
-            s.setVerifiedAt(r.getVerifiedAt());
+            boolean verified = "Y".equals(r.getVerifiedYn());
+            s.setVerified(verified);
+            if (verified) {
+                s.setVerifiedAccountMasked(r.getVerifiedAccountLast4() != null ? "****" + r.getVerifiedAccountLast4() : null);
+                s.setVerifiedHolderName(r.getVerifiedHolderName() != null
+                        ? securityGuard.sanitizeOutputText(r.getVerifiedHolderName()) : null);
+                s.setVerifiedAt(r.getVerifiedAt());
+            }
             s.setUpdatedAt(r.getUpdatedAt());
             result.add(s);
         }
@@ -293,7 +296,7 @@ public class CodefBankService {
         }
 
         List<CodefDto.TransactionItem> rawTxList = parseTransactionsRaw(data.path("resTrHistoryList"));
-        Long balanceAmt = resolveBalanceAmt(data, rawTxList);
+        Long balanceAmt = resolveBalanceAmt(data, rawTxList, "0");
         String accountName = data.path("resAccountName").asString("").trim();
 
         int keyVer = cryptoKeyService.getCurrentKeyVersion();
@@ -385,7 +388,7 @@ public class CodefBankService {
 
         JsonNode data = codefApiClient.postApi("/v1/kr/bank/p/account/transaction-list", payload);
         List<CodefDto.TransactionItem> rawTxList = parseTransactionsRaw(data.path("resTrHistoryList"));
-        Long balanceAmt = resolveBalanceAmt(data, rawTxList);
+        Long balanceAmt = resolveBalanceAmt(data, rawTxList, "0");
 
         String holderName = data.path("resAccountHolder").asString("").trim();
         if (holderName.isBlank()) {
@@ -430,7 +433,7 @@ public class CodefBankService {
         String accountDigits;
         if (isNotBlank(req.getAccount())) {
             accountDigits = normalizeAccountDigits(req.getAccount());
-        } else if (isNotBlank(conn.getVerifiedAccountEnc())) {
+        } else if ("Y".equals(conn.getVerifiedYn()) && isNotBlank(conn.getVerifiedAccountEnc())) {
             accountDigits = cryptoKeyService.decrypt(conn.getVerifiedAccountEnc(), conn.getKeyVer());
         } else {
             throw CodefException.badRequest("CODEF_ACCOUNT_REQUIRED", "조회할 계좌번호(account)를 입력해 주세요.");
@@ -460,7 +463,7 @@ public class CodefBankService {
         res.setBankName(bank.getBankName());
         res.setAccountMasked("****" + last4);
         res.setHolderName(securityGuard.sanitizeOutputText(data.path("resAccountHolder").asString("")));
-        res.setBalanceAmt(resolveBalanceAmt(data, txList));
+        res.setBalanceAmt(resolveBalanceAmt(data, txList, orderBy));
         res.setStartDate(data.path("commStartDate").asString(startStr));
         res.setEndDate(data.path("commEndDate").asString(endStr));
         res.setCount(txList.size());
@@ -472,11 +475,64 @@ public class CodefBankService {
     public void disconnect(Long memberId, String rawOrganization) {
         requireMemberId(memberId);
         CodefBankCode bank = CodefBankCode.resolve(rawOrganization);
+        CodefDto.ConnectionRecord conn = mapper.findConnection(memberId, bank.getCodefOrgCode());
+        if (conn == null) {
+            throw CodefException.notFound("CODEF_NOT_CONNECTED", "연결된 은행 계정이 없습니다.");
+        }
+
+        if (isNotBlank(conn.getConnectedIdEnc())) {
+            deleteRemoteConnectedAccountBestEffort(memberId, bank.getCodefOrgCode(), conn);
+        }
+
         int deleted = mapper.deleteConnection(memberId, bank.getCodefOrgCode());
         if (deleted == 0) {
             throw CodefException.notFound("CODEF_NOT_CONNECTED", "연결된 은행 계정이 없습니다.");
         }
         log.info("[CODEF-AUDIT] 은행 연결 해제: memberId={}, org={}", memberId, bank.getCodefOrgCode());
+    }
+
+    private void deleteRemoteConnectedAccountBestEffort(
+            Long memberId,
+            String orgCode,
+            CodefDto.ConnectionRecord conn
+    ) {
+        try {
+            String connectedId = cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer());
+            if (!isNotBlank(connectedId)) {
+                return;
+            }
+            if (tryDeleteRemoteAccount(orgCode, connectedId, "0")) {
+                return;
+            }
+            tryDeleteRemoteAccount(orgCode, connectedId, "1");
+        } catch (Exception e) {
+            log.warn("[CODEF] 원격 계정 삭제 실패(로컬 연결 해제는 계속 진행): memberId={}, org={}, reason={}",
+                    memberId, orgCode, e.getMessage());
+        }
+    }
+
+    private boolean tryDeleteRemoteAccount(String orgCode, String connectedId, String loginType) {
+        Map<String, Object> account = new LinkedHashMap<>();
+        account.put("countryCode", "KR");
+        account.put("businessType", "BK");
+        account.put("clientType", "P");
+        account.put("organization", orgCode);
+        account.put("loginType", loginType);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("connectedId", connectedId);
+        payload.put("accountList", List.of(account));
+
+        try {
+            JsonNode data = codefApiClient.postApi("/v1/account/delete", payload);
+            JsonNode successList = data != null ? data.path("successList") : null;
+            return successList != null && successList.isArray() && !successList.isEmpty();
+        } catch (CodefException e) {
+            if (e.getHttpStatus().is5xxServerError()) {
+                throw e;
+            }
+            return false;
+        }
     }
 
     // ==================== 내부 헬퍼 ====================
@@ -601,13 +657,18 @@ public class CodefBankService {
         return tx;
     }
 
-    private Long resolveBalanceAmt(JsonNode data, List<CodefDto.TransactionItem> txList) {
+    private Long resolveBalanceAmt(JsonNode data, List<CodefDto.TransactionItem> txList, String orderBy) {
         String rawBal = data.path("resAccountBalance").asString("").trim();
         if (!rawBal.isEmpty()) {
             return parseLongSafe(rawBal);
         }
-        if (txList != null && !txList.isEmpty() && txList.get(0).getAfterBalanceAmt() != null) {
-            return txList.get(0).getAfterBalanceAmt();
+        if (txList != null && !txList.isEmpty()) {
+            CodefDto.TransactionItem latestTx = "1".equals(orderBy)
+                    ? txList.get(txList.size() - 1)
+                    : txList.get(0);
+            if (latestTx.getAfterBalanceAmt() != null) {
+                return latestTx.getAfterBalanceAmt();
+            }
         }
         return 0L;
     }

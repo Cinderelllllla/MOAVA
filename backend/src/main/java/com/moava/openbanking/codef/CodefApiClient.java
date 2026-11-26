@@ -106,7 +106,8 @@ public class CodefApiClient {
             } catch (CodefException e) {
                 throw e;
             } catch (RestClientResponseException e) {
-                log.warn("[CODEF] OAuth 토큰 발급 실패: status={}", e.getStatusCode().value());
+                String detail = extractSafeErrorDetail(e.getResponseBodyAsString());
+                log.warn("[CODEF] OAuth 토큰 발급 실패: status={}, detail={}", e.getStatusCode().value(), detail);
                 throw CodefException.badGateway("CODEF_OAUTH_FAILED", "CODEF 인증 토큰 발급에 실패했습니다. 키 설정을 확인해 주세요.");
             } catch (RestClientException e) {
                 throw CodefException.badGateway("CODEF_OAUTH_NETWORK", "CODEF 인증 서버 통신에 실패했습니다.");
@@ -144,16 +145,29 @@ public class CodefApiClient {
         } catch (CodefException e) {
             throw e;
         } catch (RestClientResponseException e) {
-            if (e.getStatusCode().value() == 401) {
+            int status = e.getStatusCode().value();
+            JsonNode errorRoot = tryParseJsonLenient(e.getResponseBodyAsString());
+            String codefCode = errorRoot != null ? errorRoot.path("result").path("code").asString("") : "";
+
+            if (status == 401 || "CF-00401".equals(codefCode)) {
                 invalidateTokenCache();
                 if (allowRetryOnTokenError) {
-                    log.info("[CODEF] HTTP 401 응답 감지 — 토큰 재발급 후 1회 재시도: path={}", path);
+                    log.info("[CODEF] HTTP {}/{} 응답 감지 — 토큰 재발급 후 1회 재시도: path={}", status, codefCode, path);
                     return postApiInternal(path, payload, false);
                 }
             }
-            log.warn("[CODEF] API 호출 HTTP 오류: path={}, status={}", path, e.getStatusCode().value());
-            throw CodefException.badGateway("CODEF_HTTP_" + e.getStatusCode().value(),
-                    "CODEF 서버 응답 오류가 발생했습니다. (HTTP " + e.getStatusCode().value() + ")");
+
+            if (errorRoot != null && !codefCode.isBlank() && !"CF-00000".equals(codefCode)) {
+                String codefMsg = sanitizeLogValue(errorRoot.path("result").path("message").asString(""));
+                log.warn("[CODEF] API 호출 HTTP 오류: path={}, status={}, code={}, message={}",
+                        path, status, codefCode, codefMsg);
+                validateCodefResult(errorRoot);
+            }
+
+            String detail = extractSafeErrorDetail(errorRoot, e.getResponseBodyAsString());
+            log.warn("[CODEF] API 호출 HTTP 오류: path={}, status={}, detail={}", path, status, detail);
+            throw CodefException.badGateway("CODEF_HTTP_" + status,
+                    "CODEF 서버 응답 오류가 발생했습니다. (HTTP " + status + ")");
         } catch (RestClientException e) {
             log.warn("[CODEF] API 통신 오류: path={}, msg={}", path, e.getMessage());
             throw CodefException.badGateway("CODEF_NETWORK_ERROR", "CODEF 서버 통신 중 시간 초과 또는 네트워크 오류가 발생했습니다.");
@@ -178,6 +192,52 @@ public class CodefApiClient {
         } catch (Exception e) {
             throw CodefException.badGateway("CODEF_PARSE_ERROR", "CODEF 응답 JSON 파싱에 실패했습니다.");
         }
+    }
+
+    private JsonNode tryParseJsonLenient(String rawBody) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return null;
+        }
+        try {
+            return parseJsonLenient(rawBody);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private String extractSafeErrorDetail(String rawBody) {
+        return extractSafeErrorDetail(tryParseJsonLenient(rawBody), rawBody);
+    }
+
+    private String extractSafeErrorDetail(JsonNode parsed, String rawBody) {
+        if (parsed != null) {
+            String resultCode = parsed.path("result").path("code").asString("");
+            String resultMsg = parsed.path("result").path("message").asString("");
+            if (!resultCode.isBlank() || !resultMsg.isBlank()) {
+                return sanitizeLogValue((resultCode + " " + resultMsg).trim());
+            }
+            String err = parsed.path("error").asString("");
+            String errDesc = parsed.path("error_description").asString("");
+            if (!err.isBlank() || !errDesc.isBlank()) {
+                return sanitizeLogValue((err + (errDesc.isBlank() ? "" : ": " + errDesc)).trim());
+            }
+            String msg = parsed.path("message").asString("");
+            if (!msg.isBlank()) {
+                return sanitizeLogValue(msg);
+            }
+        }
+        if (rawBody == null || rawBody.isBlank()) {
+            return "empty_body";
+        }
+        return "unparsed_body(len=" + rawBody.length() + ")";
+    }
+
+    private static String sanitizeLogValue(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String cleaned = value.replaceAll("[\\r\\n\\t\\x00-\\x1F\\x7F]+", " ").trim();
+        return cleaned.length() > 160 ? cleaned.substring(0, 160) + "..." : cleaned;
     }
 
     private void validateCodefResult(JsonNode root) {
