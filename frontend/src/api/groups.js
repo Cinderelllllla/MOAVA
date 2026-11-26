@@ -876,6 +876,29 @@ export async function confirmTransfer(id) {
 
 /* ---- 규칙 · 경고 · 해산 (F24 F25 F31) ---- */
 
+/* F31 운영 규칙 — 서버 연동 (MOA-76)
+   GET /api/v1/groups/{groupId}/rules → { groupId, rulesTitle, rulesBody, leader, groupStatus }
+   PUT /api/v1/groups/{groupId}/rules  { rulesTitle, rulesBody } → 같은 모양 (저장 후 규칙)
+   오류는 apiFetch 가 서버의 한국어 문장(error.message)으로 throw 한다. */
+
+/** 운영 규칙 제목 최대 바이트 (GYE_GROUP.RULES_TITLE VARCHAR2(100), 한글 1자 = 3바이트) */
+export const RULES_TITLE_MAX_BYTES = 100;
+
+/** UTF-8 바이트 수 (서버와 같은 기준으로 앞뒤 공백 제외) */
+export const utf8Bytes = text => new TextEncoder().encode(String(text ?? '').trim()).length;
+
+export async function fetchRules(groupId) {
+  return apiFetch(`/api/v1/groups/${encodeURIComponent(groupId)}/rules`);
+}
+
+export async function updateRules(groupId, { rulesTitle, rulesBody }) {
+  return apiFetch(`/api/v1/groups/${encodeURIComponent(groupId)}/rules`, {
+    method: 'PUT',
+    body: JSON.stringify({ rulesTitle, rulesBody }),
+  });
+}
+
+// TODO(MOA-76): 목업 전용. 화면은 fetchRules / updateRules 를 쓴다. 다른 목업 화면 정리 때 함께 삭제 예정.
 export async function editRule(id, title, body) {
   const g = D.group(id);
 
