@@ -5,6 +5,8 @@ import org.apache.ibatis.annotations.Param;
 
 import com.moava.member.dto.MemberResponse;
 
+import java.util.List;
+
 @Mapper 
 public interface MemberMapper {
     MemberResponse findByEmail(@Param("email") String email);
@@ -31,11 +33,18 @@ public interface MemberMapper {
         @Param("regionSido") String regionSido,
         @Param("regionSigungu") String regionSigungu);
     int updatePassword(@Param("memberId") Long memberId, @Param("passwordHash") String passwordHash);
-    int withdraw(@Param("memberId") Long memberId, @Param("passwordHash") String passwordHash);
+    int withdraw(@Param("memberId") Long memberId);
+
+    List<Long> findExpiredWithdrawnMember();
+    int deleteWithdrawnMember(@Param("memberId") Long memberId);
 
     //운영 중인 모임의 ACTIVE 구성원인지 확인
     int countActiveGroupMemberships(@Param("memberId") Long memberId);
 
     //운영 중인 모임의 모임장인지 확인
     int countOwnedActiveGroups(@Param("memberId") Long memberId);
+
+    int rejectPendingJoinRequests(@Param("memberId") Long memberId);
+
+    int revokeOptionalConsents(@Param("memberId") Long memberId);
 }
