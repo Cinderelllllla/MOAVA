@@ -97,12 +97,17 @@ export function GroupInfo({ g, onSim }) {
 export function InlineSimulator({ g, onClose }) {
   const [v, setV] = useState({ amount: g.amount, members: g.max, round: Math.max(1, Math.min(g.max, Math.ceil(g.max / 2))), rate: g.rate });
   const a = Number(v.amount), n = Number(v.members), r = Number(v.round), rate = Number(v.rate);
-  const valid = Number.isFinite(a) && a > 0 && Number.isInteger(n) && n >= 2 && n <= 30 && Number.isInteger(r) && r >= 1 && r <= n && Number.isFinite(rate) && rate >= 0 && rate <= 20;
+  const hasRate = String(v.rate ?? '').trim() !== '';
+  const valid =
+    Number.isInteger(a) && a >= 5 && a % 5 === 0 &&
+    Number.isInteger(n) && n >= 2 && n <= 30 &&
+    Number.isInteger(r) && r >= 1 && r <= n &&
+    hasRate && Number.isFinite(rate) && rate >= 0 && rate <= 20;
   const total = a * n, shift = finance.payoutShift(a, n, r, rate);
   const F = (label, key, props) => <div className="field"><label>{label}</label><input type="number" value={v[key]} onChange={e => setV({ ...v, [key]: e.target.value })} {...props} /></div>;
   return <div className="inline-sim"><p className="muted mini">{g.title} · 추천 단계와 금융 정보는 그대로 유지돼요.</p>
     <div className="inline-sim-fields">{F('월 납입액 (만 원)', 'amount', { min: 5, step: 5 })}{F('참여 인원', 'members', { min: 2, max: 30 })}{F('수령 회차', 'round', { min: 1, max: n })}{F('가정 연이율 (%)', 'rate', { min: 0, max: 20, step: 0.5 })}</div>
-    {valid ? <div className="quick-results"><div><small>기본 수령액</small><strong>{krw(total)}</strong></div><div><small>{shift < 0 ? '차감액' : '가산액'}</small><strong>{signed(shift, krw)}</strong></div><div className="quick-total"><small>가정 수령액 · {r}회차</small><strong>{krw(total + shift)}</strong></div></div> : <p className="warning mini">금액, 인원(2~30명), 수령 회차, 이율(0~20%)을 확인해 주세요.</p>}
+    {valid ? <div className="quick-results"><div><small>기본 수령액</small><strong>{krw(total)}</strong></div><div><small>{shift < 0 ? '차감액' : '가산액'}</small><strong>{signed(shift, krw)}</strong></div><div className="quick-total"><small>가정 수령액 · {r}회차</small><strong>{krw(total + shift)}</strong></div></div> : <p className="warning mini">월 납입액은 5만 원 단위, 인원 2~30명, 회차는 인원 이내, 이율 0~20%로 입력하세요.</p>}
     <p className="muted mini">수령 순서에 따른 가상 보정 계산이며 실제 이자나 지급액이 아닙니다.</p><div className="actions"><button className="btn soft" onClick={onClose}>← 모임 상세로 돌아가기</button></div></div>;
 }
 

@@ -6,6 +6,8 @@ import { auth, admin, groups, memberName, fetchNotifications, fetchUnreadNotific
 import { PageHead, Card, Input, Empty, ComingSoon } from '../components/ui';
 import { ThemeSwitcher } from '../components/Shell';
 import { notifyNotificationsChanged, isInternalLink } from '../common/notificationEvents';
+import RegionSelector from '../components/RegionSelector';
+import { parseRegionFromServer } from '../common/regions';
 
 /* ---- 알림 (F35) — 서버 알림함 API(/api/v1/notifications) 연동 ----
  * 안 읽은 알림(read=N)과 읽은 알림(read=Y)을 서버에서 따로 받아 온다.
@@ -173,91 +175,116 @@ export function Account() {
   const [saving, setSaving] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
 
-  const [form, setForm] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    phone: '',
-    regionSido: user?.regionSido || '',
-    regionSigungu: user?.regionSigungu || ''
-  });
+  const parsedRegion = parseRegionFromServer(user?.regionSido, user?.regionSigungu, user?.regionDong);
+
+  const buildInitialForm = () => {
+    const r = parseRegionFromServer(user?.regionSido, user?.regionSigungu, user?.regionDong);
+    return {
+      name: user?.name || '',
+      email: user?.email || '',
+      phone: '',
+      regionSido: r.sido,
+      regionSigungu: r.sigungu,
+      regionDong: r.dong
+    };
+  };
+
+  const [form, setForm] = useState(buildInitialForm);
   const [password, setPassword] = useState('');
   const change = key => e => {
     setForm(prev => ({
       ...prev,
-      [key]:e.target.value
+      [key]: e.target.value
     }));
   };
+
+  const startEditing = () => {
+    setForm(buildInitialForm());
+    setEditing(true);
+  };
+
   const handleUpdate = async e => {
     e.preventDefault();
-    if(saving) return;
+    if (saving) return;
     setSaving(true);
-      try{
-        const result = await run(() => auth.updateAccount(form), '회원정보가 수정되었습니다.');
-        if(result.ok){
-          setEditing(false);
-        } 
-      }finally{
-        setSaving(false);
+    try {
+      const result = await run(() => auth.updateAccount(form), '회원정보가 수정되었습니다.');
+      if (result.ok) {
+        setEditing(false);
       }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const cancelUpdate = () => {
-    setForm({
-      name: user.name || '',
-      email: user?.email || '',
-      phone: '',
-      regionSido: user?.regionSido || '',
-      regionSigungu: user?.regionSigungu || ''
-    });
+    setForm(buildInitialForm());
     setEditing(false);
   };
 
-  const handleWithdraw = async() => {
-    if(withdrawing) return;
-    if(!password.trim()){
+  const handleWithdraw = async () => {
+    if (withdrawing) return;
+    if (!password.trim()) {
       alert('탈퇴를 위해 비밀번호를 입력해주세요.');
       return;
     }
     const confirmed = window.confirm('정말 회원 탈퇴를 진행하시겠습니까?');
-    if(!confirmed) return;
+    if (!confirmed) return;
 
     setWithdrawing(true);
 
-    try{
-      const result = await run(() => auth.withdrawAccount(password), '회원 칼뢰가 완료되었습니다.');
-      if(result.ok){
-        navigate('/login', {replace: true});
+    try {
+      const result = await run(() => auth.withdrawAccount(password), '회원 탈퇴가 완료되었습니다.');
+      if (result.ok) {
+        navigate('/login', { replace: true });
       }
-    }finally{
+    } finally {
       setWithdrawing(false);
     }
   };
 
   return <><PageHead kicker="MY ACCOUNT" title="내 정보 · 개인정보" sub="활동 지역 등 계정 정보를 확인합니다." />
     <Card>{editing ? (<form onSubmit={handleUpdate}><h2>회원정보 수정</h2>
-    <div className="form-grid">
-      <Input label = "이름" name = "name" value={form.name} onChange={change('name')} required />
-      <Input label = "이메일" name = "email" type = "email" value={form.email} onChange={change('email')} required />
-      <Input label = "전화번호" name = "phone" type = "tel" placeholder = "01012345678" value={form.phone} onChange={change('phone')} required />
-      <Input label = "활동 지역 시/도" name = "regionSido" value={form.regionSido} onChange={change('regionSido')} required />
-      <Input label = "활동 지역 시/군/구" name = "regionDogungu" value={form.regionSigungu} onChange={change('regionSigungu')} required /></div>
+      <div className="form-grid">
+        <Input label="이름" name="name" value={form.name} onChange={change('name')} required />
+        <Input label="이메일" name="email" type="email" value={form.email} onChange={change('email')} required />
+        <Input label="전화번호" name="phone" type="tel" placeholder="010-0000-0000" value={form.phone} onChange={change('phone')} required />
+        <RegionSelector
+          mode="required"
+          namePrefix="accountRegion"
+          sido={form.regionSido}
+          sigungu={form.regionSigungu}
+          dong={form.regionDong}
+          disabled={saving}
+          onChange={({ sido, sigungu, dong }) =>
+            setForm(prev => ({
+              ...prev,
+              regionSido: sido,
+              regionSigungu: sigungu,
+              regionDong: dong
+            }))
+          }
+        />
+      </div>
       <p className="info mini">전화번호는 암호화되어 서버에 저장됩니다. 수정 시 전화번호를 다시 입력해주세요.</p>
       <div className="actions">
-        <button className="btn promary" type="submit" disabled={saving}>{saving ? '저장 중...' : '수정 완료'}</button>
-        <button className='btn soft' type="button" onClick={cancelUpdate} disabled={saving}>취소</button>
+        <button className="btn primary" type="submit" disabled={saving}>{saving ? '저장 중...' : '수정 완료'}</button>
+        <button className="btn soft" type="button" onClick={cancelUpdate} disabled={saving}>취소</button>
       </div>
-      </form>) : (
-        <><h2>회원 정보</h2>
-        <div className='form-grid'>
+    </form>) : (
+      <><h2>회원 정보</h2>
+        <div className="form-grid">
           <Input label="이름" name="name" value={user?.name || ''} readOnly />
           <Input label="이메일" name="email" type="email" value={user?.email || ''} readOnly />
-          <Input label="활동 지역 시/도" name="regionSido" value={user?.regionSido || ''} readOnly />
-          <Input label="활동 지역 시/군/구" name="regionSigungu" value={user?.regionSigungu || ''} readOnly /></div>
-          <div className="actions">
-            <button className="btn primary" onClick={() => setEditing(true)}>내 정보 수정</button></div></>)}
+          <Input label="활동 지역 · 시/도" name="regionSido" value={parsedRegion.sido || ''} readOnly />
+          <Input label="활동 지역 · 시/군/구" name="regionSigungu" value={parsedRegion.sigungu || ''} readOnly />
+          <Input label="활동 지역 · 읍/면/동" name="regionDong" value={parsedRegion.dong || '미설정 (수정에서 선택 가능)'} readOnly />
+        </div>
+        <div className="actions">
+          <button className="btn primary" onClick={startEditing}>내 정보 수정</button></div></>)}
     <div className="divider"/>
     <h2>회원 탈퇴</h2>
-    <p className="muted mini">탈퇴 시 회원 계정이 비활성화되며, 기존 모임 참여 상태에 따라 탈퇴가 제한퇼 수 있습니다.</p>
+    <p className="muted mini">탈퇴 시 회원 계정이 비활성화되며, 기존 모임 참여 상태에 따라 탈퇴가 제한될 수 있습니다.</p>
     <div className="field">
       <label htmlFor="withdrawPassword">비밀번호 확인</label>
       <input id="withdrawPassword" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="현재 비밀번호 입력" autoComplete="current-password"/>

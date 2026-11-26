@@ -4,6 +4,7 @@
 import * as D from './mock/db';
 import { getAccessToken } from './auth';
 import { apiFetch } from './client';
+import { encodeRegionForServer, parseRegionFromServer } from '../common/regions';
 
 const { db, save, fail } = D;
 
@@ -23,13 +24,28 @@ const OVERDUE_POLICY_CODES = {
 };
 
 function toGroupCreateRequest(f) {
-  const region = String(f.region || '').trim().split(/\s+/);
+  let regionSido = '';
+  let regionSigungu = '';
+
+  if (f.regionSido || f.regionSigungu || f.regionDong) {
+    const encoded = encodeRegionForServer({
+      sido: f.regionSido,
+      sigungu: f.regionSigungu,
+      dong: f.regionDong
+    });
+    regionSido = encoded.regionSido;
+    regionSigungu = encoded.regionSigungu;
+  } else {
+    const region = String(f.region || '').trim().split(/\s+/);
+    regionSido = region[0] || '';
+    regionSigungu = region.slice(1).join(' ');
+  }
 
   return {
     title: f.title.trim(),
     purpose: PURPOSE_CODES[f.purpose] || f.purpose,
-    regionSido: region[0] || '',
-    regionSigungu: region.slice(1).join(' '),
+    regionSido,
+    regionSigungu,
     amount: Number(f.amount) * 10000,
     maxMembers: Number(f.max),
     months: Number(f.months),
@@ -104,8 +120,13 @@ export function mapPublicGroup(dto) {
   const maxMembers = Number(dto.maxMembers || 0);
   const currentMembers = Number(dto.currentMembers ?? 1);
   const amountKrw = Number(dto.amount || 0);
-  const regionSido = String(dto.regionSido || '').trim();
-  const regionSigungu = String(dto.regionSigungu || '').trim();
+  const rawSido = String(dto.regionSido || '').trim();
+  const rawSigungu = String(dto.regionSigungu || '').trim();
+  const rawDong = String(dto.regionDong || '').trim();
+  const parsedRegion = parseRegionFromServer(rawSido, rawSigungu, rawDong);
+  const regionSido = parsedRegion.sido || rawSido;
+  const regionSigungu = parsedRegion.sigungu || rawSigungu;
+  const regionDong = parsedRegion.dong || rawDong;
   const lat = dto.lat != null && dto.lat !== '' && Number.isFinite(Number(dto.lat)) ? Number(dto.lat) : null;
   const lng = dto.lng != null && dto.lng !== '' && Number.isFinite(Number(dto.lng)) ? Number(dto.lng) : null;
 
@@ -121,7 +142,8 @@ export function mapPublicGroup(dto) {
     purpose: purposeLabel(dto.purpose),
     regionSido,
     regionSigungu,
-    region: [regionSido, regionSigungu].filter(Boolean).join(' '),
+    regionDong,
+    region: parsedRegion.displayLabel || [regionSido, regionSigungu, regionDong].filter(Boolean).join(' '),
     lat,
     lng,
     amountKrw,
@@ -360,8 +382,8 @@ export async function createGroup(f) {
   // 7. Spring Boot DTO 변환
   const payload = toGroupCreateRequest(f);
 
-  if (!payload.regionSido || !payload.regionSigungu) {
-    fail('지역을 시·도와 시·군·구까지 입력해 주세요.');
+  if (!payload.regionSido || !payload.regionSigungu || ('regionDong' in f && !String(f.regionDong || '').trim())) {
+    fail('지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
   }
 
   // 8. 서버에 생성 요청 (오류는 apiFetch 가 사용자용 문장으로 바꿔 준다)

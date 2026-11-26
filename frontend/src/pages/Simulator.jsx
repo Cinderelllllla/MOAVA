@@ -7,7 +7,8 @@ import { krw, signed } from '../common/format';
 export default function Simulator() {
   const { ui, setUi } = useApp(); const s = ui.sim;
   const a = Number(s.amount), m = Number(s.members), r = Number(s.round), rate = Number(s.rate);
-  const valid = Number.isInteger(a) && a >= 5 && a % 5 === 0 && Number.isInteger(m) && m >= 2 && m <= 30 && Number.isInteger(r) && r >= 1 && r <= m && rate >= 0 && rate <= 20;
+  const hasRate = String(s.rate ?? '').trim() !== '';
+  const valid = Number.isInteger(a) && a >= 5 && a % 5 === 0 && Number.isInteger(m) && m >= 2 && m <= 30 && Number.isInteger(r) && r >= 1 && r <= m && hasRate && Number.isFinite(rate) && rate >= 0 && rate <= 20;
   const total = a * m, shift = finance.payoutShift(a, m, r, rate);
   const F = (label, key, props) => <div className="field"><label>{label}</label><input type="number" value={s[key]} onChange={e => setUi({ sim: { ...s, [key]: e.target.value } })} {...props} /></div>;
   return <><PageHead kicker="PAYOUT SIMULATOR" title="계모임 시뮬레이터" sub="월 납입액은 5만 원 단위, 결과는 원 단위로 표시합니다." />
