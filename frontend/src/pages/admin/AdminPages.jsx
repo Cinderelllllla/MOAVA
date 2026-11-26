@@ -2,11 +2,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../common/store';
-import { groups, admin, procedures, proofs, memberName, proofPeriod } from '../../api';
-import { PageHead, Card, Input, HistoryTable, Empty } from '../../components/ui';
-import { LoadState, ProofAttachment } from '../../components/shared';
+import { groups, admin, procedures, memberName } from '../../api';
+import { PageHead, Card, Input, Empty } from '../../components/ui';
+import { LoadState } from '../../components/shared';
 import Icon from '../../components/Icon';
-import { krw, formatKrw } from '../../common/format';
+import { formatKrw } from '../../common/format';
 
 const CONSENT_STATUS_LABELS = { PENDING: '응답 대기', AGREED: '동의 완료', REJECTED: '거부', EXEMPT: '동의 면제' };
 const DASHBOARD_EVENT_TYPE_LABEL = {
@@ -452,25 +452,170 @@ export function AdminDissolve() {
   </>;
 }
 
-/* ---- A05 참조번호 (F24: 지정 · 정정(사유) · 이력) ---- */
+/* ---- A05 참조번호 (F24: 지정 · 정정(사유) — 서버 API 연동) ---- */
+const PROOF_STATUS_LABEL = { PENDING: '확인 대기', CONFIRMED: '납입 확인', REVISION: '보완 요청' };
+const monthLabel = ym => (ym && ym.length === 6 ? `${ym.slice(0, 4)}-${ym.slice(4)}` : ym || '-');
+
 export function AdminRefs() {
   const { run } = useApp();
-  const assign = p => { const ref = prompt('거래 참조번호를 지정해 주세요.', admin.nextRef()); if (ref) run(() => admin.assignRef(p.id, ref), '참조번호를 지정했어요.'); };
-  const correct = p => { const ref = prompt('정정할 참조번호', p.ref); if (!ref || ref === p.ref) return; const reason = prompt('정정 사유 (필수)'); run(() => admin.correctRef(p.id, ref, reason), '참조번호를 정정했어요.'); };
-  const items = proofs.allProofs().slice().reverse();
-  return <><PageHead kicker="EVIDENCE REFERENCES" title="거래 참조번호 관리" sub="증빙은 회원이 등록하고 거래 참조번호는 ADMIN이 지정합니다. 정정은 사유와 함께 이력이 남습니다." />
-    <Card><div className="list">{items.length ? items.map(p => <div className="list-item" key={p.id}><div className="item-head"><b>{groups.getGroup(p.groupId)?.title || '모임'} · {proofPeriod(p)}월분 {p.round}회차 · {krw(p.amount)}</b><span className="pill">{p.status}</span></div><p className="muted mini">등록자 {memberName(p.memberId)} · 납입일 {p.date} · 참조번호 <b>{p.ref || '미지정'}</b>{p.refHistory?.length > 0 && ` · 정정 ${p.refHistory.length}회`}</p>{(p.images || []).slice(0, 1).map((d, i) => <ProofAttachment key={i} data={d} />)}{p.refHistory?.length > 0 && <details className="policy-fold"><summary>정정 이력</summary>{p.refHistory.map((h, i) => <p key={i}>{h.at} · {h.from} → {h.to} · {h.reason}</p>)}</details>}
-      <div className="actions">{p.ref ? <button className="btn small soft" onClick={() => correct(p)}>참조번호 정정 (사유)</button> : p.status === '납입 확인' ? <button className="btn small primary" onClick={() => assign(p)}>참조번호 지정</button> : <span className="muted mini">납입 확인 후 지정 가능</span>}</div></div>) : <Empty>등록된 증빙이 없습니다.</Empty>}</div></Card></>;
+  const [tab, setTab] = useState('UNASSIGNED');
+  const [state, setState] = useState({ status: 'loading', items: [], error: '' });
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey(k => k + 1), []);
+
+  useEffect(() => {
+    let alive = true;
+    setState(s => ({ ...s, status: 'loading', error: '' }));
+    admin.fetchAdminRefProofs(tab)
+        .then(items => { if (alive) setState({ status: 'ready', items, error: '' }); })
+        .catch(e => { if (alive) setState({ status: 'error', items: [], error: e?.message || '증빙 목록을 불러오지 못했어요.' }); });
+    return () => { alive = false; };
+  }, [tab, reloadKey]);
+
+  const assign = async p => {
+    let suggestion = '';
+    try { suggestion = (await admin.fetchRefNoSuggestion()) || ''; } catch { /* 제안을 못 받아도 직접 입력하거나 비워서 자동 지정 가능 */ }
+    const ref = prompt('거래 참조번호를 지정해 주세요. (비우면 다음 번호로 자동 지정)', suggestion);
+    if (ref === null) return; // 취소
+    const r = await run(() => admin.assignAdminRefNo(p.paymentProofId, ref), res => `참조번호 ${res?.refNo ?? ''}를 지정했어요.`);
+    if (r.ok) reload();
+  };
+
+  const correct = async p => {
+    const ref = prompt('정정할 참조번호를 입력해 주세요.', p.refNo);
+    if (ref === null || ref.trim() === p.refNo) return;
+    const reason = prompt('정정 사유를 입력해 주세요. (필수)');
+    if (reason === null) return;
+    const r = await run(() => admin.correctAdminRefNo(p.paymentProofId, ref, reason), '참조번호를 정정했어요.');
+    if (r.ok) reload();
+  };
+
+  return <>
+    <PageHead kicker="EVIDENCE REFERENCES" title="거래 참조번호 관리" sub="증빙은 회원이 등록하고 거래 참조번호는 ADMIN이 지정합니다. 정정은 사유와 함께 이력이 남습니다.">
+      <button className="btn soft" onClick={reload}>새로고침</button>
+    </PageHead>
+    <div className="actions">
+      <button className={`btn small ${tab === 'UNASSIGNED' ? 'primary' : 'soft'}`} onClick={() => setTab('UNASSIGNED')}>미지정</button>
+      <button className={`btn small ${tab === 'ASSIGNED' ? 'primary' : 'soft'}`} onClick={() => setTab('ASSIGNED')}>지정 완료</button>
+    </div>
+    <LoadState status={state.status} error={state.error} onRetry={reload} loadingText="증빙 목록을 불러오는 중이에요.">
+      <Card><div className="list">
+        {state.items.length ? state.items.map(p => (
+            <div className="list-item" key={p.paymentProofId}>
+              <div className="item-head">
+                <b>{p.groupTitle || `모임 #${p.groupId}`} · {monthLabel(p.payMonth)}월분 {p.roundNo}회차 · {formatKrw(p.amount)}</b>
+                <span className="pill">{PROOF_STATUS_LABEL[p.status] || p.status}</span>
+              </div>
+              <p className="muted mini">
+                등록자 {p.memberName || '-'} · 납입일 {p.payDate || '-'} · 파일 {p.fileCount ?? 0}개 · 참조번호 <b>{p.refNo || '미지정'}</b>
+                {p.refAssignedAt && ` · 지정 ${formatDateTime(p.refAssignedAt)}`}
+                {p.refCorrectCount > 0 && ` · 정정 ${p.refCorrectCount}회`}
+              </p>
+              <div className="actions">
+                {p.refNo
+                    ? <button className="btn small soft" onClick={() => correct(p)}>참조번호 정정 (사유)</button>
+                    : p.status === 'CONFIRMED'
+                        ? <button className="btn small primary" onClick={() => assign(p)}>참조번호 지정</button>
+                        : <span className="muted mini">납입 확인 후 지정 가능</span>}
+              </div>
+            </div>
+        )) : <Empty>{tab === 'UNASSIGNED' ? '참조번호를 지정할 증빙이 없습니다.' : '참조번호가 지정된 증빙이 없습니다.'}</Empty>}
+      </div></Card>
+    </LoadState>
+  </>;
 }
 
-/* ---- A06 미납 관리 (F26: 감지 목록형) ---- */
-const OD_STATUS = { DETECTED: '감지됨 · 미조치', WARNED: '경고 알림 발송', RESTRICTED: '채팅 제한 중', REVIEW: '수령 후순위 검토', RESOLVED: '납입 확인 · 해소' };
+/* ---- A06 미납 관리 (F26: 감지 목록형 — 서버 API 연동) ---- */
+const OD_STATUS = { DETECTED: '감지됨 · 미조치', WARNED: '경고 알림 발송', RESTRICTED: '채팅 제한 조치', RESOLVED: '납입 확인 · 해소' };
+const OD_ACTION_MSG = { WARN: '경고 알림을 보냈어요.', CHAT_RESTRICT: '채팅을 제한했어요.', CHAT_RELEASE: '채팅 제한을 해제했어요.', ORDER_REVIEW: '수령 후순위 검토를 기록했어요.' };
+const OD_POLICY_LABEL = { ALERT_ONLY: '5일차 알림', ALERT_RESTRICT: '5일차 알림 + 채팅 제한·수령 후순위 검토' };
+
 export function AdminOverdue() {
-  const { run } = useApp(); const open = proofs.overdueCases().filter(c => c.status !== 'RESOLVED').slice().sort((a, b) => b.days - a.days), done = proofs.overdueCases().filter(c => c.status === 'RESOLVED');
-  const act = (c, a) => run(() => admin.overdueAction(c.id, a), '관리자 조치가 반영되었습니다.');
-  const canRestrict = c => (groups.getGroup(c.groupId)?.overduePolicy || '').includes('채팅 제한'); // 모임 생성 시 정한 미납 대응 규칙
-  return <><PageHead kicker="OVERDUE CONTROL" title="관리자 미납 관리" sub="매일 02:00 배치가 납입일 + 5일 경과 &amp; 납입 확인 없음을 감지해 목록에 올립니다. 관리자는 감지 건을 선택해 조치합니다."><button className="btn soft" onClick={() => run(() => proofs.detectOverdue(), n => n ? `${n}건의 미납을 새로 감지했습니다.` : '새로 감지된 미납이 없습니다.')}>감지 배치 수동 실행</button></PageHead>
-    <Card><h2>감지된 미납 · {open.length}건</h2><p className="muted mini">5일 미만은 시스템이 납입 안내 알림만 자동 발송하며 이 목록에 오르지 않습니다. 실제 입금 조회는 지원하지 않으며 증빙 승인 시 자동 해소됩니다.</p>
-      <div className="tablewrap"><table><thead><tr><th>모임</th><th>회원</th><th>귀속 월</th><th>경과일</th><th>상태</th><th>조치</th></tr></thead><tbody>{open.length ? open.map(c => <tr key={c.id}><td>{groups.getGroup(c.groupId)?.title || '—'}<br /><small className="muted">규칙: {groups.getGroup(c.groupId)?.overduePolicy || '-'}</small></td><td>{memberName(c.memberId)}</td><td>{c.period}</td><td>{c.days}일</td><td><span className={`pill ${c.status === 'DETECTED' ? 'warn' : ''}`}>{OD_STATUS[c.status] || c.status}</span></td><td><div className="actions" style={{ margin: 0 }}><button className="btn small soft" onClick={() => act(c, 'warn')}>경고 알림</button>{c.status === 'RESTRICTED' ? <button className="btn small soft" onClick={() => act(c, 'release')}>채팅 제한 해제</button> : <button className="btn small danger" disabled={!canRestrict(c)} title={canRestrict(c) ? '' : "이 모임의 미납 대응 규칙은 '5일차 알림'만 선택되어 채팅 제한을 적용할 수 없습니다."} onClick={() => act(c, 'restrict')}>채팅 제한</button>}<button className="btn small soft" onClick={() => act(c, 'order')}>후순위 검토</button></div></td></tr>) : <tr><td colSpan={6} className="muted">감지된 미납이 없습니다. (배치 수동 실행으로 확인 가능)</td></tr>}</tbody></table></div></Card>
-    <div className="section"><Card><h2>조치 이력</h2><HistoryTable items={admin.history().filter(h => h.type.startsWith('미납')).slice(0, 10)} /><details className="policy-fold"><summary>해소된 건 {done.length}건</summary>{done.length ? done.map(c => <p className="muted mini" key={c.id}>{groups.getGroup(c.groupId)?.title} · {memberName(c.memberId)} · {c.period} · 해소 {c.resolvedAt}</p>) : <p className="muted mini">없음</p>}</details></Card></div></>;
+  const { run } = useApp();
+  const [state, setState] = useState({ status: 'loading', open: [], done: [], error: '' });
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey(k => k + 1), []);
+
+  useEffect(() => {
+    let alive = true;
+    setState(s => ({ ...s, status: 'loading', error: '' }));
+    Promise.all([admin.fetchAdminOverdueCases('OPEN'), admin.fetchAdminOverdueCases('RESOLVED')])
+        .then(([open, done]) => {
+          if (alive) setState({ status: 'ready', open: open.slice().sort((a, b) => (b.elapsedDays ?? 0) - (a.elapsedDays ?? 0)), done, error: '' });
+        })
+        .catch(e => { if (alive) setState({ status: 'error', open: [], done: [], error: e?.message || '미납 목록을 불러오지 못했어요.' }); });
+    return () => { alive = false; };
+  }, [reloadKey]);
+
+  const act = async (c, action) => {
+    let reason;
+    if (action === 'WARN') {
+      if (!confirm(`${c.memberName}님에게 미납 경고 알림(SMS 포함)을 보낼까요?`)) return;
+    } else {
+      reason = prompt('조치 사유를 입력해 주세요. (필수)');
+      if (reason === null) return;
+    }
+    const r = await run(() => admin.applyOverdueAction(c.overdueCaseId, action, reason), OD_ACTION_MSG[action]);
+    if (r.ok) reload();
+  };
+
+  const alertOnly = c => c.overduePolicy === 'ALERT_ONLY'; // 모임 규칙이 '알림만'이면 채팅 제한 불가 (명세 F26-3)
+  // 채팅 제한은 회원 단위(GYE_MEMBER) → 같은 회원의 해소 건이 여러 개여도 1명으로 셈
+  const restrictedDone = new Set(
+      state.done.filter(c => c.chatRestrictedYn === 'Y').map(c => `${c.groupId}-${c.memberId}`)
+  ).size;
+
+  return <>
+    <PageHead kicker="OVERDUE CONTROL" title="관리자 미납 관리" sub="매일 02:00 배치가 납입일 + 5일 경과 &amp; 납입 확인 없음을 감지해 목록에 올립니다. 관리자는 감지 건을 선택해 조치합니다.">
+      <button className="btn soft" onClick={reload}>새로고침</button>
+    </PageHead>
+    <LoadState status={state.status} error={state.error} onRetry={reload} loadingText="미납 목록을 불러오는 중이에요.">
+      <Card>
+        <h2>감지된 미납 · {state.open.length}건</h2>
+        <p className="muted mini">5일 미만은 시스템이 납입 안내 알림만 자동 발송하며 이 목록에 오르지 않습니다. 실제 입금 조회는 지원하지 않으며 증빙 승인 시 자동 해소됩니다.</p>
+        <div className="tablewrap"><table>
+          <thead><tr><th>모임</th><th>회원</th><th>귀속 월</th><th>경과일</th><th>상태</th><th>조치</th></tr></thead>
+          <tbody>
+          {state.open.length ? state.open.map(c => (
+              <tr key={c.overdueCaseId}>
+                <td>{c.groupTitle || `모임 #${c.groupId}`}<br /><small className="muted">규칙: {OD_POLICY_LABEL[c.overduePolicy] || c.overduePolicy || '-'}</small></td>
+                <td>{c.memberName || '-'}</td>
+                <td>{monthLabel(c.payMonth)}</td>
+                <td>{c.elapsedDays ?? '-'}일</td>
+                <td>
+                  <span className={`pill ${c.status === 'DETECTED' ? 'warn' : ''}`}>{OD_STATUS[c.status] || c.status}</span>
+                  {c.chatRestrictedYn === 'Y' && <><br /><small className="muted">채팅 제한 중</small></>}
+                </td>
+                <td><div className="actions" style={{ margin: 0 }}>
+                  <button className="btn small soft" disabled={c.status !== 'DETECTED'} title={c.status !== 'DETECTED' ? '이미 경고를 보냈거나 경고할 수 없는 상태입니다.' : ''} onClick={() => act(c, 'WARN')}>경고 알림</button>
+                  {c.chatRestrictedYn === 'Y'
+                      ? <button className="btn small soft" onClick={() => act(c, 'CHAT_RELEASE')}>채팅 제한 해제</button>
+                      : <button className="btn small danger" disabled={alertOnly(c)} title={alertOnly(c) ? '이 모임은 미납 시 알림만 보내는 규칙이라 채팅을 제한할 수 없습니다.' : ''} onClick={() => act(c, 'CHAT_RESTRICT')}>채팅 제한</button>}
+                  <button className="btn small soft" onClick={() => act(c, 'ORDER_REVIEW')}>후순위 검토</button>
+                </div></td>
+              </tr>
+          )) : <tr><td colSpan={6} className="muted">감지된 미납이 없습니다.</td></tr>}
+          </tbody>
+        </table></div>
+      </Card>
+      <div className="section"><Card>
+        <details className="policy-fold">
+          <summary>
+            해소된 건 {state.done.length}건
+            {restrictedDone > 0 && ` · 채팅 제한 남은 회원 ${restrictedDone}명`}
+          </summary>
+          {state.done.length ? state.done.map(c => (
+              <p className="muted mini" key={c.overdueCaseId}>
+                {c.groupTitle} · {c.memberName} · {monthLabel(c.payMonth)} · 해소 {formatDateTime(c.resolvedAt)}
+                {/* 해소돼도 채팅 제한은 그대로 남음 → RESOLVED 건은 해제만 가능 (명세 v3.5 F26-6) */}
+                {c.chatRestrictedYn === 'Y' && <>
+                  {' · '}<b>채팅 제한 중</b>{' '}
+                  <button type="button" className="btn small soft" onClick={() => act(c, 'CHAT_RELEASE')}>채팅 제한 해제</button>
+                </>}
+              </p>
+          )) : <p className="muted mini">없음</p>}
+        </details>
+      </Card></div>
+    </LoadState>
+  </>;
 }

@@ -67,6 +67,7 @@ export default function Evidence() {
   const selectedGroup = serverGroups.find(
     (group) => String(group.groupId) === String(selectedGroupId)
   );
+  const isOwner = selectedGroup?.role === 'OWNER';   // 승인·보완 요청은 모임장만 (서버도 403으로 막음)
   const amountInManwon = Number(selectedGroup?.amount || 0) / 10000;
 
   useEffect(() => {
@@ -354,7 +355,7 @@ export default function Evidence() {
                                 }}
                               >보완 재제출</button>
                             )}
-                          {proof.status === '확인 대기' && <div className="actions">
+                          {proof.status === '확인 대기' && isOwner && <div className="actions">
                             <button
                               type="button"
                               className="btn small primary"
