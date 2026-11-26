@@ -22,6 +22,7 @@ import {
 
 import { PageHead, Card, Empty } from '../components/ui';
 import { useOpGroup, GroupSelect, LoadState } from '../components/shared';
+import { formatRegionFromServer } from '../common/regions';
 import Icon from '../components/Icon';
 
 import {
@@ -82,9 +83,7 @@ function ServerOperations() {
     ],
     [
       '지역',
-      [g.regionSido, g.regionSigungu]
-        .filter(Boolean)
-        .join(' ') || '미등록'
+      formatRegionFromServer(g, '미등록')
     ],
     ['월 납입액', wonFromKrw(g.amount)],
     ['납입일', `매월 ${g.payDay}일`],

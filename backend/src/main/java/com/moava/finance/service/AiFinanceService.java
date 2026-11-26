@@ -2,6 +2,7 @@ package com.moava.finance.service;
 
 import com.moava.finance.dto.AiContributionRequest;
 import com.moava.finance.mapper.AiPayoutMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -26,10 +27,17 @@ public class AiFinanceService {
 
     private final MlClient ml;
     private final AiPayoutMapper mapper;
+    private final FinanceProfileService profileService;
 
     public AiFinanceService(MlClient ml, AiPayoutMapper mapper) {
+        this(ml, mapper, null);
+    }
+
+    @Autowired
+    public AiFinanceService(MlClient ml, AiPayoutMapper mapper, FinanceProfileService profileService) {
         this.ml = ml;
         this.mapper = mapper;
+        this.profileService = profileService;
     }
 
     /**
@@ -41,6 +49,7 @@ public class AiFinanceService {
     static final List<String> OTHERS_RISK_KEYS = List.of("risk_level", "risk_label");
 
     /** 추천 납입액. 응답 모양은 ML 과 같게 두되, risk 에서 연체 확률 등은 뺀다. */
+    @SuppressWarnings("unchecked")
     public Map<String, Object> contribution(long memberId, AiContributionRequest req) {
         if (req == null) {
             throw invalidAmount();
@@ -52,7 +61,11 @@ public class AiFinanceService {
         body.put("monthly_saving", optional(req.monthlySaving()));
         body.put("emergency_fund", optional(req.emergencyFund()));
         Map<String, Object> result = new LinkedHashMap<>(ml.contribution(body));
-        result.put("risk", pick(result.get("risk"), OWN_RISK_KEYS));
+        Object rawRisk = result.get("risk");
+        if (profileService != null && rawRisk instanceof Map<?, ?> riskMap) {
+            profileService.recordRiskScore(memberId, (Map<String, Object>) riskMap);
+        }
+        result.put("risk", pick(rawRisk, OWN_RISK_KEYS));
         return result;
     }
 

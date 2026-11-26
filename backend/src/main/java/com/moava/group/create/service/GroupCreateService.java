@@ -5,6 +5,7 @@ import com.moava.group.create.dto.GroupCreateResponse;
 import com.moava.group.create.mapper.GroupCreateMapper;
 import com.moava.group.map.GeoPoint;
 import com.moava.group.map.KakaoGeocodingClient;
+import com.moava.group.search.event.GroupSearchSyncEvent;
 import com.moava.notification.common.domain.NotifType;
 import com.moava.notification.common.service.NotificationService;
 
@@ -15,6 +16,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +37,22 @@ public class GroupCreateService {
     private final GroupAccountCrypto crypto;
     private final KakaoGeocodingClient kakaoGeocodingClient;
     private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    public GroupCreateService(
+            GroupCreateMapper mapper,
+            GroupAccountCrypto crypto,
+            KakaoGeocodingClient kakaoGeocodingClient,
+            NotificationService notificationService,
+            ApplicationEventPublisher eventPublisher
+    ) {
+        this.mapper = mapper;
+        this.crypto = crypto;
+        this.kakaoGeocodingClient = kakaoGeocodingClient;
+        this.notificationService = notificationService;
+        this.eventPublisher = eventPublisher;
+    }
 
     public GroupCreateService(
             GroupCreateMapper mapper,
@@ -41,10 +60,7 @@ public class GroupCreateService {
             KakaoGeocodingClient kakaoGeocodingClient,
             NotificationService notificationService
     ) {
-        this.mapper = mapper;
-        this.crypto = crypto;
-        this.kakaoGeocodingClient = kakaoGeocodingClient;
-        this.notificationService = notificationService;
+        this(mapper, crypto, kakaoGeocodingClient, notificationService, null);
     }
 
     public void validateCreateRequest(GroupCreateRequest request) {
@@ -195,14 +211,18 @@ public class GroupCreateService {
                 GroupInviteCodeGenerator.generate();
 
         // 카카오맵 지역 좌표 조회
-        // 최신 develop의 지오코딩 기능 유지
+        // 최신 develop의 지오코딩 기능 유지 (읍/면/동 입력 시 동 단위까지 지오코딩)
         String regionSido = request.regionSido().strip();
         String regionSigungu = request.regionSigungu().strip();
+        String regionDong = (request.regionDong() == null || request.regionDong().isBlank())
+                ? null
+                : request.regionDong().strip();
 
         Optional<GeoPoint> geoPoint =
                 kakaoGeocodingClient.geocodeRegion(
                         regionSido,
-                        regionSigungu
+                        regionSigungu,
+                        regionDong
                 );
 
         BigDecimal lat =
@@ -219,6 +239,7 @@ public class GroupCreateService {
                 request.purpose(),
                 regionSido,
                 regionSigungu,
+                regionDong,
                 lat,
                 lng,
                 request.amount(),
@@ -338,7 +359,12 @@ public class GroupCreateService {
                 )
         );
 
-        // 13. 결과 반환
+        // 13. F12 - 커밋 후 ES 공개 모임 검색 인덱스 동기화 이벤트 발행
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+        }
+
+        // 14. 결과 반환
         return new GroupCreateResponse(
                 groupId,
                 authenticatedMemberId,

@@ -26,6 +26,7 @@ const OVERDUE_POLICY_CODES = {
 function toGroupCreateRequest(f) {
   let regionSido = '';
   let regionSigungu = '';
+  let regionDong = null;
 
   if (f.regionSido || f.regionSigungu || f.regionDong) {
     const encoded = encodeRegionForServer({
@@ -35,10 +36,12 @@ function toGroupCreateRequest(f) {
     });
     regionSido = encoded.regionSido;
     regionSigungu = encoded.regionSigungu;
+    regionDong = encoded.regionDong;
   } else {
     const region = String(f.region || '').trim().split(/\s+/);
     regionSido = region[0] || '';
-    regionSigungu = region.slice(1).join(' ');
+    regionSigungu = region[1] || '';
+    regionDong = region.slice(2).join(' ') || null;
   }
 
   return {
@@ -46,6 +49,7 @@ function toGroupCreateRequest(f) {
     purpose: PURPOSE_CODES[f.purpose] || f.purpose,
     regionSido,
     regionSigungu,
+    regionDong,
     amount: Number(f.amount) * 10000,
     maxMembers: Number(f.max),
     months: Number(f.months),
@@ -196,6 +200,53 @@ export async function fetchPublicGroups({ region, purpose, q } = {}) {
   }
 
   return data.map(mapPublicGroup);
+}
+
+/** F11 추천액·회원 활동 지역 기반 계모임 추천 조회 (GET /api/groups/recommendations) */
+export async function fetchRecommendedGroups({ amountManwon, regionSido, regionSigungu } = {}) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const params = new URLSearchParams();
+  if (amountManwon != null && Number.isFinite(Number(amountManwon)) && Number(amountManwon) >= 0) {
+    params.set('amount', String(Math.round(Number(amountManwon) * 10000)));
+  }
+  const cleanSido = String(regionSido || '').trim();
+  if (cleanSido && cleanSido !== '전체') {
+    params.set('regionSido', cleanSido);
+  }
+  const cleanSigungu = String(regionSigungu || '').trim();
+  if (cleanSigungu && cleanSigungu !== '전체') {
+    params.set('regionSigungu', cleanSigungu);
+  }
+
+  const qs = params.toString();
+  const data = await apiFetch(qs ? `/api/groups/recommendations?${qs}` : '/api/groups/recommendations');
+
+  const items = Array.isArray(data?.items)
+    ? data.items.map((item) => ({
+        ...mapPublicGroup(item),
+        healthScore: Number.isFinite(Number(item.healthScore)) ? Number(item.healthScore) : null,
+        amountDiffKrw: Number.isFinite(Number(item.amountDiff)) ? Number(item.amountDiff) : 0,
+        amountDiff: Number.isFinite(Number(item.amountDiff)) ? Number(item.amountDiff) / 10000 : 0,
+      }))
+    : [];
+
+  const parsedRegion = parseRegionFromServer(data?.regionSido, data?.regionSigungu, data?.regionDong);
+  return {
+    recommendedAmountKrw: Number(data?.recommendedAmount || 0),
+    recommendedAmount: Number(data?.recommendedAmount || 0) / 10000,
+    maxAmountKrw: Number(data?.maxAmount || 0),
+    maxAmount: Number(data?.maxAmount || 0) / 10000,
+    regionSido: parsedRegion.sido || data?.regionSido || '',
+    regionSigungu: parsedRegion.sigungu || data?.regionSigungu || '',
+    regionDong: parsedRegion.dong || data?.regionDong || '',
+    regionLabel: parsedRegion.displayLabel || [data?.regionSido, data?.regionSigungu, data?.regionDong].filter(Boolean).join(' '),
+    matchedScope: data?.matchedScope || 'NONE',
+    expandedToSido: Boolean(data?.expandedToSido),
+    items,
+  };
 }
 
 export const endedGroups = () =>
@@ -382,7 +433,7 @@ export async function createGroup(f) {
   // 7. Spring Boot DTO 변환
   const payload = toGroupCreateRequest(f);
 
-  if (!payload.regionSido || !payload.regionSigungu || ('regionDong' in f && !String(f.regionDong || '').trim())) {
+  if (!payload.regionSido || !payload.regionSigungu || ('regionDong' in f && !payload.regionDong)) {
     fail('지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
   }
 

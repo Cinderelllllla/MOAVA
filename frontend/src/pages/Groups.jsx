@@ -123,6 +123,17 @@ export default function Groups() {
     setReloadTick((n) => n + 1);
   }, []);
 
+  useEffect(() => {
+    if (!modal) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setModal(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [modal]);
+
   const list = hasActiveFilter ? filteredGroups : allGroups;
   const listStatus = hasActiveFilter
     ? (allStatus === 'error' && filterStatus !== 'ready' ? 'error' : filterStatus)
@@ -254,7 +265,16 @@ export default function Groups() {
         <section className="matching-map">
           <Card>
             <div className="map-title-row">
-              <h2>우리 동네 계모임 지도</h2>
+              <div>
+                <h2>우리 동네 계모임 지도</h2>
+                <p className="muted mini" aria-live="polite">
+                  {listStatus === 'loading'
+                    ? '공개 모임을 검색하는 중이에요...'
+                    : hasActiveFilter
+                      ? `검색 결과 ${list.length}건`
+                      : `공개 모임 총 ${list.length}건`}
+                </p>
+              </div>
               <button
                 type="button"
                 className="btn small soft"
@@ -270,6 +290,7 @@ export default function Groups() {
               <KakaoGroupMap
                 groups={list}
                 focusId={chosen?.id ?? null}
+                regionFilter={{ sido: regionSido, sigungu: regionSigungu, dong: regionDong }}
                 onSelectRegion={(region, _regionGroups, pinKey) => setModal({ region, pinKey })}
               />
             )}

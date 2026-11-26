@@ -118,6 +118,9 @@ html[data-theme="v9meeting"] .ops-log>div{border-color:#d5ebe2;background:#fbfef
 .ld-theme button{border:0;background:transparent;font:inherit;font-size:12px;font-weight:800;color:var(--muted);padding:6px 10px;border-radius:8px;cursor:pointer}
 .ld-theme button.on{background:#fff;color:var(--blue);box-shadow:0 2px 6px rgba(0,0,0,.08)}
 .auth-back{text-align:center;margin:-8px 0 14px}
+.auth-admin-entry{margin-top:14px;text-align:right}
+.auth-admin-entry a{font-size:12px;color:var(--t-text5,var(--muted));text-decoration:none}
+.auth-admin-entry a:hover{color:var(--t-text2,var(--blue));text-decoration:underline}
 
 /* ---- F13 Kakao Maps 지역 계모임 지도 ---- */
 .map.kakao-map-wrap{background:#e9f1f8!important;position:relative;overflow:hidden}

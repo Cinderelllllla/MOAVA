@@ -139,7 +139,7 @@ export async function signupWithServer(f) {
     dong: f.regionDong
   });
 
-  if (!encodedRegion.regionSido || !encodedRegion.regionSigungu) {
+  if (!encodedRegion.regionSido || !encodedRegion.regionSigungu || !encodedRegion.regionDong) {
     throw new Error('활동 지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
   }
 
@@ -150,6 +150,7 @@ export async function signupWithServer(f) {
     phone: f.phone.trim(),
     regionSido: encodedRegion.regionSido,
     regionSigungu: encodedRegion.regionSigungu,
+    regionDong: encodedRegion.regionDong,
     termsAgreed: f.termsAgreed,
     privacyAgreed: f.privacyAgreed
   });
@@ -213,7 +214,7 @@ export async function updateAccount(f) {
     dong: f.regionDong
   });
 
-  if (!encodedRegion.regionSido || !encodedRegion.regionSigungu) {
+  if (!encodedRegion.regionSido || !encodedRegion.regionSigungu || !encodedRegion.regionDong) {
     fail('활동 지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
   }
 
@@ -224,7 +225,8 @@ export async function updateAccount(f) {
       email: f.email.trim(),
       phone: f.phone.trim(),
       regionSido: encodedRegion.regionSido,
-      regionSigungu: encodedRegion.regionSigungu
+      regionSigungu: encodedRegion.regionSigungu,
+      regionDong: encodedRegion.regionDong
     })
   });
   setServerMember(updatedUser);

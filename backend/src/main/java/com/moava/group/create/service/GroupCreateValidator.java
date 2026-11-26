@@ -46,13 +46,20 @@ public final class GroupCreateValidator {
             );
         }
 
-        // 4. 지역 (각각 30 BYTE)
+        // 4. 지역 (시·도 30 BYTE, 시·군·구 30 BYTE, 읍·면·동 선택 최대 40 BYTE)
         if (blank(request.regionSido())
                 || exceedsBytes(request.regionSido(), 30)
                 || blank(request.regionSigungu())
                 || exceedsBytes(request.regionSigungu(), 30)) {
             throw new IllegalArgumentException(
                     "시·도와 시·군·구를 정확히 입력해 주세요."
+            );
+        }
+
+        if (!blank(request.regionDong())
+                && exceedsBytes(request.regionDong(), 40)) {
+            throw new IllegalArgumentException(
+                    "읍·면·동을 정확히 입력해 주세요."
             );
         }
 

@@ -196,6 +196,10 @@ export function Login() {
           회원가입
         </Link>
       </div>
+
+      <div className="auth-admin-entry">
+        <Link to="/admin/login">관리자 로그인 →</Link>
+      </div>
     </AuthCard>
   );
 }

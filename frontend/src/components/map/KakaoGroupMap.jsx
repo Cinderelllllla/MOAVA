@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadKakaoMaps } from './loadKakaoMaps';
 import {
+  formatRegionLabel,
   getRegionCoords,
   parseRegionFromServer,
   shortSidoName,
@@ -9,6 +10,68 @@ import {
 
 const DEFAULT_CENTER = { lat: 37.5665, lng: 126.978 }; // 서울 시청
 const DEFAULT_LEVEL = 7;
+
+const METROPOLITAN_SIDOS = new Set([
+  '서울특별시',
+  '부산광역시',
+  '대구광역시',
+  '인천광역시',
+  '광주광역시',
+  '대전광역시',
+  '울산광역시',
+  '세종특별자치시',
+]);
+
+const regionGeocodeCache = new Map();
+
+function cleanFilterPart(value) {
+  const s = String(value || '').trim();
+  return !s || s === '전체' ? '' : s;
+}
+
+function resolveRegionZoomLevel(sido, sigungu, dong) {
+  if (dong) return 5;
+  if (sigungu) return 7;
+  if (sido) return METROPOLITAN_SIDOS.has(sido) ? 8 : 10;
+  return DEFAULT_LEVEL;
+}
+
+function resolveRegionCenter(kakao, sido, sigungu, dong) {
+  const fallback = getRegionCoords(sido, sigungu, dong) || DEFAULT_CENTER;
+  const query = formatRegionLabel({ sido, sigungu, dong });
+  if (!query) return Promise.resolve(DEFAULT_CENTER);
+
+  if (regionGeocodeCache.has(query)) {
+    return Promise.resolve(regionGeocodeCache.get(query));
+  }
+
+  const Geocoder = kakao?.maps?.services?.Geocoder;
+  const okStatus = kakao?.maps?.services?.Status?.OK;
+  if (!Geocoder || !okStatus) {
+    return Promise.resolve(fallback);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const geocoder = new Geocoder();
+      geocoder.addressSearch(query, (result, status) => {
+        if (status === okStatus && Array.isArray(result) && result.length > 0) {
+          const lat = Number(result[0].y);
+          const lng = Number(result[0].x);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            const coords = { lat, lng };
+            regionGeocodeCache.set(query, coords);
+            resolve(coords);
+            return;
+          }
+        }
+        resolve(fallback);
+      });
+    } catch {
+      resolve(fallback);
+    }
+  });
+}
 
 export function normalizeSido(sido) {
   return shortSidoName(sido);
@@ -105,7 +168,12 @@ function createPinElement(pin, active, onClick) {
   return btn;
 }
 
-export default function KakaoGroupMap({ groups = [], focusId = null, onSelectRegion }) {
+export default function KakaoGroupMap({
+  groups = [],
+  focusId = null,
+  regionFilter = null,
+  onSelectRegion,
+}) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const overlaysRef = useRef([]); // Array<{ overlay, button, pin }>
@@ -116,6 +184,10 @@ export default function KakaoGroupMap({ groups = [], focusId = null, onSelectReg
 
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [errorMsg, setErrorMsg] = useState('');
+
+  const selectedSido = cleanFilterPart(regionFilter?.sido);
+  const selectedSigungu = cleanFilterPart(regionFilter?.sigungu);
+  const selectedDong = cleanFilterPart(regionFilter?.dong);
 
   // 동일 읍/면/동(또는 시/군/구) 모임을 하나의 핀으로 집계 (핀 수 = 지역 수, 배지 수 = 모임 수)
   const regionPins = useMemo(() => {
@@ -194,19 +266,32 @@ export default function KakaoGroupMap({ groups = [], focusId = null, onSelectReg
     };
   }, []);
 
-  // 2) 지역 핀 오버레이 동기화 (목록 변경 시에만 재생성 및 뷰포트 맞춤)
+  // 2) 지역 핀 오버레이 동기화 및 선택 지역/핀 기준 지도 뷰포트 이동
   useEffect(() => {
     const map = mapRef.current;
     const kakao = window.kakao;
-    if (status !== 'ready' || !map || !kakao?.maps) return;
+    if (status !== 'ready' || !map || !kakao?.maps) return undefined;
+
+    let cancelled = false;
 
     overlaysRef.current.forEach(({ overlay }) => overlay.setMap(null));
     overlaysRef.current = [];
 
     if (regionPins.length === 0) {
-      map.setCenter(new kakao.maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
-      map.setLevel(DEFAULT_LEVEL);
-      return;
+      if (selectedSido) {
+        const targetLevel = resolveRegionZoomLevel(selectedSido, selectedSigungu, selectedDong);
+        resolveRegionCenter(kakao, selectedSido, selectedSigungu, selectedDong).then((coords) => {
+          if (cancelled || mapRef.current !== map) return;
+          map.setLevel(targetLevel);
+          map.setCenter(new kakao.maps.LatLng(coords.lat, coords.lng));
+        });
+      } else {
+        map.setLevel(DEFAULT_LEVEL);
+        map.setCenter(new kakao.maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
+      }
+      return () => {
+        cancelled = true;
+      };
     }
 
     const bounds = new kakao.maps.LatLngBounds();
@@ -232,12 +317,16 @@ export default function KakaoGroupMap({ groups = [], focusId = null, onSelectReg
     });
 
     if (regionPins.length === 1) {
+      map.setLevel(regionPins[0].level === 'dong' || selectedDong ? 5 : 6);
       map.setCenter(new kakao.maps.LatLng(regionPins[0].lat, regionPins[0].lng));
-      map.setLevel(regionPins[0].level === 'dong' ? 5 : 6);
     } else {
       map.setBounds(bounds, 56, 56, 72, 56);
     }
-  }, [status, regionPins]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, regionPins, selectedSido, selectedSigungu, selectedDong]);
 
   // 3) 선택 모임(focusId) 변경 시에는 지도 줌·위치를 유지한 채 활성 핀 스타일만 갱신
   useEffect(() => {

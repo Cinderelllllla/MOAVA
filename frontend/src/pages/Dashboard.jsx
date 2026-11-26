@@ -13,6 +13,7 @@ import { NOTIFICATIONS_CHANGED } from '../common/notificationEvents';
 import { PageHead, Card } from '../components/ui';
 import { FinanceAssessmentStatus, LoadState, MonthlyChart, RiskLabel } from '../components/shared';
 import { won, wonFromKrw } from '../common/format';
+import { formatRegionFromServer } from '../common/regions';
 import Icon from '../components/Icon';
 
 /** 서버의 안 읽은 알림 개수. 실패하면 null(화면에는 '-' 표시) */
@@ -224,7 +225,7 @@ export default function Dashboard() {
                     >
                       월 {wonFromKrw(g.amount)}
                       {' · '}매월 {g.payDay}일
-                      {' · '}{[g.regionSido, g.regionSigungu].filter(Boolean).join(' ')}
+                      {' · '}{formatRegionFromServer(g)}
                       {` · 최대 ${g.maxMembers}명`}
                       {' · '}내 계모임 보기 →
                     </p>

@@ -100,4 +100,46 @@ class KakaoGeocodingClientTest {
         assertTrue(disabledClient.geocodeRegion("서울특별시", "마포구").isEmpty());
         unusedServer.verify();
     }
+
+    @Test
+    void 읍면동이_있으면_시도_시군구_읍면동을_공백으로_조합해_질의한다() {
+        server.expect(requestTo(startsWith("https://kakao.test/v2/local/search/address.json")))
+                .andExpect(request -> {
+                    String rawQuery = org.springframework.web.util.UriComponentsBuilder
+                            .fromUri(request.getURI()).build().getQueryParams().getFirst("query");
+                    String decoded = java.net.URLDecoder.decode(rawQuery, java.nio.charset.StandardCharsets.UTF_8);
+                    assertEquals("경기도 고양시 일산동구 장항동", decoded);
+                })
+                .andRespond(withSuccess(
+                        "{\"documents\":[{\"x\":\"126.7745123\",\"y\":\"37.6583654\"}]}",
+                        MediaType.APPLICATION_JSON
+                ));
+
+        Optional<GeoPoint> result = client.geocodeRegion("경기도", "고양시 일산동구", "장항동");
+
+        assertTrue(result.isPresent());
+        assertEquals(new BigDecimal("37.6583654"), result.get().lat());
+        assertEquals(new BigDecimal("126.7745123"), result.get().lng());
+        server.verify();
+    }
+
+    @Test
+    void 읍면동이_null이거나_공백이면_시도와_시군구만으로_질의한다() {
+        server.expect(requestTo(startsWith("https://kakao.test/v2/local/search/address.json")))
+                .andExpect(request -> {
+                    String rawQuery = org.springframework.web.util.UriComponentsBuilder
+                            .fromUri(request.getURI()).build().getQueryParams().getFirst("query");
+                    String decoded = java.net.URLDecoder.decode(rawQuery, java.nio.charset.StandardCharsets.UTF_8);
+                    assertEquals("서울특별시 마포구", decoded);
+                })
+                .andRespond(withSuccess(
+                        "{\"documents\":[{\"x\":\"126.9018489\",\"y\":\"37.5663245\"}]}",
+                        MediaType.APPLICATION_JSON
+                ));
+
+        Optional<GeoPoint> result = client.geocodeRegion("서울특별시", "마포구", "   ");
+
+        assertTrue(result.isPresent());
+        server.verify();
+    }
 }

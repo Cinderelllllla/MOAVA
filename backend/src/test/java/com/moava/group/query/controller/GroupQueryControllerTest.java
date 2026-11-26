@@ -56,6 +56,7 @@ class GroupQueryControllerTest {
                 "SAVINGS",
                 "서울특별시",
                 "마포구",
+                "합정동",
                 new BigDecimal("37.5663245"),
                 new BigDecimal("126.9018489"),
                 200_000L,
@@ -82,6 +83,7 @@ class GroupQueryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].groupId").value(101))
                 .andExpect(jsonPath("$[0].ownerName").value("김○늘"))
+                .andExpect(jsonPath("$[0].regionDong").value("합정동"))
                 .andExpect(jsonPath("$[0].lat").value(37.5663245))
                 .andExpect(jsonPath("$[0].lng").value(126.9018489))
                 .andExpect(jsonPath("$[0].rulesTitle").value("안전한 납입과 정산"))
@@ -100,6 +102,73 @@ class GroupQueryControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(groupQueryService);
+    }
+
+    @Test
+    @DisplayName("GET /api/groups/recommendations: 로그인 회원이 추천을 조회하면 200과 추천 결과를 반환한다")
+    void getRecommendedGroups_authenticated_200() throws Exception {
+        com.moava.group.query.dto.RecommendedGroupResponse recItem =
+                new com.moava.group.query.dto.RecommendedGroupResponse(
+                        101L,
+                        "마포 직장인 목돈 모으기",
+                        2L,
+                        "김○늘",
+                        "RECRUITING",
+                        "SAVINGS",
+                        "서울특별시",
+                        "마포구",
+                        "합정동",
+                        new BigDecimal("37.5663245"),
+                        new BigDecimal("126.9018489"),
+                        200_000L,
+                        6,
+                        2,
+                        6,
+                        5,
+                        new BigDecimal("3.0"),
+                        "PUBLIC",
+                        "마포구 직장인 저축 모임",
+                        "안전한 납입과 정산",
+                        "매월 5일 납입",
+                        false,
+                        "NONE",
+                        92,
+                        0L
+                );
+        when(groupQueryService.getRecommendedGroups(10L, 200_000L, null, null))
+                .thenReturn(new com.moava.group.query.dto.GroupRecommendationResponse(
+                        200_000L,
+                        300_000L,
+                        "서울특별시",
+                        "마포구",
+                        "합정동",
+                        "SIGUNGU",
+                        false,
+                        List.of(recItem)
+                ));
+
+        mockMvc.perform(get("/api/groups/recommendations")
+                        .param("amount", "200000")
+                        .principal(memberToken("10")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recommendedAmount").value(200000))
+                .andExpect(jsonPath("$.maxAmount").value(300000))
+                .andExpect(jsonPath("$.matchedScope").value("SIGUNGU"))
+                .andExpect(jsonPath("$.expandedToSido").value(false))
+                .andExpect(jsonPath("$.items[0].groupId").value(101))
+                .andExpect(jsonPath("$.items[0].healthScore").value(92));
+    }
+
+    @Test
+    @DisplayName("GET /api/groups/recommendations: 음수 금액이면 400을 반환한다")
+    void getRecommendedGroups_negativeAmount_400() throws Exception {
+        when(groupQueryService.getRecommendedGroups(10L, -1000L, null, null))
+                .thenThrow(new IllegalArgumentException("음수 불가"));
+
+        mockMvc.perform(get("/api/groups/recommendations")
+                        .param("amount", "-1000")
+                        .principal(memberToken("10")))
+                .andExpect(status().isBadRequest());
     }
 
     private static UsernamePasswordAuthenticationToken memberToken(String memberId) {

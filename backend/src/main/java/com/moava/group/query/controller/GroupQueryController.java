@@ -3,6 +3,7 @@ package com.moava.group.query.controller;
 
 import com.moava.group.query.dto.GroupListResponse;
 import com.moava.group.query.dto.GroupMemberResponse;
+import com.moava.group.query.dto.GroupRecommendationResponse;
 import com.moava.group.query.dto.PublicGroupResponse;
 import com.moava.group.query.service.GroupQueryService;
 
@@ -43,6 +44,30 @@ public class GroupQueryController {
         return ResponseEntity.ok(
                 groupQueryService.getPublicGroups(memberId, region, purpose, q)
         );
+    }
+
+    @GetMapping("/recommendations")
+    public ResponseEntity<GroupRecommendationResponse> getRecommendedGroups(
+            @RequestParam(required = false) Long amount,
+            @RequestParam(required = false) String regionSido,
+            @RequestParam(required = false) String regionSigungu,
+            Authentication authentication
+    ) {
+        Long memberId = resolveMemberId(authentication);
+
+        if (memberId == null) {
+            return ResponseEntity.status(
+                    HttpStatus.UNAUTHORIZED
+            ).build();
+        }
+
+        try {
+            return ResponseEntity.ok(
+                    groupQueryService.getRecommendedGroups(memberId, amount, regionSido, regionSigungu)
+            );
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     @GetMapping("/my")

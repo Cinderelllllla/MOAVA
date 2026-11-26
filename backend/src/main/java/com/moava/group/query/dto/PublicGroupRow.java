@@ -12,6 +12,7 @@ public record PublicGroupRow(
         String purpose,
         String regionSido,
         String regionSigungu,
+        String regionDong,
         BigDecimal lat,
         BigDecimal lng,
         Long amount,

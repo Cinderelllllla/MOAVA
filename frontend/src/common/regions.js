@@ -129,37 +129,25 @@ export function getDongOptions(sido, sigungu) {
 }
 
 /**
- * 프론트 3단계 선택값({ sido, sigungu, dong }) → 기존 서버 DTO({ regionSido, regionSigungu }) 인코딩
- * - Oracle VARCHAR2(30 BYTE) 제약 준수:
- *   "고양시 일산동구 장항동"(32B)처럼 30B를 넘는 경우 시/군/구의 마지막 행정구 토큰("일산동구 장항동", 22B)으로 축약
- * - 전국 5,067개 법정동 전수 검증 완료 (30B 초과 0건, 동일 시/도 내 행정구 중복 0건 → 무손실 역변환 가능)
+ * 프론트 3단계 선택값({ sido, sigungu, dong }) → 서버 DTO({ regionSido, regionSigungu, regionDong }) 변환
+ * - MEMBER / GYE_GROUP 의 REGION_SIDO(30B), REGION_SIGUNGU(30B), REGION_DONG(40B) 분리 저장
  */
 export function encodeRegionForServer({ sido, sigungu, dong } = {}) {
   const regionSido = normalizeSidoName(sido);
   const sg = String(sigungu || '').trim();
   const dg = String(dong || '').trim();
 
-  if (!dg) {
-    if (utf8ByteLength(sg) <= 30) {
-      return { regionSido, regionSigungu: sg };
-    }
-    const tokens = sg.split(/\s+/).filter(Boolean);
-    return { regionSido, regionSigungu: tokens[tokens.length - 1] || sg };
+  let regionSigungu = sg;
+  if (utf8ByteLength(regionSigungu) > 30) {
+    const tokens = regionSigungu.split(/\s+/).filter(Boolean);
+    regionSigungu = tokens[tokens.length - 1] || regionSigungu;
   }
 
-  const combined = sg ? `${sg} ${dg}` : dg;
-  if (utf8ByteLength(combined) <= 30) {
-    return { regionSido, regionSigungu: combined };
-  }
-
-  const sgTokens = sg.split(/\s+/).filter(Boolean);
-  const shortSg = sgTokens.length > 1 ? sgTokens[sgTokens.length - 1] : sg;
-  const shortened = shortSg ? `${shortSg} ${dg}` : dg;
-  if (utf8ByteLength(shortened) <= 30) {
-    return { regionSido, regionSigungu: shortened };
-  }
-
-  return { regionSido, regionSigungu: dg };
+  return {
+    regionSido,
+    regionSigungu,
+    regionDong: dg || null,
+  };
 }
 
 /** 표시용 전체 지역 문자열 생성 (예: "서울특별시 마포구 합정동", "세종특별자치시 가람동") */
@@ -172,6 +160,13 @@ export function formatRegionLabel({ sido, sigungu, dong } = {}) {
     return [normSido, dg].filter(Boolean).join(' ') || normSido;
   }
   return [normSido, sg, dg].filter(Boolean).join(' ');
+}
+
+/** 서버 응답 객체({ regionSido, regionSigungu, regionDong }) → 통일된 표시 문자열 */
+export function formatRegionFromServer(item, fallback = '') {
+  if (!item) return fallback;
+  const parsed = parseRegionFromServer(item.regionSido, item.regionSigungu, item.regionDong);
+  return parsed.displayLabel || [item.regionSido, item.regionSigungu, item.regionDong].filter(Boolean).join(' ') || fallback;
 }
 
 /**
