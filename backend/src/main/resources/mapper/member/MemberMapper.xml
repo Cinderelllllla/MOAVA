@@ -128,7 +128,7 @@
             AND STATUS = 'PENDING'
     </update>
 
-    <!--탈퇴 호;원의 선택 약관 동의 철회-->
+    <!--탈퇴 회원의 선택 약관 동의 철회-->
     <update id="revokeOptionalConsents">
         UPDATE MEMBER_CONSENT
         SET AGREED_YN = 'N',
