@@ -7,6 +7,7 @@
 --           회원 탈퇴 30일 유예: MEMBER.STATUS에 DELETED 추가, PURGE_DUE_AT·PURGED_AT 추가 (탈퇴 신청 → 30일 데이터 유지·복구 가능 → 개인정보 파기)
 --           간편 로그인(구글·네이버·카카오): MEMBER.SIGNUP_TYPE 추가, PASSWORD_HASH NULL 허용(소셜 전용 회원), MEMBER_SOCIAL_ACCOUNT 신규
 --           ※ 탈퇴 유예·간편 로그인은 정책 확정(11/26), 코드 미구현. 이 두 항목은 마이그레이션 없이 로컬 DB 재생성으로 반영
+--           NOTIFICATION.NOTIF_TYPE 알림 코드표 v3.2(23종) 주석: RULE_UPDATED(F31 운영 규칙 수정 알림, 인앱만) 추가 — 코드값만 추가, 제약 변경 없음
 -- 기존 DB 적용: MIGRATION_1126(= infra/sql/06_moava_account_hardening_migration.sql). 신규 설치는 이 파일 하나로 충분
 -- 11/25 변경: CHAT_MESSAGE.BODY_ENC 2000→2800 확정 / JOIN_REQUEST.STATUS EXPIRED 추가(7일 미처리 자동 만료) / JOIN_CODE_ATTEMPT.FAIL_COUNT 0~3(3회 실패 시 재발급 전까지 차단, LOCKED_UNTIL 미사용)
 --           NOTIFICATION.NOTIF_TYPE 알림 코드표 v3.1(22종) 주석 / AUDIT_LOG.EVENT_TYPE 코드 주석 갱신 / 오픈뱅킹 모의 원장·OAuth·CODEF 테이블 5개 신규(8번 섹션)
@@ -754,20 +755,24 @@ COMMENT ON COLUMN SANCTION.REASON IS '사유';
 
 -- CHAT_MESSAGE: 모임별 채팅 메시지 (STOMP 브로드캐스트 후 영구 저장)
 CREATE TABLE CHAT_MESSAGE (
-                              MESSAGE_ID             NUMBER(12)     NOT NULL,
-                              GROUP_ID               NUMBER(10)     NOT NULL,
-                              MEMBER_ID              NUMBER(10)     NOT NULL,
-                              BODY_ENC               VARCHAR2(2800) NOT NULL,
-                              KEY_VER                NUMBER(2)      DEFAULT 1 NOT NULL,
-                              SENT_AT                DATE           DEFAULT SYSDATE NOT NULL,
-                              CONSTRAINT PK_CHAT_MESSAGE PRIMARY KEY (MESSAGE_ID)
+                            MESSAGE_ID             NUMBER(12)     NOT NULL,
+                            GROUP_ID               NUMBER(10)     NOT NULL,
+                            MEMBER_ID              NUMBER(10),
+                            MSG_TYPE               VARCHAR2(10)   DEFAULT 'USER' NOT NULL,
+                            BODY_ENC               VARCHAR2(2800) NOT NULL,
+                            KEY_VER                NUMBER(2)      DEFAULT 1 NOT NULL,
+                            SENT_AT                DATE           DEFAULT SYSDATE NOT NULL,
+                            CONSTRAINT PK_CHAT_MESSAGE PRIMARY KEY (MESSAGE_ID),
+                            CONSTRAINT CK_CHAT_MESSAGE_1 CHECK (MSG_TYPE IN ('USER','SYSTEM')),
+                            CONSTRAINT CK_CHAT_MESSAGE_2 CHECK ((MSG_TYPE = 'USER' AND MEMBER_ID IS NOT NULL) OR (MSG_TYPE = 'SYSTEM' AND MEMBER_ID IS NULL))
 );
 COMMENT ON TABLE CHAT_MESSAGE IS '모임별 채팅 메시지 (STOMP 브로드캐스트 후 영구 저장)';
 COMMENT ON COLUMN CHAT_MESSAGE.GROUP_ID IS '채팅방 = 모임';
-COMMENT ON COLUMN CHAT_MESSAGE.MEMBER_ID IS '발신자';
+COMMENT ON COLUMN CHAT_MESSAGE.MEMBER_ID IS '발신자. SYSTEM 메시지는 NULL';
 COMMENT ON COLUMN CHAT_MESSAGE.BODY_ENC IS '본문(500자) AES-256-GCM 암호문(Base64, 최대 2800바이트: 한글 500자=1500B+IV·태그 후 Base64 확장). 사적 대화에 계좌·연락처가 섞이므로 암호화, 채팅 검색 기능 없음 전제. XSS 이스케이프는 표시 시';
 COMMENT ON COLUMN CHAT_MESSAGE.KEY_VER IS '암호화 키 버전';
 COMMENT ON COLUMN CHAT_MESSAGE.SENT_AT IS '발신 시각';
+COMMENT ON COLUMN CHAT_MESSAGE.MSG_TYPE IS 'USER(회원 메시지) / SYSTEM(운영 안내 — 규칙 변경 등, 발신자 없음) (F31·F34)';
 
 -- NOTIFICATION: 인앱 알림함. 삭제는 숨김 처리, SMS 발송 여부 기록
 CREATE TABLE NOTIFICATION (
@@ -792,7 +797,7 @@ CREATE TABLE NOTIFICATION (
 COMMENT ON TABLE NOTIFICATION IS '인앱 알림함 (회원·관리자 공용, 수신자는 MEMBER_ID/ADMIN_ID 중 하나). 삭제는 숨김 처리, SMS 발송 여부 기록';
 COMMENT ON COLUMN NOTIFICATION.MEMBER_ID IS '수신 회원. 관리자 수신 알림은 NULL';
 COMMENT ON COLUMN NOTIFICATION.ADMIN_ID IS '수신 관리자 (FK ADMIN). 미납 5일차·해산 신청·신고 접수·계좌 확인 요청 — 활성 관리자 1명당 1행. 회원 수신 알림은 NULL';
-COMMENT ON COLUMN NOTIFICATION.NOTIF_TYPE IS '알림 코드표 v3.1(22종, NotifType.java). 회원: JOIN_RESULT / CONSENT_REQ / CONSENT_RESULT / PROOF_REVISION / PAY_DUE_3D(SMS) / PAY_OVERDUE / OVERDUE_WARNED(SMS) / SANCTION / WITHDRAW_DONE / DISSOLVED / REPORT_STATUS / RISK_UP(SMS). 모임장: JOIN_REQUEST / PROOF_PENDING / ORDER_REQUEST / ACCOUNT_VERIFIED / DISSOLVE_REJECTED / WITHDRAW_REQUEST. 관리자: ACCOUNT_VERIFY_REQ / OVERDUE_5D / DISSOLVE_REQUEST / REPORT_RECEIVED';
+COMMENT ON COLUMN NOTIFICATION.NOTIF_TYPE IS '알림 코드표 v3.2(23종, NotifType.java). 회원: JOIN_RESULT / CONSENT_REQ / CONSENT_RESULT / PROOF_REVISION / PAY_DUE_3D(SMS) / PAY_OVERDUE / OVERDUE_WARNED(SMS) / SANCTION / WITHDRAW_DONE / DISSOLVED / REPORT_STATUS / RISK_UP(SMS) / RULE_UPDATED. 모임장: JOIN_REQUEST / PROOF_PENDING / ORDER_REQUEST / ACCOUNT_VERIFIED / DISSOLVE_REJECTED / WITHDRAW_REQUEST. 관리자: ACCOUNT_VERIFY_REQ / OVERDUE_5D / DISSOLVE_REQUEST / REPORT_RECEIVED';
 COMMENT ON COLUMN NOTIFICATION.TITLE IS '제목';
 COMMENT ON COLUMN NOTIFICATION.BODY IS '본문';
 COMMENT ON COLUMN NOTIFICATION.LINK_PAGE IS '클릭 시 이동 화면 (예: /groups/101/operations)';
