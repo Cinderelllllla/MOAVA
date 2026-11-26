@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- F31 운영 규칙 등록·수정 (MOA-76). GYE_GROUP 규칙 컬럼만 수정하고, 회원 테이블은 읽기만 한다. -->
+<mapper namespace="com.moava.group.rules.mapper.GroupRulesMapper">
+
+    <resultMap id="rulesMap" type="com.moava.group.rules.dto.GroupRulesRow">
+        <constructor>
+            <arg column="GROUP_ID"      javaType="_long"/>
+            <arg column="GROUP_TITLE"   javaType="java.lang.String"/>
+            <arg column="GROUP_STATUS"  javaType="java.lang.String"/>
+            <arg column="OWNER_ID"      javaType="_long"/>
+            <arg column="RULES_TITLE"   javaType="java.lang.String"/>
+            <arg column="RULES_BODY"    javaType="java.lang.String" jdbcType="CLOB"/>
+            <arg column="MEMBER_STATUS" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectRules" resultMap="rulesMap">
+        SELECT g.GROUP_ID,
+               g.TITLE       AS GROUP_TITLE,
+               g.STATUS      AS GROUP_STATUS,
+               g.OWNER_ID,
+               g.RULES_TITLE,
+               g.RULES_BODY,
+               gm.STATUS     AS MEMBER_STATUS
+          FROM GYE_GROUP g
+          LEFT JOIN GYE_MEMBER gm
+            ON gm.GROUP_ID = g.GROUP_ID AND gm.MEMBER_ID = #{memberId}
+         WHERE g.GROUP_ID = #{groupId}
+    </select>
+
+    <update id="updateRules">
+        UPDATE GYE_GROUP
+           SET RULES_TITLE = #{rulesTitle},
+               RULES_BODY  = #{rulesBody, jdbcType=CLOB},
+               UPDATED_AT  = SYSDATE
+         WHERE GROUP_ID = #{groupId}
+    </update>
+
+    <!-- DissolutionMapper.insertMemberAuditLog 와 같은 형식 (CK_AUDIT_LOG_1: 회원 행위라 ACTOR_ADMIN_ID 는 NULL) -->
+    <insert id="insertAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            ACTOR_ADMIN_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        ) VALUES (
+                     SEQ_AUDIT_LOG.NEXTVAL,
+                     #{groupId},
+                     #{actorMemberId},
+                     NULL,
+                     #{eventType},
+                     #{description},
+                     SYSDATE
+                 )
+    </insert>
+</mapper>

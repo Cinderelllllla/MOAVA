@@ -19,6 +19,9 @@ function timeText(sentAt) {
   return d.toDateString() === new Date().toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
 }
 
+/** 내가 보낸 메시지인지. 시스템 메시지(memberId null)나 로그인 정보가 없을 때(myId null)는 항상 false */
+const isMine = (m, myId) => !m.system && m.memberId != null && myId != null && Number(m.memberId) === Number(myId);
+
 /** 메시지 번호 기준으로 합치고 정렬 (REST 로 받은 것과 실시간으로 받은 것이 겹쳐도 한 번만) */
 const merge = (a, b) => [...new Map([...a, ...b].map(m => [m.messageId, m])).values()].sort((x, y) => x.messageId - y.messageId);
 
@@ -148,10 +151,16 @@ export default function Chat() {
           {history.hasMore && <div style={{ textAlign: 'center' }}><button type="button" className="btn small soft" onClick={loadOlder}>이전 메시지 더 보기</button></div>}
           {history.status === 'loading' && !messages.length ? <div className="chat-empty"><small>대화를 불러오는 중이에요.</small></div>
             : history.status === 'error' ? <div className="empty warning" role="alert">{history.error}</div>
-              : messages.length ? messages.map(m => <div key={m.messageId} className={`bubble ${m.memberId === myId ? 'mine' : ''}`}>
-                <small>{m.memberId === myId ? '나' : (m.senderName || '회원')} · {timeText(m.sentAt)}</small>
-                <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</span>
-              </div>)
+              : messages.length ? messages.map(m => m.system
+                // 시스템 메시지(운영 규칙 변경 안내 등): 보낸 사람 없이 가운데 회색 안내 줄
+                ? <div key={m.messageId} className="chat-system" role="note">
+                  <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</span>
+                  <small>{timeText(m.sentAt)}</small>
+                </div>
+                : <div key={m.messageId} className={`bubble ${isMine(m, myId) ? 'mine' : ''}`}>
+                  <small>{isMine(m, myId) ? '나' : (m.senderName || '회원')} · {timeText(m.sentAt)}</small>
+                  <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</span>
+                </div>)
                 : <div className="chat-empty"><span><Icon name="chat" size={32} /></span><b>대화를 시작해 보세요</b><small>납입 일정이나 모임 소식을 나눠 보세요.</small></div>}
         </div>
 
