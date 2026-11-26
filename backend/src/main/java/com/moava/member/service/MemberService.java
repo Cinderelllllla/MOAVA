@@ -69,11 +69,11 @@ public class MemberService {
     }
 
     public AuthResponse login(LoginRequest request) {
-        if(request == null || request.email() == null || request.password() == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"이메일과 비밀번호를 입력해주세요.");
+        if(request == null || request.email() == null || request.email().isBlank() || request.password() == null || request.password().isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"이메일과 비밀번호를 입력해주세요.");
         String email = request.email().trim().toLowerCase(Locale.ROOT);
         String hash = memberMapper.findPasswordHashByEmail(email);
         MemberResponse member = memberMapper.findByEmail(email);
-        if(hash == null || member == null || !passwordEncoder.matches(request.password(), hash)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 일치하지 않습니다.");      
+        if(hash == null || member == null || !passwordEncoder.matches(request.password(), hash) || !"ACTIVE".equals(member.status()) || !"N".equals(member.bannedYn())) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 일치하지 않습니다.");      
         return response(member);
     }
 
@@ -175,10 +175,10 @@ public class MemberService {
         if(activeMemberships > 0 || ownedGroups > 0){
             throw bad("참여 중인 모임을 먼저 정리해 주세요.");
         }
-        String randomPassword = java.util.UUID.randomUUID().toString();
-        String randomPasswordHash = passwordEncoder.encode(randomPassword);
         
-        int result = memberMapper.withdraw(memberId, randomPasswordHash);
+        memberMapper.revokeOptionalConsents(memberId);
+
+        int result = memberMapper.withdraw(memberId);
 
         if(result != 1){
             throw new IllegalStateException("회원 탈퇴 처리에 실패했습니다.");
