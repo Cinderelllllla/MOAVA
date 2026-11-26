@@ -224,7 +224,7 @@ export function Account() {
     setWithdrawing(true);
 
     try{
-      const result = await run(() => auth.withdrawAccount(password), '회원 칼뢰가 완료되었습니다.');
+      const result = await run(() => auth.withdrawAccount(password), '회원 탈퇴가 완료되었습니다.');
       if(result.ok){
         navigate('/login', {replace: true});
       }
