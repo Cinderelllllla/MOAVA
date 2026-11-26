@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- F30 모임 경고 및 강제 탈퇴 (MOA-75). GYE_MEMBER 경고·상태만 수정하고 SANCTION·AUDIT_LOG 는 추가만 한다. -->
+<mapper namespace="com.moava.group.warning.mapper.GroupWarningMapper">
+
+    <resultMap id="targetMap" type="com.moava.group.warning.dto.GroupWarningTarget">
+        <constructor>
+            <arg column="GROUP_ID"      javaType="_long"/>
+            <arg column="GROUP_TITLE"   javaType="java.lang.String"/>
+            <arg column="GROUP_STATUS"  javaType="java.lang.String"/>
+            <arg column="OWNER_ID"      javaType="_long"/>
+            <arg column="MEMBER_STATUS" javaType="java.lang.String"/>
+            <arg column="WARNING_COUNT" javaType="java.lang.Integer"/>
+        </constructor>
+    </resultMap>
+
+    <!-- LEFT JOIN: 모임이 없으면 결과 없음(null), 대상이 이 모임 회원이 아니면 MEMBER_STATUS 가 null -->
+    <select id="selectTarget" resultMap="targetMap">
+        SELECT g.GROUP_ID,
+        g.TITLE          AS GROUP_TITLE,
+        g.STATUS         AS GROUP_STATUS,
+        g.OWNER_ID,
+        gm.STATUS        AS MEMBER_STATUS,
+        gm.WARNING_COUNT
+        FROM GYE_GROUP g
+        LEFT JOIN GYE_MEMBER gm
+        ON gm.GROUP_ID = g.GROUP_ID AND gm.MEMBER_ID = #{targetMemberId}
+        WHERE g.GROUP_ID = #{groupId}
+    </select>
+
+    <!-- 검사와 증가를 한 문장으로: 동시 요청이 와도 3회가 되지 않음 (CK_GYE_MEMBER_4 는 최후 방어선) -->
+    <update id="increaseWarning">
+        UPDATE GYE_MEMBER
+        SET WARNING_COUNT = WARNING_COUNT + 1
+        WHERE GROUP_ID  = #{groupId}
+        AND MEMBER_ID = #{targetMemberId}
+        AND STATUS = 'ACTIVE'
+        AND WARNING_COUNT &lt; 2
+    </update>
+
+    <update id="expel">
+        UPDATE GYE_MEMBER
+        SET STATUS  = 'EXPELLED',
+        LEFT_AT = SYSDATE
+        WHERE GROUP_ID  = #{groupId}
+        AND MEMBER_ID = #{targetMemberId}
+        AND STATUS = 'ACTIVE'
+        AND WARNING_COUNT = 2
+    </update>
+
+    <!-- CK_SANCTION_2: 모임장 조치는 ISSUED_MEMBER_ID 만 채우고 ISSUED_ADMIN_ID 는 NULL -->
+    <insert id="insertSanction">
+        INSERT INTO SANCTION (
+        SANCTION_ID,
+        SANCTION_TYPE,
+        MEMBER_ID,
+        GROUP_ID,
+        ISSUED_MEMBER_ID,
+        ISSUED_ADMIN_ID,
+        REASON,
+        CREATED_AT
+        ) VALUES (
+        SEQ_SANCTION.NEXTVAL,
+        #{sanctionType},
+        #{targetMemberId},
+        #{groupId},
+        #{issuedMemberId},
+        NULL,
+        #{reason},
+        SYSDATE
+        )
+    </insert>
+
+    <!-- GroupRulesMapper.insertAuditLog 와 같은 형식 + 대상 회원(TARGET_MEMBER_ID) -->
+    <insert id="insertAuditLog">
+        INSERT INTO AUDIT_LOG (
+        AUDIT_LOG_ID,
+        GROUP_ID,
+        ACTOR_MEMBER_ID,
+        ACTOR_ADMIN_ID,
+        TARGET_MEMBER_ID,
+        EVENT_TYPE,
+        DESCRIPTION,
+        CREATED_AT
+        ) VALUES (
+        SEQ_AUDIT_LOG.NEXTVAL,
+        #{groupId},
+        #{actorMemberId},
+        NULL,
+        #{targetMemberId},
+        #{eventType},
+        #{description},
+        SYSDATE
+        )
+    </insert>
+</mapper>
