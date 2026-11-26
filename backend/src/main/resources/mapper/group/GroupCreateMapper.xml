@@ -18,15 +18,15 @@
         F19 - 동일 계좌 중복 등록 확인
 
         기존 HMAC-SHA256 해시 방식 유지
-        은행명과 계좌 해시를 함께 비교
-        CURRENT, PENDING 상태만 중복 검사
+        은행명과 관계없이 계좌 해시만 비교
+        전체 모임의 CURRENT, PENDING 계좌를 대상으로 검사
         RETIRED 계좌는 검사 대상에서 제외
+        DDL v2.0 UX_GYE_ACCOUNT_ACTIVE_HASH 기준과 일치
     -->
     <select id="countDuplicateAccount" resultType="int">
         SELECT COUNT(*)
         FROM GYE_ACCOUNT
-        WHERE BANK_NAME = #{bankName}
-          AND ACCOUNT_NO_HASH = #{accountNoHash}
+        WHERE ACCOUNT_NO_HASH = #{accountNoHash}
           AND ACCOUNT_STATUS IN ('CURRENT', 'PENDING')
     </select>
 

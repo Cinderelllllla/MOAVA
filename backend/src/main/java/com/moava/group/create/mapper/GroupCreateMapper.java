@@ -17,10 +17,11 @@ public interface GroupCreateMapper {
             @Param("memberId") Long memberId
     );
 
-    // F19 - 동일 은행 및 계좌 해시 중복 조회
-    // CURRENT, PENDING 상태만 검사
+    // F19 - 계좌 해시 중복 조회
+    // 전체 모임의 CURRENT, PENDING 계좌를 대상으로 검사
+    // RETIRED 계좌는 제외
+    // DDL v2.0 UX_GYE_ACCOUNT_ACTIVE_HASH 기준과 일치
     int countDuplicateAccount(
-            @Param("bankName") String bankName,
             @Param("accountNoHash") String accountNoHash
     );
 

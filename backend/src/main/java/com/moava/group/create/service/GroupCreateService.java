@@ -8,8 +8,11 @@ import com.moava.group.map.KakaoGeocodingClient;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
+import java.util.Locale;
 import java.util.Optional;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +22,10 @@ public class GroupCreateService {
     // F19 - 계좌 암호문 저장 길이 제한
     private static final int HOLDER_NAME_ENC_MAX_BYTES = 120;
     private static final int ACCOUNT_NO_ENC_MAX_BYTES = 100;
+
+    // DDL v2.0 계좌 중복 방지 인덱스
+    private static final String ACCOUNT_UNIQUE_INDEX =
+            "UX_GYE_ACCOUNT_ACTIVE_HASH";
 
     private final GroupCreateMapper mapper;
     private final GroupAccountCrypto crypto;
@@ -39,18 +46,14 @@ public class GroupCreateService {
     }
 
     // F19 - 계좌 중복 등록 확인
-    // CURRENT, PENDING 계좌를 대상으로 검사한다.
-    // RETIRED 계좌는 중복 검사 대상에서 제외한다.
+    // 전체 모임의 CURRENT, PENDING 계좌를 대상으로 검사
+    // RETIRED 계좌는 중복 검사 대상에서 제외
     private void validateDuplicateAccount(
-            String bankName,
             String accountNoHash
     ) {
 
         int duplicateCount =
-                mapper.countDuplicateAccount(
-                        bankName,
-                        accountNoHash
-                );
+                mapper.countDuplicateAccount(accountNoHash);
 
         if (duplicateCount > 0) {
 
@@ -58,6 +61,35 @@ public class GroupCreateService {
                     "이미 등록된 계좌입니다."
             );
         }
+    }
+
+    // F19 - DB 계좌 중복 방지 인덱스 위반 확인
+    // 다른 PK, UNIQUE 제약 위반과 구분한다.
+    private boolean isDuplicateAccountViolation(
+            DuplicateKeyException exception
+    ) {
+
+        Throwable cause = exception;
+
+        while (cause != null) {
+
+            if (cause instanceof SQLException sqlException) {
+
+                String message = sqlException.getMessage();
+
+                if (sqlException.getErrorCode() == 1
+                        && message != null
+                        && message.toUpperCase(Locale.ROOT)
+                                .contains(ACCOUNT_UNIQUE_INDEX)) {
+
+                    return true;
+                }
+            }
+
+            cause = cause.getCause();
+        }
+
+        return false;
     }
 
     // F19 - 암호문 저장 길이 검증
@@ -127,11 +159,9 @@ public class GroupCreateService {
                 crypto.hashAccountNumber(accountNumber);
 
         // 4. F19 - 동일 계좌 중복 등록 확인
+        // DDL v2.0과 동일하게 계좌 해시만 비교
         // 모임 생성 전에 검증하여 불필요한 INSERT 방지
-        validateDuplicateAccount(
-                bankName,
-                accountNoHash
-        );
+        validateDuplicateAccount(accountNoHash);
 
         // 5. 계좌번호 및 예금주 암호화
         String holderNameEnc =
@@ -222,16 +252,37 @@ public class GroupCreateService {
         // VERIFY_STATUS = PENDING
         // ACCOUNT_STATUS = CURRENT
         // 실제 계좌 소유 인증 완료 상태와 구분한다.
-        int accountInserted = mapper.insertGroupAccount(
-                groupId,
-                bankName,
-                holderNameEnc,
-                accountNoEnc,
-                accountNoLast4,
-                accountNoHash,
-                crypto.keyVersion(),
-                authenticatedMemberId
-        );
+        int accountInserted;
+
+        try {
+
+            accountInserted = mapper.insertGroupAccount(
+                    groupId,
+                    bankName,
+                    holderNameEnc,
+                    accountNoEnc,
+                    accountNoLast4,
+                    accountNoHash,
+                    crypto.keyVersion(),
+                    authenticatedMemberId
+            );
+
+        } catch (DuplicateKeyException e) {
+
+            // F19 - 동시 계좌 등록 요청에 대한 DB 중복 방어
+            // 사전 조회를 동시에 통과한 경우에도
+            // UNIQUE INDEX에서 중복 등록을 차단한다.
+            if (isDuplicateAccountViolation(e)) {
+
+                throw new IllegalStateException(
+                        "이미 등록된 계좌입니다."
+                );
+            }
+
+            // 다른 PK 또는 UNIQUE 제약 위반은
+            // 계좌 중복 오류로 잘못 처리하지 않는다.
+            throw e;
+        }
 
         if (accountInserted != 1) {
 
