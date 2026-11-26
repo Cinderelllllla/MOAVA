@@ -528,6 +528,7 @@ export function AdminRefs() {
 /* ---- A06 미납 관리 (F26: 감지 목록형 — 서버 API 연동) ---- */
 const OD_STATUS = { DETECTED: '감지됨 · 미조치', WARNED: '경고 알림 발송', RESTRICTED: '채팅 제한 조치', RESOLVED: '납입 확인 · 해소' };
 const OD_ACTION_MSG = { WARN: '경고 알림을 보냈어요.', CHAT_RESTRICT: '채팅을 제한했어요.', CHAT_RELEASE: '채팅 제한을 해제했어요.', ORDER_REVIEW: '수령 후순위 검토를 기록했어요.' };
+const OD_POLICY_LABEL = { ALERT_ONLY: '5일차 알림', ALERT_RESTRICT: '5일차 알림 + 채팅 제한·수령 후순위 검토' };
 
 export function AdminOverdue() {
   const { run } = useApp();
@@ -573,7 +574,7 @@ export function AdminOverdue() {
           <tbody>
           {state.open.length ? state.open.map(c => (
               <tr key={c.overdueCaseId}>
-                <td>{c.groupTitle || `모임 #${c.groupId}`}<br /><small className="muted">규칙: {alertOnly(c) ? '알림만' : (c.overduePolicy || '-')}</small></td>
+                <td>{c.groupTitle || `모임 #${c.groupId}`}<br /><small className="muted">규칙: {OD_POLICY_LABEL[c.overduePolicy] || c.overduePolicy || '-'}</small></td>
                 <td>{c.memberName || '-'}</td>
                 <td>{monthLabel(c.payMonth)}</td>
                 <td>{c.elapsedDays ?? '-'}일</td>
