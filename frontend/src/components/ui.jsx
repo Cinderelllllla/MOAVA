@@ -1,6 +1,7 @@
 /* 작은 공용 UI 조각: PageHead · Card · Field · Select · Flow · HistoryTable · Pill */
+// sub 는 일반 텍스트로만 보여 준다 (HTML 해석 X → XSS 방지). 줄바꿈·강조가 필요하면 HTML 문자열 대신 JSX 로 넘길 것.
 export function PageHead({ kicker, title, sub, children }) {
-  return <div className="head"><div><div className="eyebrow">{kicker}</div><h1>{title}</h1><p dangerouslySetInnerHTML={{ __html: sub || '' }} /></div><div className="actions">{children}</div></div>;
+  return <div className="head"><div><div className="eyebrow">{kicker}</div><h1>{title}</h1><p>{sub || ''}</p></div><div className="actions">{children}</div></div>;
 }
 export const Card = ({ className = '', children, ...rest }) => <div className={`card ${className}`} {...rest}>{children}</div>;
 export const Pill = ({ kind = '', children }) => <span className={`pill ${kind}`}>{children}</span>;
