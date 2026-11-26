@@ -18,6 +18,7 @@ import Chat from './pages/Chat';
 import Evidence from './pages/Evidence';
 import { Notifications, Account } from './pages/Misc';
 import SupportReportPage from './pages/SupportReportPage';
+import OpenBanking from './pages/OpenBanking';
 import { AdminDashboard, AdminGroups, AdminSanctions, AdminDissolve, AdminRefs, AdminOverdue } from './pages/admin/AdminPages';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminSupportReportsPage from './pages/admin/AdminSupportReportsPage';
@@ -36,6 +37,7 @@ export default function App() {
       <Route path="/journey" element={<Journey />} />
       <Route path="/finance" element={<Finance />} />
       <Route path="/finance/monthly" element={<FinanceMonthly />} />
+      <Route path="/openbanking" element={<OpenBanking />} />
       <Route path="/groups" element={<Groups />} />
       <Route path="/groups/new" element={<GroupNew />} />
       <Route path="/simulator" element={<Simulator />} />

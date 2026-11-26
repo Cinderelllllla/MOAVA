@@ -7,6 +7,7 @@ export * as procedures from './procedures';
 export * as proofs from './proofs';
 export * as admin from './admin';
 export * as chat from './chat';   // F34 모임별 실시간 채팅 (MOA-78)
+export * as openbanking from './openbanking'; // 오픈뱅킹(모의 원장) + CODEF 실계좌인증
 export { db, subscribe, getVersion, me, isAdmin, currentUser, memberName, joined, leader, activeJoined, isEnded, groupVisible, proofPeriod, currentPeriod, paidAny, paidThisPeriod, ensureJoinCode } from './mock/db';
 
 /* NotificationController (/api/v1/notifications) 연동 모듈 */
