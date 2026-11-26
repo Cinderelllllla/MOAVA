@@ -79,7 +79,6 @@ export function AdminDashboard() {
       .catch(e => { if (alive) setState({ status: 'error', data: null, error: e?.message || '관리자 대시보드를 불러오지 못했어요.' }); });
     return () => { alive = false; };
   }, [reloadKey]);
-
   const Stat = ({ label, val, ico, to }) => (
     <button
       type="button"
@@ -532,22 +531,8 @@ const OD_POLICY_LABEL = { ALERT_ONLY: '5일차 알림', ALERT_RESTRICT: '5일차
 
 export function AdminOverdue() {
   const { run } = useApp();
-  const [state, setState] = useState({ status: 'loading', open: [], done: [], error: '' });
-  const [reloadKey, setReloadKey] = useState(0);
-  const reload = useCallback(() => setReloadKey(k => k + 1), []);
-
-  useEffect(() => {
-    let alive = true;
-    setState(s => ({ ...s, status: 'loading', error: '' }));
-    Promise.all([admin.fetchAdminOverdueCases('OPEN'), admin.fetchAdminOverdueCases('RESOLVED')])
-        .then(([open, done]) => {
-          if (alive) setState({ status: 'ready', open: open.slice().sort((a, b) => (b.elapsedDays ?? 0) - (a.elapsedDays ?? 0)), done, error: '' });
-        })
-        .catch(e => { if (alive) setState({ status: 'error', open: [], done: [], error: e?.message || '미납 목록을 불러오지 못했어요.' }); });
-    return () => { alive = false; };
-  }, [reloadKey]);
-
   const act = async (c, action) => {
+    if (busyId) return;
     let reason;
     if (action === 'WARN') {
       if (!confirm(`${c.memberName}님에게 미납 경고 알림(SMS 포함)을 보낼까요?`)) return;
@@ -555,9 +540,41 @@ export function AdminOverdue() {
       reason = prompt('조치 사유를 입력해 주세요. (필수)');
       if (reason === null) return;
     }
-    const r = await run(() => admin.applyOverdueAction(c.overdueCaseId, action, reason), OD_ACTION_MSG[action]);
-    if (r.ok) reload();
+    setBusyId(c.overdueCaseId);
+    try {
+      const r = await run(() => admin.applyOverdueAction(c.overdueCaseId, action, reason), OD_ACTION_MSG[action]);
+      if (r.ok) reload();
+    } finally {
+      setBusyId(null);
+    }
   };
+  const busy = busyId !== null;
+  const [state, setState] = useState({ status: 'loading', open: [], done: [], doneError: '', error: '' });
+  const [reloadKey, setReloadKey] = useState(0);
+  const [busyId, setBusyId] = useState(null);   // 조치 처리 중인 미납 건 — 연속 클릭 중복 요청 방지
+  const reload = useCallback(() => setReloadKey(k => k + 1), []);
+
+  useEffect(() => {
+    let alive = true;
+    setState(s => ({ ...s, status: 'loading', error: '' }));
+    // 해소된 건 조회가 실패해도 조치 대상(미해소) 목록은 보여 줌
+    Promise.allSettled([admin.fetchAdminOverdueCases('OPEN'), admin.fetchAdminOverdueCases('RESOLVED')])
+        .then(([openRes, doneRes]) => {
+          if (!alive) return;
+          if (openRes.status === 'rejected') {
+            setState({ status: 'error', open: [], done: [], doneError: '', error: openRes.reason?.message || '미납 목록을 불러오지 못했어요.' });
+            return;
+          }
+          setState({
+            status: 'ready',
+            open: openRes.value.slice().sort((a, b) => (b.elapsedDays ?? 0) - (a.elapsedDays ?? 0)),
+            done: doneRes.status === 'fulfilled' ? doneRes.value : [],
+            doneError: doneRes.status === 'rejected' ? (doneRes.reason?.message || '해소된 건을 불러오지 못했어요.') : '',
+            error: '',
+          });
+        });
+    return () => { alive = false; };
+  }, [reloadKey]);
 
   const alertOnly = c => c.overduePolicy === 'ALERT_ONLY'; // 모임 규칙이 '알림만'이면 채팅 제한 불가 (명세 F26-3)
   // 채팅 제한은 회원 단위(GYE_MEMBER) → 같은 회원의 해소 건이 여러 개여도 1명으로 셈
@@ -587,11 +604,11 @@ export function AdminOverdue() {
                   {c.chatRestrictedYn === 'Y' && <><br /><small className="muted">채팅 제한 중</small></>}
                 </td>
                 <td><div className="actions" style={{ margin: 0 }}>
-                  <button className="btn small soft" disabled={c.status !== 'DETECTED'} title={c.status !== 'DETECTED' ? '이미 경고를 보냈거나 경고할 수 없는 상태입니다.' : ''} onClick={() => act(c, 'WARN')}>경고 알림</button>
+                  <button className="btn small soft" disabled={busy || c.status !== 'DETECTED'} title={c.status !== 'DETECTED' ? '이미 경고를 보냈거나 경고할 수 없는 상태입니다.' : ''} onClick={() => act(c, 'WARN')}>경고 알림</button>
                   {c.chatRestrictedYn === 'Y'
-                      ? <button className="btn small soft" onClick={() => act(c, 'CHAT_RELEASE')}>채팅 제한 해제</button>
-                      : <button className="btn small danger" disabled={alertOnly(c)} title={alertOnly(c) ? '이 모임은 미납 시 알림만 보내는 규칙이라 채팅을 제한할 수 없습니다.' : ''} onClick={() => act(c, 'CHAT_RESTRICT')}>채팅 제한</button>}
-                  <button className="btn small soft" onClick={() => act(c, 'ORDER_REVIEW')}>후순위 검토</button>
+                      ? <button className="btn small soft" disabled={busy} onClick={() => act(c, 'CHAT_RELEASE')}>채팅 제한 해제</button>
+                      : <button className="btn small danger" disabled={busy || alertOnly(c)} title={alertOnly(c) ? '이 모임은 미납 시 알림만 보내는 규칙이라 채팅을 제한할 수 없습니다.' : ''} onClick={() => act(c, 'CHAT_RESTRICT')}>채팅 제한</button>}
+                  <button className="btn small soft" disabled={busy} onClick={() => act(c, 'ORDER_REVIEW')}>후순위 검토</button>
                 </div></td>
               </tr>
           )) : <tr><td colSpan={6} className="muted">감지된 미납이 없습니다.</td></tr>}
@@ -604,13 +621,14 @@ export function AdminOverdue() {
             해소된 건 {state.done.length}건
             {restrictedDone > 0 && ` · 채팅 제한 남은 회원 ${restrictedDone}명`}
           </summary>
+          {state.doneError && <p className="warning mini">{state.doneError} <button type="button" className="btn small soft" onClick={reload}>다시 시도</button></p>}
           {state.done.length ? state.done.map(c => (
               <p className="muted mini" key={c.overdueCaseId}>
                 {c.groupTitle} · {c.memberName} · {monthLabel(c.payMonth)} · 해소 {formatDateTime(c.resolvedAt)}
                 {/* 해소돼도 채팅 제한은 그대로 남음 → RESOLVED 건은 해제만 가능 (명세 v3.5 F26-6) */}
                 {c.chatRestrictedYn === 'Y' && <>
                   {' · '}<b>채팅 제한 중</b>{' '}
-                  <button type="button" className="btn small soft" onClick={() => act(c, 'CHAT_RELEASE')}>채팅 제한 해제</button>
+                  <button type="button" className="btn small soft" disabled={busy} onClick={() => act(c, 'CHAT_RELEASE')}>채팅 제한 해제</button>
                 </>}
               </p>
           )) : <p className="muted mini">없음</p>}
