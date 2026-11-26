@@ -36,7 +36,8 @@ public class GroupJoinRequestExpireService {
     /**
      * 가입 신청 단건 자동 만료 처리
      *
-     * 상태 변경에 성공한 경우에만 알림을 발송한다.
+     * 상태 변경에 성공한 경우에만
+     * 감사 로그를 저장하고 알림을 발송한다.
      */
     @Transactional
     public boolean expireRequest(Long requestId) {
@@ -53,7 +54,7 @@ public class GroupJoinRequestExpireService {
             return false;
         }
 
-        // 2. PENDING 상태인 만료 대상만 EXPIRED 변경
+        // 2. PENDING 상태의 만료 대상만 EXPIRED 변경
         int updated =
                 mapper.expireJoinRequest(requestId);
 
@@ -68,15 +69,36 @@ public class GroupJoinRequestExpireService {
             );
         }
 
-        // 3. 신청 회원 정보 확인
+        // 3. 신청 회원 및 모임 정보 확인
         Long memberId =
                 ((Number) request.get("MEMBER_ID"))
+                        .longValue();
+
+        Long groupId =
+                ((Number) request.get("GROUP_ID"))
                         .longValue();
 
         String groupTitle =
                 String.valueOf(request.get("TITLE"));
 
-        // 4. 기존 공통 알림 서비스 사용
+        // 4. 가입 신청 자동 만료 감사 로그 저장
+        // 시스템 배치이므로 ACTOR_MEMBER_ID는 NULL
+        int auditInserted = mapper.insertAuditLog(
+                groupId,
+                null,
+                memberId,
+                "JOIN_EXPIRE",
+                "가입 신청 7일 경과 자동 만료 (신청 ID: "
+                        + requestId + ")"
+        );
+
+        if (auditInserted != 1) {
+            throw new IllegalStateException(
+                    "가입 신청 만료 감사 로그 저장에 실패했습니다."
+            );
+        }
+
+        // 5. 기존 공통 알림 서비스 사용
         notificationService.notifyMember(
                 memberId,
                 NotifType.JOIN_RESULT,

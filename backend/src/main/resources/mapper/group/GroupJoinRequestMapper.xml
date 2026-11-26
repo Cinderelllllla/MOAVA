@@ -19,6 +19,15 @@
         FOR UPDATE
     </select>
 
+    <!-- F16 - 플랫폼 가입 제한 및 회원 상태 확인 -->
+    <select id="findMemberStatus" resultType="map">
+        SELECT
+            STATUS,
+            BANNED_YN
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+    </select>
+
     <!-- 기존 참여 이력 확인 -->
     <!-- 탈퇴 및 강제 탈퇴 회원도 재가입 불가 -->
     <select id="countExistingMembership" resultType="int">
@@ -282,5 +291,38 @@
           AND CREATED_AT &lt;= SYSDATE - 7
 
     </update>
+
+    <!-- ==========================================
+         F16 - 가입 관련 감사 로그
+         ========================================== -->
+
+    <!--
+        신청: 신청 회원
+        승인 및 거절: 모임장
+        자동 만료: ACTOR_MEMBER_ID, ACTOR_ADMIN_ID 모두 NULL
+        민감정보는 기록하지 않음
+    -->
+    <insert id="insertAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            ACTOR_ADMIN_ID,
+            TARGET_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        )
+        VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId},
+            #{actorMemberId, jdbcType=NUMERIC},
+            NULL,
+            #{targetMemberId, jdbcType=NUMERIC},
+            #{eventType},
+            #{description},
+            SYSDATE
+        )
+    </insert>
 
 </mapper>
