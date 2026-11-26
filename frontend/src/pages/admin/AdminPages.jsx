@@ -531,24 +531,7 @@ const OD_POLICY_LABEL = { ALERT_ONLY: '5일차 알림', ALERT_RESTRICT: '5일차
 
 export function AdminOverdue() {
   const { run } = useApp();
-  const act = async (c, action) => {
-    if (busyId) return;
-    let reason;
-    if (action === 'WARN') {
-      if (!confirm(`${c.memberName}님에게 미납 경고 알림(SMS 포함)을 보낼까요?`)) return;
-    } else {
-      reason = prompt('조치 사유를 입력해 주세요. (필수)');
-      if (reason === null) return;
-    }
-    setBusyId(c.overdueCaseId);
-    try {
-      const r = await run(() => admin.applyOverdueAction(c.overdueCaseId, action, reason), OD_ACTION_MSG[action]);
-      if (r.ok) reload();
-    } finally {
-      setBusyId(null);
-    }
-  };
-  const busy = busyId !== null;
+
   const [state, setState] = useState({ status: 'loading', open: [], done: [], doneError: '', error: '' });
   const [reloadKey, setReloadKey] = useState(0);
   const [busyId, setBusyId] = useState(null);   // 조치 처리 중인 미납 건 — 연속 클릭 중복 요청 방지
@@ -575,6 +558,25 @@ export function AdminOverdue() {
         });
     return () => { alive = false; };
   }, [reloadKey]);
+  
+  const act = async (c, action) => {
+    if (busyId) return;
+    let reason;
+    if (action === 'WARN') {
+      if (!confirm(`${c.memberName}님에게 미납 경고 알림(SMS 포함)을 보낼까요?`)) return;
+    } else {
+      reason = prompt('조치 사유를 입력해 주세요. (필수)');
+      if (reason === null) return;
+    }
+    setBusyId(c.overdueCaseId);
+    try {
+      const r = await run(() => admin.applyOverdueAction(c.overdueCaseId, action, reason), OD_ACTION_MSG[action]);
+      if (r.ok) reload();
+    } finally {
+      setBusyId(null);
+    }
+  };
+  const busy = busyId !== null;
 
   const alertOnly = c => c.overduePolicy === 'ALERT_ONLY'; // 모임 규칙이 '알림만'이면 채팅 제한 불가 (명세 F26-3)
   // 채팅 제한은 회원 단위(GYE_MEMBER) → 같은 회원의 해소 건이 여러 개여도 1명으로 셈
