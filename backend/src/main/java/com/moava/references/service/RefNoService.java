@@ -35,7 +35,9 @@ public class RefNoService {
     // 계좌번호·연락처처럼 숫자 10개 이상 연속(사이 하이픈·공백 1개 허용) → 사유 입력 금지 (AUDIT_LOG.DESCRIPTION에 계좌·연락처 기록 금지)
     // 날짜(2026-11-24, 2026.11.24, 2026/11/24)는 긴 숫자 검사 전에 지움 — "2026-11-24 10시 입금"이 계좌번호로 오인되지 않게
     // 앞뒤에 숫자가 붙어 있으면 날짜로 안 봄 (계좌번호 123456-78-901234 안의 일부를 날짜로 지우지 않도록)
-    private static final Pattern DATE = Pattern.compile("(?<!\\d)20\\d{2}[-./](0?[1-9]|1[0-2])[-./](0?[1-9]|[12]\\d|3[01])(?!\\d)");
+    // 날짜 앞뒤에 숫자가 바로 붙거나, 구분자(-./)를 사이에 두고 숫자가 이어지면 날짜로 보지 않음 (예: 2026-11-24-12345678)
+    private static final Pattern DATE = Pattern.compile(
+            "(?<!\\d)(?<!\\d[-./])20\\d{2}[-./](0?[1-9]|1[0-2])[-./](0?[1-9]|[12]\\d|3[01])(?!\\d)(?![-./]\\d)");
     private static final Pattern LONG_NUMBER = Pattern.compile("(\\d[\\s-]?){10,}");
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 

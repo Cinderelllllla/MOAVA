@@ -19,7 +19,6 @@ import java.util.Map;
  * - 미납 1일 차·5일 차: 회원에게 납입 안내(PAY_OVERDUE)
  * - 미납 5일 차 이상 + 아직 감지 안 된 건: OverdueCaseRegistrar가 저장(DETECTED)·관리자 알림(OVERDUE_5D)·감사 로그를 한 건씩 처리
  * - 납입 확인(CONFIRMED) 시 해소(RESOLVED)는 F23 ProofReviewService에서 처리
- *
  * 트랜잭션: 배치 전체를 하나로 묶지 않음 — 대상 한 건이 실패해도 나머지는 진행하고, 실패한 건은 로그로 남김
  */
 @Service
@@ -88,9 +87,11 @@ public class OverdueDetectService {
     }
 
     // 로그에는 이름 대신 ID만 (개인정보 보호)
+    // error: ID + 예외 종류만 / debug: 예외 메시지·스택 트레이스 (DB 값이 메시지에 섞일 수 있어서 분리)
     private static void logFailure(String job, OverdueTargetDto t, RuntimeException e) {
-        log.error("[F26] {} 실패 — 모임 {} · 회원 {} · {}: {}",
-                job, t.getGroupId(), t.getMemberId(), t.getPayMonth(), e.getMessage(), e);
+        log.error("[F26] {} 실패 — 모임 {} · 회원 {} · {} · {}",
+                job, t.getGroupId(), t.getMemberId(), t.getPayMonth(), e.getClass().getSimpleName());
+        log.debug("[F26] {} 실패 상세 — 모임 {} · 회원 {}", job, t.getGroupId(), t.getMemberId(), e);
     }
 
     private void notifyDue(OverdueTargetDto t) {

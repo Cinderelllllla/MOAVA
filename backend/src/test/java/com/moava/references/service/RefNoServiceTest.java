@@ -257,7 +257,27 @@ class RefNoServiceTest {
 
         assertEquals(400, e.getStatusCode().value());
         verify(refNoMapper, never()).findProof(any());
-    }
+    }     @Test
+        @DisplayName("정정: 날짜 뒤에 구분자로 긴 숫자가 이어지면(2026-11-24-12345678) 날짜로 보지 않고 400")
+        void correct_reasonWithDateJoinedNumber_400() {
+            ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                    () -> refNoService.correctRefNo(ADMIN_ID, PROOF_ID, request("MOAVA-00009", "2026-11-24-12345678 확인")));
+
+            assertEquals(400, e.getStatusCode().value());
+            verify(refNoMapper, never()).findProof(any());
+        }
+
+        @Test
+        @DisplayName("정정: 날짜 뒤에 공백과 시각(2026-11-24 10:00)이 오면 날짜로 보고 정정됨")
+        void correct_reasonWithDateAndTime_ok() {
+            when(refNoMapper.findProof(PROOF_ID)).thenReturn(confirmedProof("MOAVA-00001"));
+            when(refNoMapper.countRefNo("MOAVA-00009")).thenReturn(0);
+            when(refNoMapper.correctRefNo(PROOF_ID, "MOAVA-00001", "MOAVA-00009")).thenReturn(1);
+
+            RefNoResponse res = refNoService.correctRefNo(ADMIN_ID, PROOF_ID, request("MOAVA-00009", "2026-11-24 10:00 입금 건 오기입"));
+
+            assertEquals("MOAVA-00009", res.getRefNo());
+        }
     @Test
     @DisplayName("정정: 번호가 아직 없는 증빙이면 409")
     void correct_notAssigned_409() {
