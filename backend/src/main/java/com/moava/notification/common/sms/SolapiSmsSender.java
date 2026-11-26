@@ -73,19 +73,36 @@ public class SolapiSmsSender implements SmsSender {
         try {
             String date = Instant.now(clock).truncatedTo(ChronoUnit.SECONDS).toString();
             String salt = newSalt();
-            restClient.post()
+            Map<?, ?> res = restClient.post()
                     .uri(sendUrl)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Authorization", authorization(apiKey, apiSecret, date, salt))
                     .body(Map.of("message", Map.of("to", digits(to), "from", sender, "text", text)))
                     .retrieve()
-                    .toBodilessEntity();
-            return true;
+                    .body(Map.class);
+            return accepted(res);
         } catch (Exception e) {
             // 응답 본문에 번호가 섞일 수 있어 예외 종류만 남긴다
             log.warn("[SMS] SOLAPI 발송 실패: {}", e.getClass().getSimpleName());
             return false;
         }
+    }
+
+    /**
+     * SOLAPI 응답 판정. statusCode "2000"(정상 접수)만 성공.
+     * 접수 후 실제 도착 여부는 비동기라 SOLAPI 콘솔 메시지 로그에서 messageId로 확인한다.
+     * 응답의 to·from(전화번호)은 로그에 남기지 않는다.
+     */
+    static boolean accepted(Map<?, ?> res) {
+        Object code = res == null ? null : res.get("statusCode");
+        Object messageId = res == null ? null : res.get("messageId");
+        if ("2000".equals(String.valueOf(code))) {
+            log.info("[SMS] SOLAPI 접수 statusCode=2000, messageId={}", messageId);
+            return true;
+        }
+        log.warn("[SMS] SOLAPI 접수 실패 statusCode={}, statusMessage={}, messageId={}",
+                code, res == null ? null : res.get("statusMessage"), messageId);
+        return false;
     }
 
     /** Authorization 헤더 값. signature = hex(HMAC-SHA256(secret, date + salt)) */
