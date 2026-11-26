@@ -2,11 +2,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../common/store';
-import { groups, admin, procedures, proofs, memberName, proofPeriod } from '../../api';
-import { PageHead, Card, Input, HistoryTable, Empty } from '../../components/ui';
-import { LoadState, ProofAttachment } from '../../components/shared';
+import { groups, admin, procedures, memberName } from '../../api';
+import { PageHead, Card, Input, Empty } from '../../components/ui';
+import { LoadState } from '../../components/shared';
 import Icon from '../../components/Icon';
-import { krw, formatKrw } from '../../common/format';
+import { formatKrw } from '../../common/format';
 
 const CONSENT_STATUS_LABELS = { PENDING: '응답 대기', AGREED: '동의 완료', REJECTED: '거부', EXEMPT: '동의 면제' };
 const DASHBOARD_EVENT_TYPE_LABEL = {

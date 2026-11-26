@@ -20,6 +20,7 @@ import java.util.Map;
  * - 미납 5일 차 이상 + 아직 감지 안 된 건: OverdueCaseRegistrar가 저장(DETECTED)·관리자 알림(OVERDUE_5D)·감사 로그를 한 건씩 처리
  * - 납입 확인(CONFIRMED) 시 해소(RESOLVED)는 F23 ProofReviewService에서 처리
  * 트랜잭션: 배치 전체를 하나로 묶지 않음 — 대상 한 건이 실패해도 나머지는 진행하고, 실패한 건은 로그로 남김
+ *
  */
 @Service
 @RequiredArgsConstructor
