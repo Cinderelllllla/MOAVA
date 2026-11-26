@@ -96,12 +96,20 @@ public class SecurityConfig {
                     "/api/v1/groups/*/withdrawals/*/consent-targets"
                 ).hasAnyRole("ADMIN", "MEMBER")
 
+                // KFTC v2.0 모의 오픈뱅킹 OAuth 및 원장 API (자체 OAuth Bearer 토큰으로 검증)
+                .requestMatchers(
+                    "/oauth/2.0/**",
+                    "/v2.0/**"
+                ).permitAll()
+
                 // 회원 전용 API
                 .requestMatchers(
                     "/api/auth/me",
                     "/api/auth/password",
                     "/api/v1/groups/**",
-                    "/api/groups/**"
+                    "/api/groups/**",
+                    "/api/openbanking/codef/**",
+                    "/api/openbanking/accounts/**"
                 ).hasRole("MEMBER")
 
                 // 나머지 API는 인증 필요

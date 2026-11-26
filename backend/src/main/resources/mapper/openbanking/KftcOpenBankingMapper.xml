@@ -86,7 +86,7 @@
         SELECT <include refid="accountColumns"/>
         FROM MOCK_KFTC_ACCOUNT
         WHERE BANK_CODE = #{bankCode}
-          AND ACCOUNT_NO = #{accountNo}
+          AND REPLACE(ACCOUNT_NO, '-', '') = REPLACE(#{accountNo}, '-', '')
     </select>
 
     <select id="findAccountByFintechUseNum" resultType="com.moava.openbanking.dto.KftcRecordDto$AccountRecord">
