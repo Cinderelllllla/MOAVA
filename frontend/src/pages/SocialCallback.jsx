@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { finishSocial } from '../api/auth';
+import { encodeRegionForServer } from '../common/regions';
+import RegionSelector from '../components/RegionSelector';
+import TermsAgreementModal from '../components/TermsAgreementModal';
 
 export default function SocialCallback() {
 
@@ -21,6 +24,7 @@ export default function SocialCallback() {
     const [ready, setReady] = useState(false);
     const [providerEmail, setProviderEmail] = useState('');
     const [terms, setTerms] = useState([]);
+    const [termsOpen, setTermsOpen] = useState(false);
 
     const [form, setForm] = useState({
         name: '',
@@ -28,6 +32,7 @@ export default function SocialCallback() {
         phone: '',
         regionSido: '',
         regionSigungu: '',
+        regionDong: '',
         agreedTermsIds: []
     });
 
@@ -141,20 +146,67 @@ export default function SocialCallback() {
 
         setForm(old => ({
             ...old,
-
             agreedTermsIds: checked
-                ? [...old.agreedTermsIds, id]
+                ? (old.agreedTermsIds.includes(id)
+                    ? old.agreedTermsIds
+                    : [...old.agreedTermsIds, id])
                 : old.agreedTermsIds.filter(
                     value => value !== id
                 )
         }));
     };
 
-    const signup = async e => {
+    const toggleAllTerms = checked => {
+
+        setForm(old => ({
+            ...old,
+            agreedTermsIds: checked
+                ? terms.map(t => t.termsId)
+                : []
+        }));
+    };
+
+    const openTermsModal = e => {
 
         e.preventDefault();
 
         if (busy || !ready) return;
+
+        const encodedRegion = encodeRegionForServer({
+            sido: form.regionSido,
+            sigungu: form.regionSigungu,
+            dong: form.regionDong
+        });
+
+        if (!encodedRegion.regionSido || !encodedRegion.regionSigungu || !encodedRegion.regionDong) {
+            setError('활동 지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
+            return;
+        }
+
+        if (terms.length !== 6) {
+            setError('활성 약관 6종 등록이 필요합니다.');
+            return;
+        }
+
+        setError('');
+        setTermsOpen(true);
+    };
+
+    const submitSignup = async () => {
+
+        if (busy || !ready) return;
+
+        const encodedRegion = encodeRegionForServer({
+            sido: form.regionSido,
+            sigungu: form.regionSigungu,
+            dong: form.regionDong
+        });
+
+        if (!encodedRegion.regionSido || !encodedRegion.regionSigungu || !encodedRegion.regionDong) {
+            setError('활동 지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
+            setTermsOpen(false);
+            return;
+        }
 
         setBusy(true);
         setError('');
@@ -163,9 +215,13 @@ export default function SocialCallback() {
 
             await finishSocial('social/signup', {
                 ...form,
+                regionSido: encodedRegion.regionSido,
+                regionSigungu: encodedRegion.regionSigungu,
+                regionDong: encodedRegion.regionDong,
                 signupToken: token
             });
 
+            setTermsOpen(false);
             navigate('/dashboard', {
                 replace: true
             });
@@ -199,7 +255,7 @@ export default function SocialCallback() {
                         : '간편 로그인'}
                 </h1>
 
-                {error && (
+                {error && !termsOpen && (
                     <p style={{ color: 'red' }}>
                         {error}
                     </p>
@@ -211,7 +267,7 @@ export default function SocialCallback() {
 
                 {type === 'signup' && ready && (
 
-                    <form onSubmit={signup}>
+                    <form onSubmit={openTermsModal}>
 
                         <p className="muted">
                             소셜 인증이 완료되었습니다.
@@ -249,77 +305,28 @@ export default function SocialCallback() {
                             />
                         </label>
 
-                        <label className="field">
-                            활동 지역 시/도
-                            <input
-                                value={form.regionSido}
-                                onChange={change('regionSido')}
-                                placeholder="서울"
-                                required
-                            />
-                        </label>
-
-                        <label className="field">
-                            활동 지역 시/군/구
-                            <input
-                                value={form.regionSigungu}
-                                onChange={change('regionSigungu')}
-                                placeholder="마포구"
-                                required
-                            />
-                        </label>
-
-                        <h3>약관 동의</h3>
-
-                        {terms.map(t => (
-
-                            <div key={t.termsId}>
-
-                                <label className="checkline">
-
-                                    <input
-                                        type="checkbox"
-                                        required={t.requiredYn === 'Y'}
-                                        checked={
-                                            form.agreedTermsIds.includes(
-                                                t.termsId
-                                            )
-                                        }
-                                        onChange={e =>
-                                            checkTerms(
-                                                t.termsId,
-                                                e.target.checked
-                                            )
-                                        }
-                                    />
-
-                                    {t.title}
-
-                                    {t.requiredYn === 'Y'
-                                        ? ' (필수)'
-                                        : ' (선택)'}
-
-                                </label>
-
-                                <details>
-
-                                    <summary>
-                                        약관 전문 보기
-                                    </summary>
-
-                                    <p style={{
-                                        whiteSpace: 'pre-wrap'
-                                    }}>
-                                        {t.body}
-                                    </p>
-
-                                </details>
-
-                            </div>
-                        ))}
+                        <RegionSelector
+                            mode="required"
+                            namePrefix="socialRegion"
+                            className="region-selector-grid region-selector-compact"
+                            sido={form.regionSido}
+                            sigungu={form.regionSigungu}
+                            dong={form.regionDong}
+                            disabled={busy}
+                            onChange={({ sido, sigungu, dong }) =>
+                                setForm(old => ({
+                                    ...old,
+                                    regionSido: sido,
+                                    regionSigungu: sigungu,
+                                    regionDong: dong
+                                }))
+                            }
+                        />
 
                         {terms.length !== 6 && (
-                            <p>활성 약관 6종 등록이 필요합니다.</p>
+                            <p className="terms-error-msg">
+                                활성 약관 6종 등록이 필요합니다.
+                            </p>
                         )}
 
                         <button
@@ -329,7 +336,7 @@ export default function SocialCallback() {
                         >
                             {busy
                                 ? '가입 중...'
-                                : '가입하고 로그인'}
+                                : '약관 동의하고 가입하기'}
                         </button>
 
                     </form>
@@ -342,6 +349,19 @@ export default function SocialCallback() {
                 </div>
 
             </div>
+
+            <TermsAgreementModal
+                open={termsOpen}
+                terms={terms}
+                agreedTermsIds={form.agreedTermsIds}
+                onToggleTerm={checkTerms}
+                onToggleAll={toggleAllTerms}
+                onClose={() => setTermsOpen(false)}
+                onConfirm={submitSignup}
+                busy={busy}
+                error={error}
+                confirmLabel="동의하고 가입하기"
+            />
 
         </div>
     );

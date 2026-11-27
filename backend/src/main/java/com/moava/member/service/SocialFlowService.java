@@ -97,7 +97,7 @@ public class SocialFlowService {
             "CREDIT_AI_PROFI",
             "E_FIN_SETTLE");
         
-        Set<String> optionalCodes = Set.of("LOC_KAKAOMAP, MKT_SMS_OPT");
+        Set<String> optionalCodes = Set.of("LOC_KAKAOMAP", "MKT_SMS_OPT");
 
         Set<String> actualRequired = new HashSet<>();
         Set<String> actualOptional = new HashSet<>();
