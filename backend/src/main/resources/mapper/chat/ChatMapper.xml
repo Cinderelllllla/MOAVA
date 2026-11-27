@@ -128,4 +128,35 @@
            AND gm.STATUS = 'ACTIVE'
          ORDER BY LEADER DESC, gm.JOINED_AT, gm.MEMBER_ID
     </select>
+
+    <!-- ==== MOA-96 관리자 신고 건 대상 모임 채팅 열람 (읽기 전용). SUPPORT_REPORT·ADMIN 은 읽기만 한다 ==== -->
+
+    <select id="countActiveAdmin" resultType="int">
+        SELECT COUNT(*)
+          FROM ADMIN
+         WHERE ADMIN_ID = #{adminId}
+           AND STATUS = 'ACTIVE'
+    </select>
+
+    <resultMap id="reportRefMap" type="com.moava.chat.dto.ChatReportRef">
+        <constructor>
+            <arg column="GROUP_ID" javaType="java.lang.Long"/>
+            <arg column="STATUS"   javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 신고 상세(DETAIL_ENC)는 읽지 않는다 -->
+    <select id="selectReportForChat" resultMap="reportRefMap">
+        SELECT GROUP_ID, STATUS
+          FROM SUPPORT_REPORT
+         WHERE SUPPORT_REPORT_ID = #{reportId}
+    </select>
+
+    <!-- 관리자 열람 기록. EVENT_TYPE 은 여기 고정, 채팅 본문·이름은 넣지 않는다 -->
+    <insert id="insertChatViewAudit">
+        INSERT INTO AUDIT_LOG (AUDIT_LOG_ID, GROUP_ID, ACTOR_MEMBER_ID, ACTOR_ADMIN_ID, TARGET_MEMBER_ID,
+                               EVENT_TYPE, DESCRIPTION, CREATED_AT)
+        VALUES (SEQ_AUDIT_LOG.NEXTVAL, #{groupId}, NULL, #{adminId}, NULL,
+                'CHAT_VIEW', #{description}, SYSDATE)
+    </insert>
 </mapper>
