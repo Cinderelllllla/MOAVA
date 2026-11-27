@@ -117,7 +117,8 @@ class AiFinanceControllerTest {
                 .andExpect(jsonPath("$.data.risk.risk_label").value("안정"))
                 .andExpect(jsonPath("$.data.risk.safety_factor").value(0.5))
                 .andExpect(jsonPath("$.data.risk.default_probability").doesNotExist())
-                .andExpect(jsonPath("$.data.risk.source").doesNotExist());
+                .andExpect(jsonPath("$.data.risk.source").doesNotExist())
+                .andExpect(jsonPath("$.data.fallback").value(false));
     }
 
     @Test
@@ -139,15 +140,19 @@ class AiFinanceControllerTest {
     }
 
     @Test
-    void ML_서버가_꺼져_있으면_503_안내() throws Exception {
+    void ML_서버가_꺼져_있어도_대체값으로_200_응답() throws Exception {
         when(ml.contribution(anyMap())).thenThrow(new FinanceException(HttpStatus.SERVICE_UNAVAILABLE,
                 "ML_UNAVAILABLE", "분석 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요."));
 
+        // 3,200,000 − 2,080,000 − 350,000 − 250,000 = 520,000 × 0.35 = 182,000 → 150,000 (기록 없음 → 기본 '주의')
         mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error.code").value("ML_UNAVAILABLE"))
-                .andExpect(jsonPath("$.error.message").value("분석 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요."));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fallback").value(true))
+                .andExpect(jsonPath("$.data.fallback_source").value("DEFAULT"))
+                .andExpect(jsonPath("$.data.recommended_amount").value(150000))
+                .andExpect(jsonPath("$.data.risk.risk_level").value("CAUTION"))
+                .andExpect(jsonPath("$.data.risk.default_probability").doesNotExist());
     }
 
     // ---- 정책 값 ----

@@ -36,4 +36,7 @@ public interface FinanceProfileMapper {
             @Param("safetyK") BigDecimal safetyK,
             @Param("fallbackYn") String fallbackYn
     );
+
+    /** 최신 RISK_SCORE 1건을 FALLBACK_YN='Y' 로 복사 INSERT (ML 장애 대체값 PREVIOUS). 기록이 없으면 0건 */
+    int insertRiskScoreCopyOfLatest(@Param("memberId") long memberId);
 }

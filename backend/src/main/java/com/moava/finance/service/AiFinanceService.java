@@ -1,11 +1,15 @@
 package com.moava.finance.service;
 
 import com.moava.finance.dto.AiContributionRequest;
+import com.moava.finance.dto.RiskScoreRow;
 import com.moava.finance.mapper.AiPayoutMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,6 +25,12 @@ import java.util.Map;
  */
 @Service
 public class AiFinanceService {
+
+    private static final Logger log = LoggerFactory.getLogger(AiFinanceService.class);
+
+    /** 대체값 출처: 직전 RISK_SCORE 재사용 / 기록이 없어 기본 '주의' */
+    static final String FALLBACK_PREVIOUS = "PREVIOUS";
+    static final String FALLBACK_DEFAULT = "DEFAULT";
 
     /** 정책 값으로 내보낼 ML /risk/model 항목 */
     static final List<String> POLICY_KEYS = List.of("round_unit", "income_cap_ratio", "risk_levels");
@@ -48,7 +58,12 @@ public class AiFinanceService {
     /** 다른 회원 위험 정보는 등급만 */
     static final List<String> OTHERS_RISK_KEYS = List.of("risk_level", "risk_label");
 
-    /** 추천 납입액. 응답 모양은 ML 과 같게 두되, risk 에서 연체 확률 등은 뺀다. */
+    /**
+     * 추천 납입액. 응답 모양은 ML 과 같게 두되, risk 에서 연체 확률 등은 뺀다.
+     * 응답에는 항상 fallback(true/false)이 있다. ML 서버에 연결하지 못하면(ML_UNAVAILABLE) 503 대신
+     * 서버에서 같은 식으로 계산한 대체값을 준다 (F09 예외: 직전 RISK_SCORE 재사용, 없으면 CAUTION k=0.35).
+     * 입력 검증(금액·자가 응답 4문항)은 대체값을 쓸 때도 먼저 한다.
+     */
     @SuppressWarnings("unchecked")
     public Map<String, Object> contribution(long memberId, AiContributionRequest req) {
         if (req == null) {
@@ -64,12 +79,62 @@ public class AiFinanceService {
         body.put("monthly_expense", required(req.monthlyExpense()));
         body.put("monthly_saving", optional(req.monthlySaving()));
         body.put("emergency_fund", optional(req.emergencyFund()));
-        Map<String, Object> result = new LinkedHashMap<>(ml.contribution(body));
+        Map<String, Object> raw;
+        try {
+            raw = ml.contribution(body);
+        } catch (FinanceException e) {
+            if (!"ML_UNAVAILABLE".equals(e.getCode())) {
+                throw e;   // ML_BAD_REQUEST 등 입력 오류는 그대로
+            }
+            return fallback(memberId, body, e.getCode());
+        }
+        Map<String, Object> result = new LinkedHashMap<>(raw);
         Object rawRisk = result.get("risk");
         if (profileService != null && rawRisk instanceof Map<?, ?> riskMap) {
             profileService.recordRiskScore(memberId, (Map<String, Object>) riskMap);
         }
         result.put("risk", pick(rawRisk, OWN_RISK_KEYS));
+        result.put("fallback", false);
+        return result;
+    }
+
+    /**
+     * ML 장애 대체값. 직전 RISK_SCORE 가 있으면 그 등급·안전계수(PREVIOUS), 없으면 CAUTION·0.35(DEFAULT).
+     * 계산식은 ML 과 같다(RiskPolicy.recommend). 응답에 연체 확률은 넣지 않는다.
+     * 로그에는 회원 번호·출처·원인 코드만 남긴다(금액·자가 응답·내부 키 X).
+     */
+    private Map<String, Object> fallback(long memberId, Map<String, Object> body, String cause) {
+        RiskScoreRow previous = profileService == null ? null : profileService.latestRiskScore(memberId);
+        String source = previous != null ? FALLBACK_PREVIOUS : FALLBACK_DEFAULT;
+        String tier = previous != null ? RiskPolicy.normalizeTier(previous.tier()) : RiskPolicy.CAUTION;
+        BigDecimal safetyK = previous != null && previous.safetyK() != null ? previous.safetyK() : RiskPolicy.safetyKOf(tier);
+
+        RiskPolicy.Recommendation r = RiskPolicy.recommend(
+                (long) body.get("monthly_income"), (long) body.get("monthly_expense"),
+                (long) body.get("monthly_saving"), (long) body.get("emergency_fund"), safetyK);
+
+        if (previous != null) {
+            // 직전 기록을 FALLBACK_YN='Y' 로 한 줄 더 남긴다(확률·등급·계수 그대로 복사)
+            profileService.recordFallbackCopy(memberId);
+        }
+        // DEFAULT 는 RISK_SCORE 에 저장하지 않는다: 연체 확률을 알 수 없어서 값을 지어내지 않기 위해서다.
+        // 그래서 이 회원은 "분석 기록 없음"으로 남아 수령 순서 맨 뒤 회차·모임 건강도 평균 제외 규칙을 그대로 따른다.
+        log.warn("AI 분석 대체값 사용 memberId={} fallback_source={} cause={}", memberId, source, cause);
+
+        Map<String, Object> risk = new LinkedHashMap<>();
+        risk.put("risk_level", tier);
+        risk.put("risk_label", RiskPolicy.labelOf(tier));
+        risk.put("safety_factor", safetyK.doubleValue());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("available_amount", r.available());
+        result.put("recommended_amount", r.recommended());
+        result.put("capped", r.capped());
+        result.put("round_unit", RiskPolicy.ROUND_UNIT);
+        result.put("income_cap_ratio", RiskPolicy.INCOME_CAP_RATIO.doubleValue());
+        result.put("risk", risk);
+        result.put("fallback", true);
+        result.put("fallback_source", source);
         return result;
     }
 
