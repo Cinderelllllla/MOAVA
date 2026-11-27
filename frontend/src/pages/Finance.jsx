@@ -6,7 +6,7 @@ import useMlFinanceAssessment from '../common/useMlFinanceAssessment';
 import { finance } from '../api';
 import { PageHead, Card, Input, Select } from '../components/ui';
 import { BarChart, FallbackNotice, FinanceAssessmentStatus, LoadState, MonthlyChart, RiskPanel } from '../components/shared';
-import { won, MONTHS } from '../common/format';
+import { won } from '../common/format';
 
 export function Finance() {
   const mlAssessment = useMlFinanceAssessment();
@@ -26,16 +26,118 @@ export function Finance() {
 
 export function FinanceMonthly() {
   const { run, ui, setUi } = useApp();
-  const [v, setV] = useState({ month: ui.financeMonth || finance.currentMonthLabel(), income: '', expense: '' });
+  const months = finance.recentMonths();   // 오래된 달 → 이번 달
+  // 기억해 둔 대상 월(yearMonth)이 최근 12개월이 아니면(예전 '11월' 값 등) 이번 달
+  const initialMonth = finance.isRecentMonth(ui.financeMonth) ? ui.financeMonth : finance.currentYearMonth();
+  const [v, setV] = useState({ month: initialMonth, income: '', expense: '' });
   // 화면에 들어올 때 서버의 최신 월별 기록을 받아 온다(실패하면 오류 안내 + 다시 시도)
   useEffect(() => { finance.refreshMonthly().catch(() => {}); }, []);
   const monthly = finance.getMonthlyState();
-  const submit = async e => { e.preventDefault(); const r = await run(() => finance.saveMonth(v.month, Number(v.income), Number(v.expense)), '월별 데이터가 저장되었어요.'); if (r.ok) { setUi({ financeMonth: v.month }); setV({ ...v, income: '', expense: '' }); } };
+
+  const submit = async e => {
+    e.preventDefault();
+    const r = await run(() => finance.saveMonth(v.month, Number(v.income), Number(v.expense)), `${finance.yearMonthLabel(v.month)} 데이터가 저장되었어요.`);
+    if (!r.ok) return;
+    // 저장 후 다음 달로 이동 (이미 이번 달이면 그대로). 다음 달에 기록이 있어도 이동한다(덮어쓰기 안내는 그대로)
+    const i = months.findIndex(m => m.yearMonth === v.month);
+    const next = i >= 0 && i < months.length - 1 ? months[i + 1].yearMonth : v.month;
+    setUi({ financeMonth: next });
+    setV({ month: next, income: '', expense: '' });
+  };
+
   return <><PageHead kicker="MONTHLY DATA" title="월별 금융 데이터 관리" sub="월별 수입·지출 데이터를 추가하고 저장합니다." />
-    <Card><form className="form-grid" onSubmit={submit}><Select label="대상 월" name="month" options={MONTHS} value={v.month} onChange={e => setV({ ...v, month: e.target.value })} /><Input label="월수입 (만 원)" name="income" type="number" min={0} required value={v.income} onChange={e => setV({ ...v, income: e.target.value })} /><Input label="월지출 (만 원)" name="expense" type="number" min={0} required value={v.expense} onChange={e => setV({ ...v, expense: e.target.value })} /><div className="field"><label>데이터 저장</label><button className="btn primary">이 월 데이터 저장</button></div></form><p className="info mini">같은 월을 다시 저장하면 덮어써요. 대상 월은 오늘 기준 최근 12개월 안의 달로 저장돼요.</p></Card>
+    <Card><form className="form-grid" onSubmit={submit}><Select label="대상 월" name="month" options={months.map(m => [m.yearMonth, m.label])} value={v.month} onChange={e => setV({ ...v, month: e.target.value })} /><Input label="월수입 (만 원)" name="income" type="number" min={0} required value={v.income} onChange={e => setV({ ...v, income: e.target.value })} /><Input label="월지출 (만 원)" name="expense" type="number" min={0} required value={v.expense} onChange={e => setV({ ...v, expense: e.target.value })} /><div className="field"><label>데이터 저장</label><button className="btn primary">이 월 데이터 저장</button></div></form>
+      <p className="info mini">같은 달을 다시 저장하면 덮어써요. 오늘 기준 최근 12개월({months[0].label} ~ {months[months.length - 1].label})만 저장할 수 있어요.</p>
+      <MonthlyBatchInput months={months} items={monthly.items} />
+    </Card>
     <div className="section"><Card><h2>저장된 월별 데이터</h2>
       <LoadState status={monthly.status} error={monthly.error} onRetry={() => finance.refreshMonthly().catch(() => {})} loadingText="월별 기록을 불러오는 중이에요.">
         <BarChart data={monthly.items} />
-        {monthly.items.length > 0 && <div className="tablewrap"><table><thead><tr><th>월</th><th>수입</th><th>지출</th><th>잔여</th><th>관리</th></tr></thead><tbody>{monthly.items.map(x => <tr key={x.month}><td>{x.month}</td><td>{won(x.income)}</td><td>{won(x.expense)}</td><td>{won(x.income - x.expense)}</td><td><button className="btn small danger" onClick={() => confirm(`${x.month} 데이터를 삭제할까요?`) && run(() => finance.removeMonth(x.month), `${x.month} 데이터를 삭제했어요.`)}>삭제</button></td></tr>)}</tbody></table></div>}
+        {monthly.items.length > 0 && <div className="tablewrap"><table><thead><tr><th>월</th><th>수입</th><th>지출</th><th>잔여</th><th>관리</th></tr></thead><tbody>{monthly.items.map(x => <tr key={x.yearMonth}><td>{x.label}</td><td>{won(x.income)}</td><td>{won(x.expense)}</td><td>{won(x.income - x.expense)}</td><td><button className="btn small danger" onClick={() => confirm(`${x.label} 데이터를 삭제할까요?`) && run(() => finance.removeMonth(x.yearMonth), `${x.label} 데이터를 삭제했어요.`)}>삭제</button></td></tr>)}</tbody></table></div>}
       </LoadState></Card></div></>;
+}
+
+/** MOA-102 여러 달 한 번에 입력 + CSV 불러오기. 이미 저장된 달은 현재 값으로 미리 채운다 */
+function MonthlyBatchInput({ months, items }) {
+  const { run } = useApp();
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState({});          // { [yearMonth]: { income:'', expense:'' } } (문자열, 만 원)
+  const [csvErrors, setCsvErrors] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  const fromSaved = () => Object.fromEntries(months.map(m => {
+    const saved = items.find(x => x.yearMonth === m.yearMonth);
+    return [m.yearMonth, { income: saved ? String(saved.income) : '', expense: saved ? String(saved.expense) : '' }];
+  }));
+  const toggle = () => { if (!open) { setRows(fromSaved()); setCsvErrors([]); } setOpen(o => !o); };
+  const setCell = (ym, key, value) => setRows(r => ({ ...r, [ym]: { ...(r[ym] || { income: '', expense: '' }), [key]: value } }));
+
+  const filled = x => String(x ?? '').trim() !== '';
+  const rowState = ym => {
+    const r = rows[ym] || {};
+    const fi = filled(r.income), fe = filled(r.expense);
+    if (!fi && !fe) return 'empty';
+    if (fi !== fe) return 'half';
+    const a = Number(r.income), b = Number(r.expense);
+    return Number.isFinite(a) && Number.isFinite(b) && a >= 0 && b >= 0 ? 'ok' : 'bad';
+  };
+  const ready = months.filter(m => rowState(m.yearMonth) === 'ok');
+  const blocked = months.filter(m => ['half', 'bad'].includes(rowState(m.yearMonth)));
+
+  const save = async () => {
+    if (blocked.length || !ready.length) return;
+    setSaving(true);
+    try {
+      const r = await run(() => finance.saveMonths(ready.map(m => ({ yearMonth: m.yearMonth, income: Number(rows[m.yearMonth].income), expense: Number(rows[m.yearMonth].expense) }))),
+        `${ready.length}개월 데이터를 한 번에 저장했어요.`);
+      if (r.ok) setCsvErrors([]);
+    } finally { setSaving(false); }
+  };
+
+  const loadCsv = async e => {
+    const file = e.target.files?.[0];
+    e.target.value = '';   // 같은 파일을 다시 골라도 동작하게
+    if (!file) return;
+    const { rows: parsed, errors } = finance.parseMonthlyCsv(await file.text());
+    setRows(r => {
+      const next = { ...r };
+      parsed.forEach(x => { next[x.yearMonth] = { income: String(x.income), expense: String(x.expense) }; });
+      return next;
+    });
+    setCsvErrors([`${parsed.length}개월을 표에 채웠어요. 확인한 뒤 아래 저장 버튼을 눌러 주세요.`, ...errors]);
+  };
+
+  const downloadTemplate = () => {
+    const url = URL.createObjectURL(new Blob([finance.monthlyCsvTemplate()], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = '월별_수입지출_양식.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  return <div style={{ marginTop: 14 }}>
+    <button type="button" className="btn soft small" aria-expanded={open} onClick={toggle}>{open ? '여러 달 입력 닫기' : '여러 달 한 번에 입력'}</button>
+    {open && <div className="policy-panel" style={{ marginTop: 10 }}>
+      <div className="actions" style={{ marginTop: 0 }}>
+        <label className="btn small soft" style={{ cursor: 'pointer' }}>CSV 불러오기<input type="file" accept=".csv,text/csv" onChange={loadCsv} style={{ display: 'none' }} /></label>
+        <button type="button" className="btn small soft" onClick={downloadTemplate}>CSV 양식 받기</button>
+        <span className="muted mini">형식: 연월,수입(만원),지출(만원) · 예) 2026-01,300,200 · 불러오면 표에만 채워져요</span>
+      </div>
+      {csvErrors.length > 0 && <div className="info mini" style={{ marginTop: 10 }} role="status">{csvErrors.map((t, i) => <div key={i}>{t}</div>)}</div>}
+      <div className="tablewrap" style={{ marginTop: 10 }}><table><thead><tr><th>월</th><th>수입 (만 원)</th><th>지출 (만 원)</th></tr></thead><tbody>
+        {months.map(m => {
+          const st = rowState(m.yearMonth), r = rows[m.yearMonth] || { income: '', expense: '' };
+          return <tr key={m.yearMonth}>
+            <td>{m.label}{st === 'half' && <div className="warning mini" style={{ padding: '2px 6px', marginTop: 4 }}>수입·지출을 둘 다 입력하거나 둘 다 비워 주세요</div>}{st === 'bad' && <div className="warning mini" style={{ padding: '2px 6px', marginTop: 4 }}>0 이상의 숫자만 넣을 수 있어요</div>}</td>
+            <td><input className="control" type="number" min={0} aria-label={`${m.label} 수입`} value={r.income} onChange={e => setCell(m.yearMonth, 'income', e.target.value)} /></td>
+            <td><input className="control" type="number" min={0} aria-label={`${m.label} 지출`} value={r.expense} onChange={e => setCell(m.yearMonth, 'expense', e.target.value)} /></td>
+          </tr>;
+        })}
+      </tbody></table></div>
+      <div className="actions" style={{ marginTop: 10 }}>
+        <button type="button" className="btn primary" disabled={saving || !ready.length || blocked.length > 0} onClick={save}>{saving ? '저장 중…' : `입력한 달 한 번에 저장 (${ready.length}개월)`}</button>
+        {blocked.length > 0 && <span className="warning mini" style={{ padding: '4px 8px' }}>{blocked.map(m => m.label).join(', ')}을(를) 고쳐 주세요</span>}
+      </div>
+    </div>}
+  </div>;
 }

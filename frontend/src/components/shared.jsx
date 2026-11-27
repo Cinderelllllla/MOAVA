@@ -7,11 +7,19 @@ import { won, krw, signed } from '../common/format';
 import { Empty } from './ui';
 import Icon from './Icon';
 
+/** 차트 아래 라벨: 짧게 "12월". 첫 칸과 1월 칸은 "'25.12", "'26.1"처럼 연도를 붙여 해가 바뀌는 곳을 보인다 (MOA-102) */
+const chartLabel = (x, i) => {
+  const ym = String(x.yearMonth || '');
+  if (!/^\d{6}$/.test(ym)) return x.month;
+  const m = Number(ym.slice(4));
+  return i === 0 || m === 1 ? `'${ym.slice(2, 4)}.${m}` : `${m}월`;
+};
 export function BarChart({ data, limit }) {
   if (!data?.length) return <Empty>아직 월별 기록이 없어요. 월별 금융 데이터에서 수입·지출을 저장해 보세요.</Empty>;
   const a = limit ? data.slice(-limit) : data, max = Math.max(1, ...a.flatMap(x => [x.income, x.expense]));
-  return <><div className="chart">{a.map(x => <div className="bar-pair" key={x.month}><div className="bar income" style={{ height: `${x.income / max * 100}%` }} title={`수입 ${x.income}만 원`} /><div className="bar expense" style={{ height: `${x.expense / max * 100}%` }} title={`지출 ${x.expense}만 원`} /></div>)}</div>
-    <div className="chart-labels">{a.map(x => <span key={x.month}>{x.month}</span>)}</div>
+  const keyOf = x => x.yearMonth || x.month;
+  return <><div className="chart">{a.map(x => <div className="bar-pair" key={keyOf(x)}><div className="bar income" style={{ height: `${x.income / max * 100}%` }} title={`${x.label || x.month} 수입 ${x.income}만 원`} /><div className="bar expense" style={{ height: `${x.expense / max * 100}%` }} title={`${x.label || x.month} 지출 ${x.expense}만 원`} /></div>)}</div>
+    <div className="chart-labels">{a.map((x, i) => <span key={keyOf(x)}>{chartLabel(x, i)}</span>)}</div>
     <p className="muted mini" style={{ textAlign: 'right', marginTop: 12 }}>● 수입(진한 색)　● 지출(연한 색) · 단위: 만 원{limit ? ` · 최근 ${a.length}개월` : ''}</p></>;
 }
 
