@@ -372,7 +372,9 @@ public class CodefBankService {
             throw CodefException.badRequest("CODEF_NOT_VERIFIED", "먼저 실계좌 인증을 완료해 주세요.");
         }
 
-        String connectedId = cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer());
+        String connectedId = requireExternalConnectedId(
+                cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer()), bank
+        );
         String accountDigits = cryptoKeyService.decrypt(conn.getVerifiedAccountEnc(), conn.getKeyVer());
 
         LocalDate today = LocalDate.now();
@@ -429,7 +431,9 @@ public class CodefBankService {
             throw CodefException.notFound("CODEF_NOT_CONNECTED", "먼저 해당 은행 계정을 연결해 주세요.");
         }
 
-        String connectedId = cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer());
+        String connectedId = requireExternalConnectedId(
+                cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer()), bank
+        );
         String accountDigits;
         if (isNotBlank(req.getAccount())) {
             accountDigits = normalizeAccountDigits(req.getAccount());
@@ -498,7 +502,7 @@ public class CodefBankService {
     ) {
         try {
             String connectedId = cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer());
-            if (!isNotBlank(connectedId) || connectedId.startsWith("QUICK_OAUTH:")) {
+            if (!isNotBlank(connectedId) || isQuickOAuthMarker(connectedId)) {
                 return;
             }
             if (tryDeleteRemoteAccount(orgCode, connectedId, "0")) {
@@ -572,7 +576,22 @@ public class CodefBankService {
                     bank.getBankName() + " 계정이 연결되어 있지 않습니다. 먼저 공동인증서 또는 은행 로그인으로 연결해 주세요."
             );
         }
-        return cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer());
+        String decrypted = cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer());
+        return requireExternalConnectedId(decrypted, bank);
+    }
+
+    private String requireExternalConnectedId(String connectedId, CodefBankCode bank) {
+        if (!isNotBlank(connectedId) || isQuickOAuthMarker(connectedId)) {
+            throw CodefException.badRequest(
+                    "CODEF_QUICK_OAUTH_ONLY",
+                    bank.getBankName() + "은(는) 가상은행 1원 인증으로 연결된 계좌입니다. CODEF 원격 조회 대신 오픈뱅킹 원장 조회를 이용해 주세요."
+            );
+        }
+        return connectedId;
+    }
+
+    private static boolean isQuickOAuthMarker(String connectedId) {
+        return connectedId != null && connectedId.startsWith("QUICK_OAUTH:");
     }
 
     private List<CodefDto.AccountSummary> parseDepositTrustAccounts(JsonNode node) {

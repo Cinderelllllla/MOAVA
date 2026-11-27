@@ -2,39 +2,70 @@ package com.moava.openbanking.codef;
 
 import com.moava.crypto.service.CryptoKeyService;
 import com.moava.group.account.service.AccountVerificationProvider;
-import lombok.RequiredArgsConstructor;
+import com.moava.openbanking.dto.KftcRecordDto;
+import com.moava.openbanking.mapper.MockBankLedgerMapper;
+import com.moava.openbanking.service.MockBankProvisionService;
+import com.moava.openbanking.service.MockBankQuickConnectService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
 
 /**
- * F19 모임 계좌 소유 인증({@link AccountVerificationProvider})의 CODEF 연동 구현체.
+ * F19 모임 계좌 소유 인증({@link AccountVerificationProvider}) 구현체.
  *
  * <p>동작 순서:
  * <ol>
- *   <li>동일 회원의 해당 은행 CODEF 실계좌 인증 이력({@code VERIFIED_YN = 'Y'})과 계좌번호가 일치하면
- *       CODEF 외부 API 호출 없이 즉시 소유 확인 성공을 반환한다(데모 일 100건 한도 보호).</li>
- *   <li>은행 연결({@code connectedId})은 되어 있으나 아직 해당 계좌 인증 이력이 없으면
- *       {@link CodefBankService#verifyRealAccount}를 호출해 실시간 예금주 실명 일치 여부를 검증한다.</li>
- *   <li>미연결·미지원 은행·예금주 불일치는 {@code false}(422)로, CODEF 통신/서버 장애는 예외(502)로 전달한다.</li>
+ *   <li>동일 회원의 해당 은행 인증 이력({@code VERIFIED_YN = 'Y'})과 계좌번호가 일치하면
+ *       외부 API 호출 없이 즉시 소유 확인 성공을 반환한다.</li>
+ *   <li>가상은행 1원 인증으로 적재된 본인 소유 활성 계좌({@code MOCK_KFTC_ACCOUNT})가 일치하면
+ *       동일 은행 다계좌라도 즉시 소유 확인 성공을 반환한다.</li>
+ *   <li>외부 CODEF 연결({@code connectedId})이 존재하면 {@link CodefBankService#verifyRealAccount}로
+ *       실시간 검증을 시도하고, 가상은행 전용 마커({@code QUICK_OAUTH:})는 외부 호출 없이 {@code false}를 반환한다.</li>
  * </ol>
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class CodefAccountVerificationProvider implements AccountVerificationProvider {
 
     private static final Set<String> VERIFICATION_FAIL_CODES = Set.of(
             "CODEF_HOLDER_MISMATCH",
             "CODEF_NOT_CONNECTED",
             "CODEF_INVALID_ACCOUNT",
-            "CODEF_UNSUPPORTED_BANK"
+            "CODEF_UNSUPPORTED_BANK",
+            "CODEF_QUICK_OAUTH_ONLY"
     );
 
     private final CodefAccountMapper codefAccountMapper;
     private final CryptoKeyService cryptoKeyService;
     private final CodefBankService codefBankService;
+    private final MockBankLedgerMapper ledgerMapper;
+    private final MockBankProvisionService provisionService;
+
+    @Autowired
+    public CodefAccountVerificationProvider(
+            CodefAccountMapper codefAccountMapper,
+            CryptoKeyService cryptoKeyService,
+            CodefBankService codefBankService,
+            MockBankLedgerMapper ledgerMapper,
+            MockBankProvisionService provisionService
+    ) {
+        this.codefAccountMapper = codefAccountMapper;
+        this.cryptoKeyService = cryptoKeyService;
+        this.codefBankService = codefBankService;
+        this.ledgerMapper = ledgerMapper;
+        this.provisionService = provisionService;
+    }
+
+    /** 기존 단위 테스트 호환용 생성자 */
+    public CodefAccountVerificationProvider(
+            CodefAccountMapper codefAccountMapper,
+            CryptoKeyService cryptoKeyService,
+            CodefBankService codefBankService
+    ) {
+        this(codefAccountMapper, cryptoKeyService, codefBankService, null, null);
+    }
 
     @Override
     public boolean verifyAccount(Long memberId, String bankName, String accountNumber) {
@@ -57,26 +88,51 @@ public class CodefAccountVerificationProvider implements AccountVerificationProv
             return false;
         }
 
+        // 1) 이미 인증 완료된 동일 계좌 이력 일치 시 외부 호출 없이 즉시 통과
         CodefDto.ConnectionRecord conn = codefAccountMapper.findConnection(memberId, bank.getCodefOrgCode());
-        if (conn == null || isBlank(conn.getConnectedIdEnc())) {
-            log.warn("[CODEF-F19] CODEF 은행 연결 이력이 없어 소유 확인 불가: memberId={}, org={}",
-                    memberId, bank.getCodefOrgCode());
-            return false;
-        }
-
-        // 1) 이미 CODEF 실계좌 인증 완료된 동일 계좌면 API 재호출 없이 즉시 통과
-        if ("Y".equals(conn.getVerifiedYn()) && !isBlank(conn.getVerifiedAccountEnc())) {
+        if (conn != null && "Y".equals(conn.getVerifiedYn()) && !isBlank(conn.getVerifiedAccountEnc())) {
             String verifiedDigits = normalizeDigits(
                     cryptoKeyService.decrypt(conn.getVerifiedAccountEnc(), conn.getKeyVer())
             );
             if (accountDigits.equals(verifiedDigits)) {
-                log.info("[CODEF-F19] 기존 CODEF 실계좌 인증 이력 일치로 소유 확인 완료: memberId={}, org={}, account=****{}",
+                log.info("[CODEF-F19] 기존 계좌 인증 이력 일치로 소유 확인 완료: memberId={}, org={}, account=****{}",
                         memberId, bank.getCodefOrgCode(), extractLast4(accountDigits));
                 return true;
             }
         }
 
-        // 2) 미인증 상태이거나 다른 계좌번호이면 CODEF 실거래/예금주 조회로 실시간 인증 수행
+        // 2) 가상은행 1원 인증으로 등록된 본인 소유 활성 계좌(동일 은행 다계좌 포함) 일치 시 즉시 통과
+        if (ledgerMapper != null && provisionService != null) {
+            String userSeqNo = provisionService.deriveUserSeqNo(memberId);
+            KftcRecordDto.AccountRecord mockAcc =
+                    ledgerMapper.findAccountByBankAndDigits(bank.getKftcCode(), accountDigits);
+            if (mockAcc != null
+                    && "ACTIVE".equalsIgnoreCase(mockAcc.getStatus())
+                    && userSeqNo.equals(mockAcc.getUserSeqNo())) {
+                log.info("[CODEF-F19] 가상은행 1원 인증 계좌 일치로 소유 확인 완료: memberId={}, org={}, account=****{}",
+                        memberId, bank.getCodefOrgCode(), extractLast4(accountDigits));
+                return true;
+            }
+        }
+
+        if (conn == null || isBlank(conn.getConnectedIdEnc())) {
+            log.warn("[CODEF-F19] 은행 연결 이력이 없어 소유 확인 불가: memberId={}, org={}",
+                    memberId, bank.getCodefOrgCode());
+            return false;
+        }
+
+        // 3) 가상은행 간편연결(QUICK_OAUTH:) 전용 레코드는 외부 CODEF API를 호출하지 않고 소유 미일치 처리
+        if (conn.getKeyVer() != null) {
+            String decryptedConnId = cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer());
+            if (decryptedConnId != null
+                    && decryptedConnId.startsWith(MockBankQuickConnectService.QUICK_OAUTH_CONN_PREFIX)) {
+                log.warn("[CODEF-F19] 가상은행 연결 계좌와 불일치하여 소유 확인 불가: memberId={}, org={}, account=****{}",
+                        memberId, bank.getCodefOrgCode(), extractLast4(accountDigits));
+                return false;
+            }
+        }
+
+        // 4) 외부 CODEF 연결이 존재하는 경우 실시간 예금주 조회 수행
         CodefDto.VerifyAccountRequest req = new CodefDto.VerifyAccountRequest();
         req.setOrganization(bank.getCodefOrgCode());
         req.setAccount(accountDigits);

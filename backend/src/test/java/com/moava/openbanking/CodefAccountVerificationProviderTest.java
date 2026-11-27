@@ -107,4 +107,42 @@ class CodefAccountVerificationProviderTest {
         );
         assertEquals("CODEF_NETWORK_ERROR", ex.getCode());
     }
+
+    @Test
+    void 가상은행_활성계좌는_F19_통과_및_QUICK_OAUTH_불일치는_외부호출없이_false() {
+        com.moava.openbanking.mapper.MockBankLedgerMapper ledgerMapper =
+                mock(com.moava.openbanking.mapper.MockBankLedgerMapper.class);
+        com.moava.openbanking.service.MockBankProvisionService provisionService =
+                mock(com.moava.openbanking.service.MockBankProvisionService.class);
+
+        CodefAccountVerificationProvider fullProvider = new CodefAccountVerificationProvider(
+                codefAccountMapper, cryptoKeyService, codefBankService, ledgerMapper, provisionService
+        );
+
+        when(provisionService.deriveUserSeqNo(10L)).thenReturn("1000000010");
+
+        // 1) CODEF_CONNECTION에 없어도 가상은행 본인 소유 ACTIVE 계좌면 즉시 true
+        when(codefAccountMapper.findConnection(10L, "0090")).thenReturn(null);
+        com.moava.openbanking.dto.KftcRecordDto.AccountRecord mockAcc = new com.moava.openbanking.dto.KftcRecordDto.AccountRecord();
+        mockAcc.setUserSeqNo("1000000010");
+        mockAcc.setStatus("ACTIVE");
+        when(ledgerMapper.findAccountByBankAndDigits("090", "3333012345678")).thenReturn(mockAcc);
+
+        assertTrue(fullProvider.verifyAccount(10L, "카카오뱅크", "3333-01-2345678"));
+        verify(codefBankService, never()).verifyRealAccount(any(), any(), any());
+
+        // 2) QUICK_OAUTH 마커 연결이지만 다른 미등록 계좌 조회 시 외부 CODEF 호출 없이 false
+        CodefDto.ConnectionRecord quickConn = new CodefDto.ConnectionRecord();
+        quickConn.setConnectedIdEnc("ENC_QUICK");
+        quickConn.setVerifiedYn("Y");
+        quickConn.setVerifiedAccountEnc("ENC_OTHER");
+        quickConn.setKeyVer(1);
+        when(codefAccountMapper.findConnection(10L, "0088")).thenReturn(quickConn);
+        when(cryptoKeyService.decrypt("ENC_OTHER", 1)).thenReturn("110111111111");
+        when(cryptoKeyService.decrypt("ENC_QUICK", 1)).thenReturn("QUICK_OAUTH:0088");
+        when(ledgerMapper.findAccountByBankAndDigits("088", "110999999999")).thenReturn(null);
+
+        assertFalse(fullProvider.verifyAccount(10L, "신한은행", "110-999-999999"));
+        verify(codefBankService, never()).verifyRealAccount(any(), any(), any());
+    }
 }

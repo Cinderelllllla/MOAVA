@@ -341,6 +341,27 @@ export default function OpenBankingBankAuth() {
                 </div>
               </div>
 
+              {/* 확인 정보 · 비저장 안내 */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2ecf5',
+                  borderRadius: 12,
+                  padding: '10px 12px',
+                  marginBottom: 14,
+                  fontSize: 12,
+                  lineHeight: 1.65,
+                  color: '#415a72',
+                }}
+              >
+                <div>
+                  <strong>MOAVA가 확인하는 것:</strong> 은행명 · 계좌번호 · 예금주명 · 1원 인증번호
+                </div>
+                <div>
+                  <strong>MOAVA가 하지 않는 것:</strong> 은행 비밀번호 저장 · 실제 금융 출금 (시연용 가상은행)
+                </div>
+              </div>
+
               {/* 오픈뱅킹 동의 */}
               <label className="checkline" style={{ margin: '12px 0 18px', fontSize: 13 }}>
                 <input
@@ -349,7 +370,7 @@ export default function OpenBankingBankAuth() {
                   onChange={e => setAgreed(e.target.checked)}
                 />
                 <span>
-                  <strong>[필수]</strong> MOAVA 오픈뱅킹 계좌 잔액·거래내역 조회 및 모임 회비 출금이체(<code>login inquiry transfer</code>)에 동의합니다.
+                  <strong>[필수]</strong> MOAVA 가상은행 계좌 조회·모임 계좌 소유 인증 및 모임 회비 출금이체(<code>login inquiry transfer</code>)에 동의합니다.
                 </span>
               </label>
 

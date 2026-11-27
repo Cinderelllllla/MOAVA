@@ -453,4 +453,30 @@ class CodefBankServiceTest {
             assertTrue(xml.contains("VERIFIED_AT            = NULL"), "재연결 시 VERIFIED_AT 초기화 필요");
         }
     }
+
+    @Test
+    void 가상은행_QUICK_OAUTH_연결은_CODEF_외부조회_호출전_차단된다() {
+        CodefDto.ConnectionRecord quickConn = new CodefDto.ConnectionRecord();
+        quickConn.setMemberId(10L);
+        quickConn.setOrganization("0088");
+        quickConn.setConnectedIdEnc("ENC_QUICK");
+        quickConn.setVerifiedYn("Y");
+        quickConn.setVerifiedAccountEnc("ENC_ACC");
+        quickConn.setKeyVer(1);
+
+        when(mapper.findConnection(10L, "0088")).thenReturn(quickConn);
+        when(cryptoKeyService.decrypt("ENC_QUICK", 1)).thenReturn("QUICK_OAUTH:0088");
+
+        CodefDto.AccountListRequest accReq = new CodefDto.AccountListRequest();
+        accReq.setOrganization("0088");
+        CodefException accEx = assertThrows(CodefException.class, () -> service.fetchAccountList(10L, accReq, "127.0.0.1"));
+        assertEquals("CODEF_QUICK_OAUTH_ONLY", accEx.getCode());
+
+        CodefDto.TransactionRequest txReq = new CodefDto.TransactionRequest();
+        txReq.setOrganization("0088");
+        CodefException txEx = assertThrows(CodefException.class, () -> service.fetchTransactions(10L, txReq, "127.0.0.1"));
+        assertEquals("CODEF_QUICK_OAUTH_ONLY", txEx.getCode());
+
+        verify(codefApiClient, never()).postApi(anyString(), anyMap());
+    }
 }

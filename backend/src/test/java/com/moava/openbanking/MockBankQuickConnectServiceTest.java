@@ -103,7 +103,7 @@ class MockBankQuickConnectServiceTest {
         provisionResult.setBalanceAmt(1_000_000L);
         when(provisionService.provisionFromCodef(
                 eq(10L), eq(CodefBankCode.SHINHAN), eq("110123456789"), eq("홍길동"),
-                eq(1_000_000L), anyList(), eq(1_000_000L), isNull(), eq(false)
+                eq(1_000_000L), argThat(list -> list.size() == 2), isNull(), isNull(), eq(false)
         )).thenReturn(provisionResult);
 
         when(cryptoKeyService.getCurrentKeyVersion()).thenReturn(1);
@@ -127,6 +127,65 @@ class MockBankQuickConnectServiceTest {
 
         // 완료된 세션 재사용 차단
         assertThrows(CodefException.class, () -> service.verifyAndComplete(10L, started.getSessionToken(), verifyReq, "127.0.0.1"));
+    }
+
+    @Test
+    void 기존계좌_재연결시_잔액보존_및_DB오류시_세션유지_재시도_성공() {
+        when(codefAccountMapper.findActiveMemberName(10L)).thenReturn("홍길동");
+        when(provisionService.deriveUserSeqNo(10L)).thenReturn("1000000010");
+
+        com.moava.openbanking.dto.KftcRecordDto.AccountRecord existing = new com.moava.openbanking.dto.KftcRecordDto.AccountRecord();
+        existing.setUserSeqNo("1000000010");
+        existing.setBalance(450_000L);
+        when(ledgerMapper.findAccountByBankAndDigits("088", "110123456789")).thenReturn(existing);
+
+        MockBankDto.QuickConnectStartRequest startReq = new MockBankDto.QuickConnectStartRequest();
+        startReq.setOrganization("신한은행");
+        startReq.setAccountNo("110-123-456789");
+        startReq.setHolderName("홍길동");
+        startReq.setPhone("010-1234-5678");
+        // initialMockBalance 미입력 -> 기존 잔액(450,000원) 보존 대상
+
+        MockBankDto.QuickConnectSessionResponse started = service.startQuickConnect(10L, startReq, "127.0.0.1");
+
+        KftcOAuthDto.AuthorizeResponse authzRes = new KftcOAuthDto.AuthorizeResponse();
+        authzRes.setCode("kftc_code_retry");
+        when(kftcOAuthService.issueAuthorizationCode(any(), eq("127.0.0.1"))).thenReturn(authzRes);
+
+        KftcOAuthDto.TokenResponse tokenRes = new KftcOAuthDto.TokenResponse();
+        tokenRes.setScope("login inquiry transfer");
+        when(kftcOAuthService.issueToken(any(), eq("127.0.0.1"))).thenReturn(tokenRes);
+
+        MockBankDto.ProvisionResult provisionResult = new MockBankDto.ProvisionResult();
+        provisionResult.setFintechUseNum("199088000010000000000001");
+        provisionResult.setBalanceAmt(450_000L);
+
+        // 1차 시도에서 일시적 DB 장애 발생 -> 세션은 소실되지 않고 2차 재시도 성공
+        when(provisionService.provisionFromCodef(
+                eq(10L), eq(CodefBankCode.SHINHAN), eq("110123456789"), eq("홍길동"),
+                eq(1_000_000L), argThat(list -> list.size() == 1 && list.get(0).getAfterBalanceAmt() == 450_000L),
+                isNull(), isNull(), eq(false)
+        )).thenThrow(new RuntimeException("임시 DB 오류")).thenReturn(provisionResult);
+
+        MockBankDto.QuickConnectVerifyRequest verifyReq = new MockBankDto.QuickConnectVerifyRequest();
+        verifyReq.setAuthCode(started.getAuthCodeHint());
+        verifyReq.setAgreed(true);
+
+        assertThrows(RuntimeException.class,
+                () -> service.verifyAndComplete(10L, started.getSessionToken(), verifyReq, "127.0.0.1"));
+
+        // 세션이 여전히 살아 있어 재조회 및 재시도 가능
+        assertNotNull(service.getSession(10L, started.getSessionToken()));
+
+        when(cryptoKeyService.getCurrentKeyVersion()).thenReturn(1);
+        when(codefAccountMapper.findConnection(10L, "0088")).thenReturn(null);
+        when(cryptoKeyService.encrypt("QUICK_OAUTH:0088", 1)).thenReturn("ENC_QUICK");
+        when(cryptoKeyService.encrypt("110123456789", 1)).thenReturn("ENC_ACC");
+
+        MockBankDto.QuickConnectVerifyResponse verified =
+                service.verifyAndComplete(10L, started.getSessionToken(), verifyReq, "127.0.0.1");
+        assertTrue(verified.isVerified());
+        assertEquals(450_000L, verified.getMockAccount().getBalanceAmt());
     }
 
     @Test
