@@ -16,11 +16,12 @@ import java.util.UUID;
  * <pre>
  * POST /api/v1/groups/{groupId}/members/{memberId}/warnings    경고 (모임장) body {reason}
  * POST /api/v1/groups/{groupId}/members/{memberId}/expulsion   강제 탈퇴 (모임장, 경고 2회 회원) body {reason}
+ *  * GET  /api/v1/groups/{groupId}/warnings/me                    나의 누적 경고 (본인)
  * </pre>
  * SecurityConfig 가 /api/v1/groups/** 를 ROLE_MEMBER 로 막고 있다. 여기서도 회원 토큰인지 한 번 더 확인한다.
  */
 @RestController
-@RequestMapping("/api/v1/groups/{groupId}/members/{memberId}")
+@RequestMapping("/api/v1/groups/{groupId}")
 public class GroupWarningController {
 
     private final GroupWarningService service;
@@ -29,18 +30,24 @@ public class GroupWarningController {
         this.service = service;
     }
 
-    @PostMapping("/warnings")
+    @PostMapping("/members/memberId/warnings")
     public ApiResponse<GroupWarningResponse> warn(Authentication authentication, @PathVariable long groupId,
                                                   @PathVariable long memberId,
                                                   @RequestBody(required = false) GroupWarningRequest request) {
         return ApiResponse.ok(service.warn(leaderId(authentication), groupId, memberId, request), requestId());
     }
 
-    @PostMapping("/expulsion")
+    @PostMapping("/members/memberId/expulsion")
     public ApiResponse<GroupWarningResponse> expel(Authentication authentication, @PathVariable long groupId,
                                                    @PathVariable long memberId,
                                                    @RequestBody(required = false) GroupWarningRequest request) {
         return ApiResponse.ok(service.expel(leaderId(authentication), groupId, memberId, request), requestId());
+    }
+
+    /** 나의 누적 경고 (이 모임의 ACTIVE 회원 본인) */
+    @GetMapping("/warnings/me")
+    public ApiResponse<GroupWarningResponse> myWarnings(Authentication authentication, @PathVariable long groupId) {
+        return ApiResponse.ok(service.myWarnings(leaderId(authentication), groupId), requestId());
     }
 
     /** 회원 토큰만 허용 (관리자 토큰의 subject 는 ADMIN_ID 라 회원 번호로 쓰면 안 됨). 모임장 여부는 Service 에서 확인 */

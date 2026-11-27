@@ -91,6 +91,19 @@ public class GroupWarningService {
         return new GroupWarningResponse(groupId, targetId, MAX_WARNINGS, "EXPELLED", false);
     }
 
+    /** GET /groups/{groupId}/warnings/me — 나의 누적 경고. 이 모임 ACTIVE 회원 본인만 (모임장은 경고 대상이 아니라 0) */
+    @Transactional(readOnly = true)
+    public GroupWarningResponse myWarnings(long memberId, long groupId) {
+        GroupWarningTarget me = mapper.selectTarget(groupId, memberId);
+        if (me == null) {
+            throw new GroupWarningException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "모임을 찾을 수 없어요.");
+        }
+        if (!me.isActiveMember()) {
+            throw new GroupWarningException(HttpStatus.NOT_FOUND, "NOT_GROUP_MEMBER", "이 모임에 참여 중인 회원이 아니에요.");
+        }
+        int count = me.isOwner(memberId) ? 0 : me.warningCount();
+        return new GroupWarningResponse(groupId, memberId, count, me.memberStatus(), count >= MAX_WARNINGS);
+    }
 
     /** 공통 검증: 모임 존재 → 모임장 → 해산 여부 → 대상이 모임장 아님 → 대상이 ACTIVE 회원 */
     private GroupWarningTarget requireTarget(long leaderId, long groupId, long targetId) {

@@ -968,6 +968,7 @@ function WarningCard({ groupId, leader, dissolved }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [form, setForm] = useState(null);   // { memberId, memberName, action: 'warn' | 'expel', reason }
   const [busy, setBusy] = useState(false);
+  const [mine, setMine] = useState({ status: 'loading', data: null, error: '' });   // 일반 회원: 나의 누적 경고
 
   useEffect(() => {
     if (!leader) return undefined;
@@ -980,6 +981,16 @@ function WarningCard({ groupId, leader, dissolved }) {
         .catch(e => { if (alive) setState({ status: 'error', data: [], error: e?.message || '참여 회원 목록을 불러오지 못했어요.' }); });
     return () => { alive = false; };
   }, [groupId, leader, reloadKey]);
+
+  useEffect(() => {
+    if (leader) return undefined;
+    let alive = true;
+    setMine(s => ({ ...s, status: 'loading', error: '' }));
+    G.fetchMyWarnings(groupId)
+        .then(data => { if (alive) setMine({ status: 'ready', data, error: '' }); })
+        .catch(e => { if (alive) setMine({ status: 'error', data: null, error: e?.message || '나의 누적 경고를 불러오지 못했어요.' }); });
+    return () => { alive = false; };
+  }, [groupId, leader]);
 
   const submit = async () => {
     if (!form || !form.reason.trim()) return;
@@ -1006,10 +1017,20 @@ function WarningCard({ groupId, leader, dissolved }) {
   };
 
   if (!leader) {
+    const count = mine.data?.warningCount ?? 0;
     return (
         <Card>
-          <h2>회원 경고 · 강제 탈퇴</h2>
-          <p className="muted mini">회원 경고와 강제 탈퇴는 모임장만 할 수 있어요.</p>
+          <h2>나의 누적 경고</h2>
+          <LoadState status={mine.status} error={mine.error} loadingText="나의 누적 경고를 불러오는 중이에요.">
+            <p>
+              <span className={`pill ${count >= 2 ? 'danger' : count === 1 ? 'warn' : ''}`}>경고 {count}/2회</span>
+            </p>
+            <p className="muted mini">
+              {count >= 2
+                  ? '경고 2회로 모임장의 강제 탈퇴 검토 대상이에요. 이의가 있으면 고객센터로 문의해 주세요.'
+                  : '모임장 경고는 모임별 최대 2회이며, 2회가 되면 강제 탈퇴 검토 대상이 될 수 있어요.'}
+            </p>
+          </LoadState>
         </Card>
     );
   }

@@ -914,7 +914,11 @@ export async function expelMember(groupId, memberId, reason) {
   });
 }
 
-// TODO(MOA-76): 목업 전용. 화면은 fetchRules / updateRules 를 쓴다. 다른 목업 화면 정리 때 함께 삭제 예정.
+/** F30 나의 누적 경고 — GET /api/v1/groups/{groupId}/warnings/me */
+export async function fetchMyWarnings(groupId) {
+  return apiFetch(`/api/v1/groups/${encodeURIComponent(groupId)}/warnings/me`);
+}
+
 export async function editRule(id, title, body) {
   const g = D.group(id);
 
