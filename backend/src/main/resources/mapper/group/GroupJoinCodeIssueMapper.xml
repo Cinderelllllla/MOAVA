@@ -11,6 +11,7 @@
             GROUP_ID,
             OWNER_ID,
             VISIBILITY,
+            JOIN_CODE_ENC,
             JOIN_CODE_VERSION,
             JOIN_CODE_KEY_VER,
             JOIN_CODE_ISSUED_AT

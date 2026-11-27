@@ -1,41 +1,350 @@
-/* S06 지역 계모임 찾기 · 지도 — /groups · F11~F14 F16 (실서비스: Kakao Maps + ES moava_group) */
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+/* S06 지역 계모임 찾기 · 지도 — /groups · F11~F14 F16 (GET /api/groups 실 서버 + Kakao Maps 연동) */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../common/store';
-import { groups, groupVisible } from '../api';
-import { PageHead, Card, Select, Input, ComingSoon } from '../components/ui';
-import { GroupCard, GroupInfo, InlineSimulator } from '../components/shared';
+import { groups } from '../api';
+import { PageHead, Card, Select, Input } from '../components/ui';
+import { GroupCard, GroupInfo, InlineSimulator, LoadState } from '../components/shared';
+import KakaoGroupMap, { resolvePinMeta } from '../components/map/KakaoGroupMap';
+import RegionSelector from '../components/RegionSelector';
+import { buildServerRegionQuery, matchesRegionFilter } from '../common/regions';
 
-const PIN_POS = { 101: [22, 26], 102: [48, 48], 103: [33, 75], 104: [78, 29], 105: [79, 75] };
+const PURPOSE_OPTIONS = ['전체', '목돈 마련', '재테크', '친목', '창업', '여행'];
 
-// TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거 — 모임 검색·지도·상세·가입 신청 (아래 GroupsMock 참고)
 export default function Groups() {
-  return <ComingSoon kicker="LOCAL COMMUNITY" title="지역 계모임 찾기 · 지도" text="동네 계모임 검색과 지도 기능은 아직 준비 중이에요. 지금은 직접 계모임을 만들어 시작할 수 있어요.">
-    <Link className="btn primary" to="/groups/new">계모임 만들기</Link><Link className="btn soft" to="/my-groups">내 계모임</Link>
-  </ComingSoon>;
-}
-
-// eslint-disable-next-line no-unused-vars -- 서버 API 연결 시 참고용 목업 화면 (현재 화면에서 사용하지 않음)
-function GroupsMock() {
   const { ui, setUi } = useApp();
-  const [modal, setModal] = useState(null); // null | {region: string|null}
+  const [modal, setModal] = useState(null); // null | { region: string | null, pinKey: string | null }
   const [sim, setSim] = useState(null);
-  const visible = g => groupVisible(g) && (ui.region === '전체' || g.region.includes(ui.region)) && (ui.purpose === '전체' || g.purpose === ui.purpose) && g.title.toLocaleLowerCase().includes(ui.search.toLocaleLowerCase());
-  const list = groups.listGroups().filter(visible);
-  const modalList = modal?.region ? groups.listGroups().filter(g => groupVisible(g) && g.region.includes(modal.region)) : list;
-  const chosen = list.find(g => g.id === ui.focus) || list[0] || null;
-  const regionGroups = {}; list.forEach(g => { const r = g.region.split(' ').slice(-1)[0] || g.region; (regionGroups[r] ||= []).push(g); });
-  const select = id => { setSim(null); setModal(null); const g = groups.getGroup(id); if (g && !visible(g)) setUi({ region: '전체', purpose: '전체', search: '', focus: id }); else setUi({ focus: id }); };
-  return <><PageHead kicker="LOCAL COMMUNITY" title="지역 계모임 찾기 · 지도" sub="지도에서 지역을 선택하면 해당 지역의 모임 목록을 확인할 수 있습니다." />
-    <Card><div className="form-row"><Select label="지역" name="region" options={['전체', '마포', '서대문', '강남', '성동']} value={ui.region} onChange={e => setUi({ region: e.target.value })} /><Select label="목적" name="purpose" options={['전체', '목돈 마련', '재테크', '친목', '창업', '여행']} value={ui.purpose} onChange={e => setUi({ purpose: e.target.value })} /><Input label="모임명 검색" name="search" type="search" value={ui.search} onChange={e => setUi({ search: e.target.value })} /><button type="button" className="btn soft reset-map-filters" onClick={() => setUi({ region: '전체', purpose: '전체', search: '' })}>초기화</button></div></Card>
-    <div className="matching-layout section matching-layout-two">
-      <section className="matching-info"><Card><h2>{sim ? '간단 시뮬레이션' : '선택한 모임 정보'}</h2>{sim ? <InlineSimulator g={sim} onClose={() => setSim(null)} /> : <GroupInfo g={chosen} onSim={setSim} />}</Card></section>
-      <section className="matching-map"><Card><div className="map-title-row"><h2>우리 동네 계모임 지도</h2><button className="btn small soft" onClick={() => setModal({ region: null })}>목록 보기 ({list.length})</button></div>
-        <div className="map">{Object.entries(regionGroups).map(([region, gs], i) => { const rep = gs.find(g => g.id === ui.focus) || gs[0], pt = PIN_POS[rep.id] || [20 + (i * 17) % 60, 25 + (i * 13) % 55]; return <button type="button" key={region} className={`map-pin ${gs.some(g => g.id === ui.focus) ? 'active' : ''}`} style={{ left: `${pt[0]}%`, top: `${pt[1]}%` }} onClick={() => setModal({ region })} aria-label={`${region} 지역 모임 목록 열기`}>☁ {region}{gs.length > 1 && <> <span className="pin-count">{gs.length}</span></>}</button>; })}<div className="map-hint">같은 지역은 하나의 핀으로 표시됩니다. 핀을 누르면 해당 지역의 모임 목록이 열립니다.</div></div>
-        <p className="muted mini">핀에 숫자가 있으면 해당 지역에 여러 모임이 있습니다. 실제 서비스에서는 Kakao Maps 위에 표시됩니다.</p></Card></section>
-    </div>
-    <div className={`modal-backdrop ${modal ? 'show' : ''}`} onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
-      <section className="modal-panel group-list-modal" role="dialog" aria-modal="true" aria-label="모임 목록"><div className="modal-heading"><div><h2>{modal?.region ? `${modal.region} 지역 모임` : '모임 목록'} <small className="muted">{modalList.length}개</small></h2><p className="muted mini">모임을 선택하면 왼쪽 상세 정보가 바뀝니다. 지도 필터는 그대로 유지돼요.</p></div><button className="btn soft" onClick={() => setModal(null)}>닫기 ✕</button></div>
-        <div className="group-list-scroll">{modalList.length ? modalList.map(g => <GroupCard key={g.id} g={g} onSelect={select} />) : <div className="empty">검색된 모임이 없어요.</div>}</div></section>
-    </div></>;
+
+  const [allGroups, setAllGroups] = useState([]);
+  const [allStatus, setAllStatus] = useState('loading'); // loading | ready | error
+  const [allError, setAllError] = useState('');
+
+  const [filteredGroups, setFilteredGroups] = useState([]);
+  const [filterStatus, setFilterStatus] = useState('ready'); // loading | ready | error
+  const [filterError, setFilterError] = useState('');
+
+  const [reloadTick, setReloadTick] = useState(0);
+  const prevSearchRef = useRef(ui.search);
+
+  const regionSido = ui.regionSido || '전체';
+  const regionSigungu = ui.regionSigungu || '전체';
+  const regionDong = ui.regionDong || '전체';
+
+  const hasActiveFilter =
+    regionSido !== '전체' ||
+    regionSigungu !== '전체' ||
+    regionDong !== '전체' ||
+    ui.purpose !== '전체' ||
+    String(ui.search || '').trim() !== '';
+
+  // 1) 전체 공개 모임 1회 조회 (기본 지도·목록 표시)
+  useEffect(() => {
+    let cancelled = false;
+    setAllStatus('loading');
+    setAllError('');
+
+    groups
+      .fetchPublicGroups()
+      .then((items) => {
+        if (cancelled) return;
+        setAllGroups(items);
+        setAllStatus('ready');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setAllGroups([]);
+        setAllStatus('error');
+        setAllError(err?.message || '공개 모임 목록을 불러오지 못했어요.');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadTick]);
+
+  // 2) 필터가 적용된 경우 서버 API(GET /api/groups?region=&purpose=&q=) 조회 + 시/도·시/군/구·읍/면/동 정밀 매칭
+  useEffect(() => {
+    const searchChanged = prevSearchRef.current !== ui.search;
+    prevSearchRef.current = ui.search;
+
+    if (!hasActiveFilter) {
+      setFilterStatus('ready');
+      setFilterError('');
+      return;
+    }
+
+    let cancelled = false;
+    setFilterStatus('loading');
+    setFilterError('');
+
+    const regionFilter = {
+      sido: regionSido,
+      sigungu: regionSigungu,
+      dong: regionDong,
+    };
+    const serverRegionQuery = buildServerRegionQuery(regionFilter);
+
+    const runFetch = () => {
+      groups
+        .fetchPublicGroups({
+          region: serverRegionQuery || '전체',
+          purpose: ui.purpose,
+          q: ui.search,
+        })
+        .then((items) => {
+          if (cancelled) return;
+          const matched = items.filter((g) => matchesRegionFilter(g, regionFilter));
+          setFilteredGroups(matched);
+          setFilterStatus('ready');
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setFilteredGroups([]);
+          setFilterStatus('error');
+          setFilterError(err?.message || '공개 모임 검색에 실패했어요.');
+        });
+    };
+
+    if (searchChanged) {
+      const timerId = window.setTimeout(runFetch, 200);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timerId);
+      };
+    }
+
+    runFetch();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasActiveFilter, regionSido, regionSigungu, regionDong, ui.purpose, ui.search, reloadTick]);
+
+  const reload = useCallback(() => {
+    setReloadTick((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!modal) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setModal(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [modal]);
+
+  const list = hasActiveFilter ? filteredGroups : allGroups;
+  const listStatus = hasActiveFilter
+    ? (allStatus === 'error' && filterStatus !== 'ready' ? 'error' : filterStatus)
+    : allStatus;
+  const listError = hasActiveFilter ? (filterError || allError) : allError;
+
+  // 핀 배지 숫자와 모달 내 목록 건수가 항상 일치하도록 현재 필터링된 list 기준으로 모달 목록 구성
+  const modalList = useMemo(() => {
+    if (!modal?.region) return list;
+    return list.filter((g) => {
+      if (modal.pinKey) {
+        return resolvePinMeta(g).key === modal.pinKey;
+      }
+      return g.regionSigungu === modal.region || g.region.includes(modal.region);
+    });
+  }, [modal, list]);
+
+  const chosen = useMemo(() => {
+    const inFiltered = list.find((g) => g.id === ui.focus);
+    if (inFiltered) return inFiltered;
+    return list[0] || null;
+  }, [list, ui.focus]);
+
+  const resetFilters = () => {
+    setUi({
+      region: '전체',
+      regionSido: '전체',
+      regionSigungu: '전체',
+      regionDong: '전체',
+      purpose: '전체',
+      search: '',
+    });
+  };
+
+  const select = (id) => {
+    setSim(null);
+    setModal(null);
+    const inCurrentList = list.some((g) => g.id === id);
+    if (!inCurrentList) {
+      setUi({
+        region: '전체',
+        regionSido: '전체',
+        regionSigungu: '전체',
+        regionDong: '전체',
+        purpose: '전체',
+        search: '',
+        focus: id,
+      });
+    } else {
+      setUi({ focus: id });
+    }
+  };
+
+  return (
+    <>
+      <PageHead
+        kicker="LOCAL COMMUNITY"
+        title="지역 계모임 찾기 · 지도"
+        sub="시/도 · 시/군/구 · 읍/면/동을 선택하거나 지도 핀을 눌러 해당 지역의 공개 모임을 확인하세요."
+      />
+      <Card>
+        <div className="form-row">
+          <RegionSelector
+            mode="filter"
+            namePrefix="mapFilter"
+            sido={regionSido}
+            sigungu={regionSigungu}
+            dong={regionDong}
+            onChange={({ sido, sigungu, dong }) =>
+              setUi({
+                regionSido: sido,
+                regionSigungu: sigungu,
+                regionDong: dong,
+                region: dong !== '전체' ? dong : sigungu !== '전체' ? sigungu : sido,
+              })
+            }
+          />
+          <Select
+            label="목적"
+            name="purpose"
+            options={PURPOSE_OPTIONS}
+            value={ui.purpose}
+            onChange={(e) => setUi({ purpose: e.target.value })}
+          />
+          <Input
+            label="모임명 검색"
+            name="search"
+            type="search"
+            placeholder="모임명으로 검색"
+            value={ui.search}
+            onChange={(e) => setUi({ search: e.target.value })}
+          />
+          <button
+            type="button"
+            className="btn soft reset-map-filters"
+            onClick={resetFilters}
+          >
+            초기화
+          </button>
+        </div>
+      </Card>
+
+      <div className="matching-layout section matching-layout-two">
+        <section className="matching-info">
+          <Card>
+            <h2>{sim ? '간단 시뮬레이션' : '선택한 모임 정보'}</h2>
+            {sim ? (
+              <InlineSimulator g={sim} onClose={() => setSim(null)} />
+            ) : (
+              <LoadState
+                status={listStatus}
+                error={listError}
+                onRetry={reload}
+                loadingText="공개 모임 정보를 불러오는 중이에요."
+              >
+                {list.length ? (
+                  <GroupInfo g={chosen} onSim={setSim} />
+                ) : (
+                  <div className="group-info-empty">
+                    <h3>조건에 맞는 공개 모임이 없어요</h3>
+                    <p>필터를 초기화하거나 다른 지역·목적으로 찾아보세요.</p>
+                  </div>
+                )}
+              </LoadState>
+            )}
+          </Card>
+        </section>
+
+        <section className="matching-map">
+          <Card>
+            <div className="map-title-row">
+              <div>
+                <h2>우리 동네 계모임 지도</h2>
+                <p className="muted mini" aria-live="polite">
+                  {listStatus === 'loading'
+                    ? '공개 모임을 검색하는 중이에요...'
+                    : hasActiveFilter
+                      ? `검색 결과 ${list.length}건`
+                      : `공개 모임 총 ${list.length}건`}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn small soft"
+                disabled={listStatus === 'loading'}
+                onClick={() => setModal({ region: null, pinKey: null })}
+              >
+                {listStatus === 'loading' ? '조회 중…' : `목록 보기 (${list.length})`}
+              </button>
+            </div>
+            {listStatus === 'error' ? (
+              <LoadState status="error" error={listError} onRetry={reload} />
+            ) : (
+              <KakaoGroupMap
+                groups={list}
+                focusId={chosen?.id ?? null}
+                regionFilter={{ sido: regionSido, sigungu: regionSigungu, dong: regionDong }}
+                onSelectRegion={(region, _regionGroups, pinKey) => setModal({ region, pinKey })}
+              />
+            )}
+            <p className="muted mini">
+              {listStatus === 'loading'
+                ? '공개 모임 목록을 불러오고 있어요...'
+                : '핀의 숫자는 해당 동(또는 시/군/구)에 등록된 공개 모임 수입니다.'}
+            </p>
+          </Card>
+        </section>
+      </div>
+
+      <div
+        className={`modal-backdrop ${modal ? 'show' : ''}`}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setModal(null);
+        }}
+      >
+        <section
+          className="modal-panel group-list-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="모임 목록"
+        >
+          <div className="modal-heading">
+            <div>
+              <h2>
+                {modal?.region ? `${modal.region} 모임` : '모임 목록'}{' '}
+                <small className="muted">{modalList.length}개</small>
+              </h2>
+              <p className="muted mini">
+                모임을 선택하면 왼쪽 상세 정보가 바뀝니다. 필터 안의 모임은 지도 필터를 그대로 유지해요.
+              </p>
+            </div>
+            <button type="button" className="btn soft" onClick={() => setModal(null)}>
+              닫기 ✕
+            </button>
+          </div>
+          <div className="group-list-scroll">
+            {modalList.length ? (
+              modalList.map((g) => (
+                <GroupCard
+                  key={g.id}
+                  g={g}
+                  selected={chosen?.id === g.id}
+                  onSelect={select}
+                />
+              ))
+            ) : (
+              <div className="empty">검색된 공개 모임이 없어요.</div>
+            )}
+          </div>
+        </section>
+      </div>
+    </>
+  );
 }

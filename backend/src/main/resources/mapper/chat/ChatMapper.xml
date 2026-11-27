@@ -62,19 +62,22 @@
         <constructor>
             <arg column="MESSAGE_ID"  javaType="_long"/>
             <arg column="GROUP_ID"    javaType="_long"/>
-            <arg column="MEMBER_ID"   javaType="_long"/>
+            <arg column="MEMBER_ID"   javaType="java.lang.Long"/>
             <arg column="SENDER_NAME" javaType="java.lang.String"/>
             <arg column="BODY_ENC"    javaType="java.lang.String"/>
             <arg column="KEY_VER"     javaType="_int"/>
             <arg column="SENT_AT"     javaType="java.time.LocalDateTime"/>
+            <arg column="IS_SYSTEM"   javaType="_boolean"/>
         </constructor>
     </resultMap>
 
-    <!-- IX_CHAT_MESSAGE_1 (GROUP_ID, SENT_AT). 메시지 번호는 시퀀스(NOCACHE)라 번호 순 = 보낸 순 -->
+    <!-- IX_CHAT_MESSAGE_1 (GROUP_ID, SENT_AT). 메시지 번호는 시퀀스(NOCACHE)라 번호 순 = 보낸 순
+         시스템 메시지(MSG_TYPE='SYSTEM')는 MEMBER_ID 가 NULL 이라 LEFT JOIN (INNER JOIN 이면 빠진다) -->
     <select id="selectMessages" resultMap="messageMap">
-        SELECT c.MESSAGE_ID, c.GROUP_ID, c.MEMBER_ID, m.NAME AS SENDER_NAME, c.BODY_ENC, c.KEY_VER, c.SENT_AT
+        SELECT c.MESSAGE_ID, c.GROUP_ID, c.MEMBER_ID, m.NAME AS SENDER_NAME, c.BODY_ENC, c.KEY_VER, c.SENT_AT,
+               CASE WHEN c.MSG_TYPE = 'SYSTEM' THEN 1 ELSE 0 END AS IS_SYSTEM
           FROM CHAT_MESSAGE c
-          JOIN MEMBER m ON m.MEMBER_ID = c.MEMBER_ID
+          LEFT JOIN MEMBER m ON m.MEMBER_ID = c.MEMBER_ID
          WHERE c.GROUP_ID = #{groupId}
         <if test="beforeId != null">
            AND c.MESSAGE_ID &lt; #{beforeId}
@@ -87,9 +90,16 @@
         SELECT SEQ_CHAT_MESSAGE.NEXTVAL FROM DUAL
     </select>
 
+    <!-- 회원 메시지: MSG_TYPE 은 항상 'USER' 로 고정 (회원이 STOMP 로 종류를 정할 수 없다) -->
     <insert id="insertMessage">
-        INSERT INTO CHAT_MESSAGE (MESSAGE_ID, GROUP_ID, MEMBER_ID, BODY_ENC, KEY_VER, SENT_AT)
-        VALUES (#{messageId}, #{groupId}, #{memberId}, #{bodyEnc}, #{keyVer}, #{sentAt})
+        INSERT INTO CHAT_MESSAGE (MESSAGE_ID, GROUP_ID, MEMBER_ID, MSG_TYPE, BODY_ENC, KEY_VER, SENT_AT)
+        VALUES (#{messageId}, #{groupId}, #{memberId}, 'USER', #{bodyEnc}, #{keyVer}, #{sentAt})
+    </insert>
+
+    <!-- 시스템 메시지(운영 규칙 변경 안내 등): 보낸 사람 없음 → MEMBER_ID NULL (CK_CHAT_MESSAGE_2) -->
+    <insert id="insertSystemMessage">
+        INSERT INTO CHAT_MESSAGE (MESSAGE_ID, GROUP_ID, MEMBER_ID, MSG_TYPE, BODY_ENC, KEY_VER, SENT_AT)
+        VALUES (#{messageId}, #{groupId}, NULL, 'SYSTEM', #{bodyEnc}, #{keyVer}, #{sentAt})
     </insert>
 
     <select id="selectMemberName" resultType="string">

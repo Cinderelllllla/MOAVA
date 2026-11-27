@@ -21,8 +21,9 @@ import java.util.List;
  * <ul>
  *   <li>읽기(구독·이전 메시지): 그 모임의 승인된(GYE_MEMBER ACTIVE) 회원. 해산 완료 모임도 읽기는 가능.</li>
  *   <li>보내기: 위 조건 + 해산 완료 아님 + 채팅 제한 아님(미납 제재 CHAT_RESTRICTED_YN 또는 관리자 CHAT_RESTRICT).</li>
- *   <li>본문: 빈 메시지 거부, 500자 이하, 암호화 후 BODY_ENC(2000) 에 들어가는 길이.</li>
+ *   <li>본문: 빈 메시지 거부, 500자 이하, 암호화 후 BODY_ENC(2800) 에 들어가는 길이.</li>
  *   <li>저장 후 방송: DB 에 저장된 메시지만 방송한다 (메시지 번호 포함).</li>
+ *   <li>시스템 메시지(postSystem): 운영 규칙 변경 등 서버가 남기는 안내. 보낸 사람 없음(MEMBER_ID NULL).</li>
  * </ul>
  * 채팅 본문은 로그·AUDIT_LOG 에 남기지 않는다 (C 등급 개인정보).
  */
@@ -32,8 +33,12 @@ public class ChatService {
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
     public static final int MAX_LENGTH = 500;
-    /** BODY_ENC VARCHAR2(2000) = Base64(IV 12B + 본문 + 태그 16B) → 본문은 UTF-8 로 1472바이트까지 */
-    static final int MAX_BODY_BYTES = 2000 / 4 * 3 - 12 - 16;
+    /**
+     * BODY_ENC VARCHAR2(2800) = Base64(IV 12B + 본문 + 태그 16B) → 본문은 UTF-8 로 2072바이트까지.
+     * 500자는 한 글자가 최대 4바이트(이모지)여도 2000바이트라 항상 들어간다. 컬럼이 다시 줄어들 때를 대비한 안전장치로 둔다.
+     */
+    static final int BODY_ENC_COLUMN = 2800;
+    static final int MAX_BODY_BYTES = BODY_ENC_COLUMN / 4 * 3 - 12 - 16;
     static final int DEFAULT_PAGE = 30;
     static final int MAX_PAGE = 100;
 
@@ -108,6 +113,26 @@ public class ChatService {
         return new ChatMessageResponse(messageId, groupId, memberId, mapper.selectMemberName(memberId), body, sentAt);
     }
 
+    /**
+     * 시스템 메시지 저장 (F31 운영 규칙 변경 안내 등, 서버 코드만 호출).
+     * <ul>
+     *   <li>회원·채팅 제한·해산 검사는 하지 않는다 (보낸 사람이 없으므로).</li>
+     *   <li>본문 검사(빈 값·500자·저장 칸)와 암호화는 일반 메시지와 똑같다.</li>
+     *   <li>MSG_TYPE='SYSTEM', MEMBER_ID=NULL 로 저장한다.</li>
+     * </ul>
+     * 방송은 하지 않는다. 호출한 쪽이 커밋 뒤에 {@code ChatBroadcaster.broadcastAfterCommit} 으로 보낸다.
+     */
+    @Transactional
+    public ChatMessageResponse postSystem(long groupId, String body) {
+        validateBody(body);
+        int keyVer = crypto.getCurrentKeyVersion();
+        String bodyEnc = crypto.encrypt(body, keyVer);
+        long messageId = mapper.nextMessageId();
+        LocalDateTime sentAt = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
+        mapper.insertSystemMessage(messageId, groupId, bodyEnc, keyVer, sentAt);
+        return ChatMessageResponse.systemMessage(messageId, groupId, body, sentAt);
+    }
+
     static void validateBody(String body) {
         if (body == null || body.isBlank()) {
             throw new ChatException(HttpStatus.BAD_REQUEST, "EMPTY_MESSAGE", "메시지를 입력해 주세요.");
@@ -134,6 +159,7 @@ public class ChatService {
             log.warn("채팅 메시지 복호화 실패 messageId={} keyVer={}", row.messageId(), row.keyVer());
             body = "(메시지를 불러오지 못했어요)";
         }
-        return new ChatMessageResponse(row.messageId(), row.groupId(), row.memberId(), row.senderName(), body, row.sentAt());
+        return new ChatMessageResponse(row.messageId(), row.groupId(), row.memberId(), row.senderName(), body,
+                row.sentAt(), row.system());
     }
 }

@@ -8,7 +8,7 @@ MOAVA의 모든 기능이 **같은 방법으로 알림을 보내고**, 회원·�
 |---|---|---|
 | 1. 알림 공통 함수 | 다른 기능이 호출해서 알림을 저장 (`notifyMember` / `notifyGroup` / `notifyAdmins`) | PR 올림 (#11 revert 후 재반영) |
 | 2. 알림함 API | 목록 · 안 읽은 개수 · 읽음 · 모두 읽음 · 숨김 (`/api/v1/notifications`) | 다음 PR |
-| 3. SMS 발송 | 커밋 후 비동기 발송 (SOLAPI) | 2차 — 지금은 로그만 |
+| 3. SMS 발송 | 커밋 후 비동기 발송 (SOLAPI) | 구현 완료 — `moava.sms.enabled=true` + 키 설정 시 실제 발송 (기본 꺼짐) |
 
 ---
 
@@ -98,7 +98,7 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
 
 | 코드 | 언제 | 필요한 값 | 이동 경로 |
 |---|---|---|---|
-| `JOIN_REQUEST` | 가입 신청 접수 | groupId, member, group | /operations?groupId= |
+| `JOIN_REQUEST` | 가입 신청 접수 | groupId, member, group | /operations?groupId={groupId}&tab=joinRequests |
 | `PROOF_PENDING` | 증빙 등록·재제출 | groupId, group | /evidence?groupId= |
 | `ORDER_REQUEST` | 수령 순서 신청·수정 | groupId, member, group, round, stage(신청/수정) | /procedures?groupId= |
 | `ACCOUNT_VERIFIED` | 관리자 계좌 소유 확인 완료 | groupId, group, bank, last4 | /operations?groupId= |
@@ -135,11 +135,23 @@ notificationService.notifyAdmins(NotifType.OVERDUE_5D, overdueCaseId,
 | 트랜잭션 | 호출한 쪽 트랜잭션에 참여 → 함께 커밋/롤백 |
 | 전원 발송 | `INSERT … SELECT` 한 번으로 저장 (회원 목록을 불러와 반복하지 않음) |
 | 회원/관리자 구분 | 회원 알림은 `MEMBER_ID`, 관리자 알림은 `ADMIN_ID`에 저장 (`CK_NOTIFICATION_RECEIVER` 규칙) |
-| SMS | `NotifType`의 SMS 대상이면 커밋 후 `NotificationSmsListener`가 비동기 처리 (지금은 로그만) |
+| SMS | `NotifType`의 SMS 대상이면 커밋 후 `NotificationSmsListener`가 비동기 발송 (아래 "문자 발송 설정") |
 
 ### 이 함수가 하지 않는 것
 - **중복 방지** (증빙 알림 하루 1건, 미납 안내 1일·5일 차만 등) — 호출하는 쪽(배치)에서 조건을 걸어야 합니다
-- **실제 SMS 발송** — 2차 작업
+- **문자 발송 설정** — 기본은 꺼져 있어 로그만 남깁니다. 실제로 보내려면 `application-secret.properties`에 아래를 넣습니다.
+  ```properties
+  moava.sms.enabled=true
+  moava.api.solapi.key=발급받은 API Key
+  moava.api.solapi.secret=발급받은 API Secret
+  moava.api.solapi.sender=SOLAPI에 등록한 발신번호(숫자만)
+  ```
+  - 키가 비었거나 노션 placeholder(`★…`)면 켜 두어도 보내지 않습니다.
+  - 받는 사람: `MEMBER.STATUS='ACTIVE'`이고 `PHONE_ENC`가 있는 회원만. 번호는 발송 직전에만 복호화하고 로그에 남기지 않습니다.
+  - 본문: `[MOAVA] ` + 알림 본문 (90바이트 초과 시 SOLAPI가 LMS로 자동 전환).
+  - SOLAPI 응답 `statusCode=2000`(정상 접수)일 때만 성공으로 보고 `NOTIFICATION.SMS_SENT_YN='Y'`. 실패는 로그만 남기고 업무에는 영향 없음.
+  - 로그에 `messageId`가 남습니다. 실제 도착 여부는 SOLAPI 콘솔 메시지 로그에서 `messageId`로 확인 (발신번호 미승인·번호도용 차단 등은 접수 후 실패할 수 있음).
+  - 서비스 필수 알림이라 마케팅 수신 동의(MKT_SMS_OPT)와 무관하게 보냅니다 (기능명세서 F36).
 
 ---
 
@@ -169,8 +181,8 @@ API 명세서 v0.5 F35 기준. **회원(S13)·관리자(A07) 공용** — 로그
 
 | 대상 | 기준 | 처리 |
 |---|---|---|
-| 읽은 알림 | 만든 지 30일 경과 | `DELETED_YN='Y'` (숨김) |
-| 안 읽은 알림 | 만든 지 90일 경과 | `DELETED_YN='Y'` (숨김) |
+| 읽은 알림 | 만든 지 14일 경과 | `DELETED_YN='Y'` (숨김) |
+| 안 읽은 알림 | 만든 지 30일 경과 | `DELETED_YN='Y'` (숨김) |
 
 - 실제 DELETE가 아니라 숨김이라 운영 감사 이력은 DB에 남습니다.
 - 기준 시각은 `CREATED_AT`입니다 (테이블에 읽은 시각 컬럼이 없음).
@@ -186,7 +198,9 @@ backend/src/main/java/com/moava/
 ├── notification/common/
 │   ├── domain/NotifType.java                  알림 코드 22개 (템플릿·이동 경로·SMS 여부)
 │   ├── service/NotificationService.java       공통 함수 3개
-│   ├── service/NotificationSmsListener.java   SMS 자리 (커밋 후 @Async, 지금은 로그)
+│   ├── service/NotificationSmsListener.java   문자 발송 (커밋 후 @Async, 대상 확인·복호화·발송 기록)
+│   ├── sms/SmsSender.java · SolapiSmsSender.java  SOLAPI 호출 (HMAC-SHA256 인증)
+│   ├── mapper/NotificationSmsMapper.java       받는 회원 번호 조회·SMS_SENT_YN 기록
 │   ├── service/NotificationCleanupService.java 오래된 알림 정리 배치 (매일 03:30)
 │   ├── mapper/NotificationCleanupMapper.java   정리 배치 UPDATE 매퍼
 │   ├── mapper/NotificationMapper.java         INSERT 매퍼
@@ -203,7 +217,8 @@ backend/src/main/java/com/moava/
 backend/src/main/resources/mapper/notification/common/
 ├── NotificationMapper.xml
 ├── NotificationInboxMapper.xml
-└── NotificationCleanupMapper.xml
+├── NotificationCleanupMapper.xml
+└── NotificationSmsMapper.xml
 ```
 
 ## 4. 남은 작업
@@ -215,4 +230,5 @@ backend/src/main/resources/mapper/notification/common/
 - [x] SMS 규칙 반영 — 자동 미납 안내(`PAY_OVERDUE`) SMS 끄기, 관리자 경고(`OVERDUE_WARNED`) 추가 (코드표 v3.1)
 - [x] 배치: 오래된 알림 정리(읽음 14일·안 읽음 30일)
 - [ ] 납입 3일 전(`PAY_DUE_3D`)·미납 안내(`PAY_OVERDUE`)·관리자 알림(`OVERDUE_5D`) — 모두 F26 미납 감지 배치(`overdue/OverdueDetectService`, 담당 조서현)가 발송
-- [ ] 2차: SOLAPI SMS 발송 (`PHONE_ENC`가 NULL인 탈퇴 회원은 건너뜀)
+- [x] 2차: SOLAPI SMS 발송 (탈퇴·번호 없는 회원 건너뜀, 기본 꺼짐)
+- [ ] SOLAPI 키·발신번호 발급 후 실제 발송 테스트

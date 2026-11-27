@@ -1,12 +1,13 @@
 /* F05~F10 F14 — 금융 정보·추천·시뮬레이터 */
-import { db, save, nowText, fail } from './mock/db';
+import { db, emptyFinance, save, nowText, fail } from './mock/db';
 import { getAccessToken, getAccessTokenMemberId } from './auth';
 import { apiFetch, getToken } from './client';
 
 import { RISK, INCOME_CAP_RATIO, AMOUNT_UNIT_MANWON } from '../common/policy';
 export { RISK };
 
-/* ---- 정책 값: ML 서버(/ml-api/risk/model)가 기준. 받지 못하면 common/policy.js 기본값을 쓴다 ---- */
+/* ---- 정책 값: ML 서버가 기준(백엔드 GET /api/v1/finance/ai/policy 가 대신 받아 줌).
+        로그인 전이거나 받지 못하면 common/policy.js 기본값을 쓴다 ---- */
 let policy = {
   incomeCapRatio: INCOME_CAP_RATIO,       // 추천액 상한 (월수입 대비 비율)
   amountUnitManwon: AMOUNT_UNIT_MANWON,   // 추천액 절사 단위 (만 원)
@@ -15,9 +16,7 @@ let policy = {
 let policyRequested = false;
 async function loadPolicy() {
   try {
-    const res = await fetch('/ml-api/risk/model');
-    if (!res.ok) return;
-    const m = await res.json();
+    const m = await apiFetch('/api/v1/finance/ai/policy');
     const cap = Number(m?.income_cap_ratio), unit = Number(m?.round_unit) / 10000;   // round_unit 은 원 단위
     policy = {
       incomeCapRatio: cap > 0 && cap <= 1 ? cap : policy.incomeCapRatio,
@@ -26,12 +25,12 @@ async function loadPolicy() {
     };
     save();   // 정책 값을 쓰는 화면 다시 그리기
   } catch {
-    // 분석 서버가 꺼져 있으면 기본값 유지
+    // 분석 서버가 꺼져 있거나 실패하면 기본값 유지
   }
 }
-/** 화면용 정책 값 { incomeCapRatio, amountUnitManwon, source }. 처음 부를 때 한 번 ML 서버에서 받아 온다. */
+/** 화면용 정책 값 { incomeCapRatio, amountUnitManwon, source }. 로그인 후 처음 부를 때 한 번 서버에서 받아 온다. */
 export function getPolicy() {
-  if (!policyRequested) {
+  if (!policyRequested && getToken()) {   // 로그인 전에는 부르지 않고 기본값 (로그인 후 다시 시도)
     policyRequested = true;
     Promise.resolve().then(loadPolicy);   // 화면을 그리는 도중에 상태를 바꾸지 않도록 다음 차례에 호출
   }
@@ -92,6 +91,60 @@ export function policyAffordability() {
   return { free, rec: Math.max(0, Math.floor(Math.min(Math.max(0, free) * riskCoef(), cap) / AMOUNT_UNIT_MANWON) * AMOUNT_UNIT_MANWON), capped: Math.max(0, free) * riskCoef() > cap };
 }
 export const payoutShift = (amount, n, r, rate) => (r - (n + 1) / 2) * amount * n * (rate / 100) / n;
+
+/** F14 시중 정기적금 세전 단리 만기 예상액 계산 (단위: 만 원) */
+export function savingMaturity(amountManwon, months, annualRatePercent) {
+  const a = Number(amountManwon);
+  const n = Number(months);
+  const rate = Number(annualRatePercent);
+  const total = a * n;
+  if (!Number.isFinite(a) || !Number.isFinite(n) || !Number.isFinite(rate) || n <= 0) {
+    return { total: 0, interest: 0, maturity: 0 };
+  }
+  const interest = a * (n * (n + 1) / 2) * (rate / 100 / 12);
+  return { total, interest, maturity: total + interest };
+}
+
+let savingCache = { token: null, byTerm: new Map() };
+
+/** F14 시중 적금 금리 비교 조회 (GET /api/v1/finance/saving-products?termMonths=...) */
+export async function getSavingComparison(termMonths) {
+  const token = getToken();
+  if (!token) return null;
+  if (savingCache.token !== token) {
+    savingCache = { token, byTerm: new Map() };
+  }
+  const key = termMonths != null && Number.isFinite(Number(termMonths)) ? String(Math.round(Number(termMonths))) : 'ALL';
+  if (savingCache.byTerm.has(key)) {
+    return savingCache.byTerm.get(key);
+  }
+  const qs = key === 'ALL' ? '' : `?termMonths=${encodeURIComponent(key)}`;
+  const data = await apiFetch(`/api/v1/finance/saving-products${qs}`);
+  const normalized = {
+    available: Boolean(data?.available),
+    requestedTermMonths: data?.requestedTermMonths ?? null,
+    matchedTermMonths: data?.matchedTermMonths ?? null,
+    productCount: Number(data?.productCount || 0),
+    avgBasicRate: data?.avgBasicRate != null ? Number(data.avgBasicRate) : null,
+    avgMaxRate: data?.avgMaxRate != null ? Number(data.avgMaxRate) : null,
+    topMaxRate: data?.topMaxRate != null ? Number(data.topMaxRate) : null,
+    fetchedAt: data?.fetchedAt || null,
+    topProducts: Array.isArray(data?.topProducts)
+      ? data.topProducts.map((p) => ({
+          bankName: p.bankName || '',
+          productName: p.productName || '',
+          termMonths: Number(p.termMonths || 0),
+          rateBasic: p.rateBasic != null ? Number(p.rateBasic) : 0,
+          rateMax: p.rateMax != null ? Number(p.rateMax) : Number(p.rateBasic || 0),
+        }))
+      : [],
+  };
+  if (getToken() === token) {
+    savingCache.byTerm.set(key, normalized);
+  }
+  return normalized;
+}
+
 /** 이 기기에 보관된 금융 프로필 (값이 null 이면 아직 입력 안 함) */
 export const getFinance = () => db.finance;
 /* ---- F10 월별 수입·지출 (서버: 원 · yearMonth "202611" ↔ 화면: 만 원 · month "11월") ---- */
@@ -167,13 +220,105 @@ export async function getSpendingDefaults(income) {
     baseYm: d.baseYm,
   };
 }
+const PROFILE_API = '/api/v1/finance/profile';
+let profileInFlight = { token: null, promise: null };
+
+function applyServerProfile(data, token, { preserveAssessment = true } = {}) {
+  if (!data?.exists) {
+    db.finance = emptyFinance();
+    db.journey = { step: 1 };
+    save();
+    return db.finance;
+  }
+
+  const toManwon = v => (v == null ? null : Number(v) / 10000);
+  db.finance.income = toManwon(data.income);
+  db.finance.fixed = toManwon(data.fixedExp);
+  db.finance.variable = toManwon(data.variableExp);
+  db.finance.saving = toManwon(data.saving);
+  db.finance.reserve = toManwon(data.reserve);
+  db.finance.goal = toManwon(data.goalAmount);
+  db.finance.consentAt = data.consent ? (data.consentAt || nowText()) : null;
+  db.finance.serverSyncedAt = data.updatedAt || nowText();
+
+  const step = Number(data.journeyStep);
+  db.journey.step = Number.isInteger(step) && step >= 1 && step <= 4 ? step : 1;
+
+  const profileKey = financeProfileKey(db.finance);
+  const memberId = token ? getAccessTokenMemberId(token) : Number(db.session?.id);
+
+  if (preserveAssessment && data.assessment && data.assessment.riskLabel) {
+    db.finance.risk = data.assessment.riskLabel;
+    db.finance.mlAssessment = {
+      profileKey,
+      memberId,
+      availableAmount: Number(data.assessment.availableAmount) / 10000,
+      recommendedAmount: Number(data.assessment.recommendedAmount) / 10000,
+      capped: Boolean(data.assessment.capped),
+      risk: {
+        risk_level: data.assessment.riskLevel,
+        risk_label: data.assessment.riskLabel,
+        safety_factor: Number(data.assessment.safetyFactor),
+      },
+      assessedAt: data.assessment.scoredAt || nowText(),
+    };
+  } else if (!preserveAssessment || db.finance.mlAssessment?.profileKey !== profileKey) {
+    db.finance.mlAssessment = null;
+  }
+
+  save();
+  return db.finance;
+}
+
+/** 서버 DB(FINANCE_PROFILE + 최신 RISK_SCORE)에서 금융 프로필과 분석 결과를 불러와 복원한다. */
+export async function refreshFinanceProfile() {
+  const token = getToken();
+  if (!token) return null;
+  if (profileInFlight.token === token && profileInFlight.promise) {
+    return profileInFlight.promise;
+  }
+  const req = apiFetch(PROFILE_API)
+    .then(data => {
+      if (getToken() !== token) return null;
+      return applyServerProfile(data, token, { preserveAssessment: true });
+    })
+    .finally(() => {
+      if (profileInFlight.promise === req) {
+        profileInFlight = { token: null, promise: null };
+      }
+    });
+  profileInFlight = { token, promise: req };
+  return req;
+}
+
 export const getJourneyStep = () => db.journey.step;
 
 export async function setRisk(v) { if (!RISK[v]) fail('알 수 없는 등급'); db.finance.risk = v; save(); }
 export async function saveFinance(values) {
-  for (const k of ['income', 'fixed', 'variable', 'saving', 'reserve', 'goal']) { const v = Number(values[k]); if (!Number.isFinite(v) || v < 0) fail('금액을 확인해 주세요.'); db.finance[k] = v; }
-  db.finance.mlAssessment = null;
-  db.finance.consentAt ||= nowText(); db.journey.step = 2; save();
+  const parsed = {};
+  for (const k of ['income', 'fixed', 'variable', 'saving', 'reserve', 'goal']) {
+    const v = Number(values[k]);
+    if (!Number.isFinite(v) || v < 0) fail('금액을 확인해 주세요.');
+    parsed[k] = v;
+  }
+  const token = getToken();
+  if (!token) fail('로그인이 필요해요.');
+
+  const saved = await apiFetch(PROFILE_API, {
+    method: 'PUT',
+    body: JSON.stringify({
+      income: Math.round(parsed.income * 10000),
+      fixedExp: Math.round(parsed.fixed * 10000),
+      variableExp: Math.round(parsed.variable * 10000),
+      saving: Math.round(parsed.saving * 10000),
+      reserve: Math.round(parsed.reserve * 10000),
+      goalAmount: Math.round(parsed.goal * 10000),
+      consent: true,
+      journeyStep: 2,
+    }),
+  });
+  // 저장 직후에는 새 입력값으로 ML 분석을 다시 실행해 최신 RISK_SCORE 를 기록하도록 mlAssessment 를 비운다
+  applyServerProfile(saved, token, { preserveAssessment: false });
 }
 export async function assessWithMl(memberId) {
   const f = db.finance;
@@ -185,28 +330,18 @@ export async function assessWithMl(memberId) {
     reserve: Number(f.reserve),
   };
   const profileKey = financeProfileKey(input);
-  let response;
-  try {
-    response = await fetch('/ml-api/risk/contribution', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        member_id: memberId,
-        monthly_income: Math.round(input.income * 10000),
-        monthly_expense: Math.round((input.fixed + input.variable) * 10000),
-        monthly_saving: Math.round(input.saving * 10000),
-        emergency_fund: Math.round(input.reserve * 10000),
-      }),
-    });
-  } catch {
-    throw new Error('분석 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.');
-  }
-  const result = await response.json().catch(() => null);
-  if (!response.ok) {
-    // 분석 서버가 준 안내가 한국어면 그대로, 아니면 쉬운 문장으로
-    const detail = typeof result?.detail === 'string' && /[가-힣]/.test(result.detail) ? result.detail : null;
-    throw new Error(detail || (response.status >= 500 ? '분석 서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.' : '입력한 금융정보를 확인해 주세요.'));
-  }
+  if (!getToken()) fail('로그인이 필요해요.');
+  // 백엔드가 로그인 토큰으로 본인 회원 번호를 넣어 ML 서버에 대신 묻는다 (member_id 는 보내지 않음).
+  // 오류 안내(분석 서버 연결 실패 503, 입력 확인 400 등)는 apiFetch 가 서버의 한국어 문장으로 던져 준다.
+  const result = await apiFetch('/api/v1/finance/ai/contribution', {
+    method: 'POST',
+    body: JSON.stringify({
+      monthly_income: Math.round(input.income * 10000),
+      monthly_expense: Math.round((input.fixed + input.variable) * 10000),
+      monthly_saving: Math.round(input.saving * 10000),
+      emergency_fund: Math.round(input.reserve * 10000),
+    }),
+  });
   // 위험 등급 이름은 ML 서버가 기준이라 프론트 목록(RISK)과 비교하지 않는다
   if (!result?.risk?.risk_label || !Number.isFinite(Number(result.recommended_amount))
       || !Number.isFinite(Number(result.available_amount))) {
@@ -235,7 +370,17 @@ export async function assessWithMl(memberId) {
   save();
   return db.finance.mlAssessment;
 }
-export async function setJourneyStep(n) { if (n > db.journey.step + 1) fail('앞 단계를 먼저 완료해 주세요.'); db.journey.step = n; save(); }
+export async function setJourneyStep(n) {
+  if (n > db.journey.step + 1) fail('앞 단계를 먼저 완료해 주세요.');
+  db.journey.step = n;
+  save();
+  if (getToken() && hasFinanceProfile(db.finance)) {
+    apiFetch(`${PROFILE_API}/step`, {
+      method: 'PATCH',
+      body: JSON.stringify({ step: n }),
+    }).catch(() => {});
+  }
+}
 export async function saveMonth(month, income, expense) {
   if (!Number.isFinite(income) || !Number.isFinite(expense)) fail('금액을 입력해 주세요.');
   if (income < 0 || expense < 0) fail('음수는 입력할 수 없어요.');

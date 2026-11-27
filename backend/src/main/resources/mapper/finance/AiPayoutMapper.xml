@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- AI 수령 순서 추천 (MOA-34). 다른 팀 테이블은 읽기(SELECT)만 한다. -->
+<mapper namespace="com.moava.finance.mapper.AiPayoutMapper">
+
+    <select id="selectOwnerId" resultType="java.lang.Long">
+        SELECT OWNER_ID
+          FROM GYE_GROUP
+         WHERE GROUP_ID = #{groupId}
+    </select>
+
+    <select id="selectActiveMemberIds" resultType="java.lang.Long">
+        SELECT MEMBER_ID
+          FROM GYE_MEMBER
+         WHERE GROUP_ID = #{groupId}
+           AND STATUS = 'ACTIVE'
+         ORDER BY JOINED_AT, GYE_MEMBER_ID
+    </select>
+
+</mapper>

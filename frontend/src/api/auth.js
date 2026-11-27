@@ -25,12 +25,14 @@ import {
   TOKEN_KEY,
   getToken,
   tokenMemberId,
+  tokenRole,
   setServerMember,
   apiFetch,
   friendlyError,
   onUnauthorized,
   NETWORK_ERROR
 } from './client';
+import { encodeRegionForServer } from '../common/regions';
 
 // ========================================
 // 1. Spring Boot 인증 API 공통 함수
@@ -77,22 +79,27 @@ export function clearAccessToken() {
 }
 
 // ========================================
-// 3. 실제 서버 회원을 화면 세션에 연결
+// 3. 실제 서버 회원/관리자를 화면 세션에 연결
 // ========================================
 
-function connectServerSession(result) {
+function connectServerSession(result, expectedType = 'MEMBER') {
   sessionStorage.setItem(TOKEN_KEY, result.accessToken);
-  const memberId = tokenMemberId(result.accessToken);
+  const subjectId = tokenMemberId(result.accessToken);
+  const role = tokenRole(result.accessToken) || expectedType;
 
-  if (!memberId) {
+  if (!subjectId || role !== expectedType) {
     clearAccessToken();
-    throw new Error('로그인 정보를 확인하지 못했어요. 다시 로그인해 주세요.');
+    throw new Error('로그인 권한 정보를 확인하지 못했어요. 다시 로그인해 주세요.');
   }
 
-  setServerMember(result.user);
+  setServerMember({ ...result.user, role });
 
-  db.session = { type: 'MEMBER', id: memberId, source: 'SERVER' };
-  ensureFinanceOwner();
+  db.session = { type: expectedType, id: subjectId, source: 'SERVER' };
+  if (expectedType === 'MEMBER') {
+    ensureFinanceOwner();
+  } else {
+    clearFinance();
+  }
 
   // 기존 Zustand 구독 화면에 변경 알림
   save();
@@ -104,7 +111,7 @@ function connectServerSession(result) {
 export async function refreshMe() {
   if (!getToken()) return null;
   const user = await apiFetch('/api/auth/me');
-  setServerMember(user);
+  setServerMember({ ...user, role: 'MEMBER' });
   save();
   return user;
 }
@@ -126,22 +133,33 @@ export async function signupWithServer(f) {
     throw new Error('필수 약관에 동의해 주세요.');
   }
 
+  const encodedRegion = encodeRegionForServer({
+    sido: f.regionSido,
+    sigungu: f.regionSigungu,
+    dong: f.regionDong
+  });
+
+  if (!encodedRegion.regionSido || !encodedRegion.regionSigungu || !encodedRegion.regionDong) {
+    throw new Error('활동 지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
+  }
+
   const result = await requestAuth('signup', {
     name: f.name.trim(),
     email: f.email.trim(),
     password: f.password,
     phone: f.phone.trim(),
-    regionSido: f.regionSido.trim(),
-    regionSigungu: f.regionSigungu.trim(),
+    regionSido: encodedRegion.regionSido,
+    regionSigungu: encodedRegion.regionSigungu,
+    regionDong: encodedRegion.regionDong,
     termsAgreed: f.termsAgreed,
     privacyAgreed: f.privacyAgreed
   });
 
-  return connectServerSession(result);
+  return connectServerSession(result, 'MEMBER');
 }
 
 // ========================================
-// 5. Spring Boot 로그인
+// 5. Spring Boot 로그인 (회원 / 관리자)
 // ========================================
 
 export async function loginWithServer(email, password) {
@@ -150,7 +168,16 @@ export async function loginWithServer(email, password) {
     password
   });
 
-  return connectServerSession(result);
+  return connectServerSession(result, 'MEMBER');
+}
+
+export async function loginAdminWithServer(email, password) {
+  const result = await requestAuth('admin/login', {
+    email: email.trim(),
+    password
+  });
+
+  return connectServerSession(result, 'ADMIN');
 }
 
 // ========================================
@@ -178,6 +205,7 @@ export async function logout() {
 
 // ========================================
 // 7. 회원정보 수정 (서버 API 없음 → 화면에서 "준비 중")
+// 7. 회원정보 수정
 // ========================================
 
 export async function updateAccount(f) {
@@ -191,14 +219,25 @@ export async function updateAccount(f) {
     fail('서버 회원 정보만 수정할 수 있습니다.');
   }
 
+  const encodedRegion = encodeRegionForServer({
+    sido: f.regionSido,
+    sigungu: f.regionSigungu,
+    dong: f.regionDong
+  });
+
+  if (!encodedRegion.regionSido || !encodedRegion.regionSigungu || !encodedRegion.regionDong) {
+    fail('활동 지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
+  }
+
   const updatedUser = await apiFetch('/api/auth/me', {
     method: 'PUT',
     body: JSON.stringify({
-      name:f.name.trim(),
+      name: f.name.trim(),
       email: f.email.trim(),
       phone: f.phone.trim(),
-      regionSido: f.regionSido.trim(),
-      regionSigungu: f.regionSigungu.trim()
+      regionSido: encodedRegion.regionSido,
+      regionSigungu: encodedRegion.regionSigungu,
+      regionDong: encodedRegion.regionDong
     })
   });
   setServerMember(updatedUser);

@@ -6,6 +6,8 @@ import { auth, admin, groups, memberName, fetchNotifications, fetchUnreadNotific
 import { PageHead, Card, Input, Empty, ComingSoon } from '../components/ui';
 import { ThemeSwitcher } from '../components/Shell';
 import { notifyNotificationsChanged, isInternalLink } from '../common/notificationEvents';
+import RegionSelector from '../components/RegionSelector';
+import { parseRegionFromServer } from '../common/regions';
 
 /* ---- 알림 (F35) — 서버 알림함 API(/api/v1/notifications) 연동 ----
  * 안 읽은 알림(read=N)과 읽은 알림(read=Y)을 서버에서 따로 받아 온다.
@@ -15,8 +17,17 @@ const EMPTY_LIST = { items: [], page: -1, hasNext: false };
 /** 최신순(createdAt, id 내림차순) 정렬 + id 중복 제거 */
 const mergeById = (...lists) => {
   const map = new Map();
-  lists.flat().forEach(n => { if (!map.has(n.id)) map.set(n.id, n); });
-  return [...map.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id - a.id);
+
+  lists.flat(Infinity).forEach(n => {
+    if (!n || n.id == null) return;
+    if (!map.has(n.id)) map.set(n.id, n);
+  });
+
+  return [...map.values()].sort(
+    (a, b) =>
+      String(b.createdAt).localeCompare(String(a.createdAt)) ||
+      b.id - a.id
+  );
 };
 /** 서버 시각("2026-11-19T10:24:00") → "11.19 10:24" (올해가 아니면 연도 포함) */
 const fmtTime = v => {
@@ -55,18 +66,7 @@ function NotificationItem({ n, checked, onToggle, onOpen, onRead }) {
 }
 
 export function Notifications() {
-  const { isAdmin } = useApp();
-  return isAdmin ? <AdminNotificationsPending /> : <MemberNotifications />;
-}
-
-/** 관리자 알림함: 관리자 JWT 로그인(관리자 전용 claim)이 생기기 전까지 안내만 표시 */
-function AdminNotificationsPending() {
-  return <><PageHead kicker="NOTIFICATION CENTER" title="관리자 알림" sub="관리자 알림함은 준비 중입니다." />
-    <Card><Empty>관리자 알림은 아직 준비 중이에요.</Empty></Card></>;
-}
-
-function MemberNotifications() {
-  const { run, setUi } = useApp();
+  const { isAdmin, run, setUi } = useApp();
   const nav = useNavigate();
   const [unread, setUnread] = useState(EMPTY_LIST), [read, setRead] = useState(EMPTY_LIST);
   const [unreadTotal, setUnreadTotal] = useState(0);
@@ -109,6 +109,8 @@ function MemberNotifications() {
     try {
       const r = await run(() => markNotificationRead(n.id));
       if (!r.ok) return false;
+      // 읽음 처리된 알림의 삭제 선택 상태 해제
+      setSel(prev => prev.filter(id => id !== n.id));
       setUnread(prev => ({ ...prev, items: prev.items.filter(x => x.id !== n.id) }));
       setRead(prev => ({ ...prev, items: mergeById([{ ...n, read: true }], prev.items) }));
       setUnreadTotal(c => Math.max(0, c - 1));
@@ -121,8 +123,15 @@ function MemberNotifications() {
   const open = async n => {
     if (!isInternalLink(n.linkPage)) return;
     if (!(await markRead(n))) return;
-    const gid = Number(new URLSearchParams(n.linkPage.split('?')[1] || '').get('groupId'));
-    if (Number.isSafeInteger(gid) && gid > 0) setUi({ selected: gid, focus: gid });
+    const params = new URLSearchParams(
+      n.linkPage.split('?')[1] || ''
+    );
+    const gid = Number(params.get('groupId'));
+
+    if (Number.isSafeInteger(gid) && gid > 0) {
+      setUi({ selected: gid, focus: gid });
+    }
+    // 서버에서 전달한 알림 이동 경로 사용
     nav(n.linkPage);
   };
   const readAll = async () => { const r = await run(() => markAllNotificationsRead(), '모두 읽음으로 표시했어요.'); if (r.ok) afterChange(); };
@@ -135,7 +144,7 @@ function MemberNotifications() {
   const moreBtn = (key, list) => list.hasNext && <div className="actions"><button className="btn soft" onClick={() => loadMore(key)} disabled={more === key}>{more === key ? '불러오는 중…' : '이전 알림 더 보기'}</button></div>;
   const empty = !unread.items.length && !read.items.length;
 
-  return <><PageHead kicker="NOTIFICATION CENTER" title="내 알림함" sub="알림을 누르면 읽음 처리되고 관련 화면으로 이동합니다.">
+  return <><PageHead kicker="NOTIFICATION CENTER" title={isAdmin ? '관리자 알림' : '내 알림함'} sub="알림을 누르면 읽음 처리되고 관련 화면으로 이동합니다.">
       <button className="btn soft" onClick={readAll} disabled={!unreadTotal}>모두 읽기</button>
       <button className="btn danger" onClick={hide} disabled={!sel.length}>선택 삭제{sel.length ? ` (${sel.length})` : ''}</button>
     </PageHead>
@@ -150,7 +159,11 @@ function MemberNotifications() {
         <div className="list">{read.items.length ? read.items.map(row) : <Empty>읽은 알림이 없습니다.</Empty>}</div>
         {moreBtn('Y', read)}
       </>}
-      <p className="muted mini">선택 삭제한 알림은 내 알림함에서만 사라지고, 모임 운영 기록은 그대로 남아요.</p>
+      <p className="muted mini">
+        {isAdmin
+          ? '선택 삭제한 알림은 관리자 알림함에서만 사라지고, 플랫폼 운영 기록은 그대로 남아요.'
+          : '선택 삭제한 알림은 내 알림함에서만 사라지고, 모임 운영 기록은 그대로 남아요.'}
+      </p>
     </Card></>;
 }
 
@@ -162,91 +175,116 @@ export function Account() {
   const [saving, setSaving] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
 
-  const [form, setForm] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    phone: '',
-    regionSido: user?.regionSido || '',
-    regionSigungu: user?.regionSigungu || ''
-  });
+  const parsedRegion = parseRegionFromServer(user?.regionSido, user?.regionSigungu, user?.regionDong);
+
+  const buildInitialForm = () => {
+    const r = parseRegionFromServer(user?.regionSido, user?.regionSigungu, user?.regionDong);
+    return {
+      name: user?.name || '',
+      email: user?.email || '',
+      phone: '',
+      regionSido: r.sido,
+      regionSigungu: r.sigungu,
+      regionDong: r.dong
+    };
+  };
+
+  const [form, setForm] = useState(buildInitialForm);
   const [password, setPassword] = useState('');
   const change = key => e => {
     setForm(prev => ({
       ...prev,
-      [key]:e.target.value
+      [key]: e.target.value
     }));
   };
+
+  const startEditing = () => {
+    setForm(buildInitialForm());
+    setEditing(true);
+  };
+
   const handleUpdate = async e => {
     e.preventDefault();
-    if(saving) return;
+    if (saving) return;
     setSaving(true);
-      try{
-        const result = await run(() => auth.updateAccount(form), '회원정보가 수정되었습니다.');
-        if(result.ok){
-          setEditing(false);
-        } 
-      }finally{
-        setSaving(false);
+    try {
+      const result = await run(() => auth.updateAccount(form), '회원정보가 수정되었습니다.');
+      if (result.ok) {
+        setEditing(false);
       }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const cancelUpdate = () => {
-    setForm({
-      name: user.name || '',
-      email: user?.email || '',
-      phone: '',
-      regionSido: user?.regionSido || '',
-      regionSigungu: user?.regionSigungu || ''
-    });
+    setForm(buildInitialForm());
     setEditing(false);
   };
 
-  const handleWithdraw = async() => {
-    if(withdrawing) return;
-    if(!password.trim()){
+  const handleWithdraw = async () => {
+    if (withdrawing) return;
+    if (!password.trim()) {
       alert('탈퇴를 위해 비밀번호를 입력해주세요.');
       return;
     }
     const confirmed = window.confirm('정말 회원 탈퇴를 진행하시겠습니까?');
-    if(!confirmed) return;
+    if (!confirmed) return;
 
     setWithdrawing(true);
 
-    try{
+    try {
       const result = await run(() => auth.withdrawAccount(password), '회원 탈퇴가 완료되었습니다.');
-      if(result.ok){
-        navigate('/login', {replace: true});
+      if (result.ok) {
+        navigate('/login', { replace: true });
       }
-    }finally{
+    } finally {
       setWithdrawing(false);
     }
   };
 
   return <><PageHead kicker="MY ACCOUNT" title="내 정보 · 개인정보" sub="활동 지역 등 계정 정보를 확인합니다." />
     <Card>{editing ? (<form onSubmit={handleUpdate}><h2>회원정보 수정</h2>
-    <div className="form-grid">
-      <Input label = "이름" name = "name" value={form.name} onChange={change('name')} required />
-      <Input label = "이메일" name = "email" type = "email" value={form.email} onChange={change('email')} required />
-      <Input label = "전화번호" name = "phone" type = "tel" placeholder = "01012345678" value={form.phone} onChange={change('phone')} required />
-      <Input label = "활동 지역 시/도" name = "regionSido" value={form.regionSido} onChange={change('regionSido')} required />
-      <Input label = "활동 지역 시/군/구" name = "regionDogungu" value={form.regionSigungu} onChange={change('regionSigungu')} required /></div>
+      <div className="form-grid">
+        <Input label="이름" name="name" value={form.name} onChange={change('name')} required />
+        <Input label="이메일" name="email" type="email" value={form.email} onChange={change('email')} required />
+        <Input label="전화번호" name="phone" type="tel" placeholder="010-0000-0000" value={form.phone} onChange={change('phone')} required />
+        <RegionSelector
+          mode="required"
+          namePrefix="accountRegion"
+          sido={form.regionSido}
+          sigungu={form.regionSigungu}
+          dong={form.regionDong}
+          disabled={saving}
+          onChange={({ sido, sigungu, dong }) =>
+            setForm(prev => ({
+              ...prev,
+              regionSido: sido,
+              regionSigungu: sigungu,
+              regionDong: dong
+            }))
+          }
+        />
+      </div>
       <p className="info mini">전화번호는 암호화되어 서버에 저장됩니다. 수정 시 전화번호를 다시 입력해주세요.</p>
       <div className="actions">
-        <button className="btn promary" type="submit" disabled={saving}>{saving ? '저장 중...' : '수정 완료'}</button>
-        <button className='btn soft' type="button" onClick={cancelUpdate} disabled={saving}>취소</button>
+        <button className="btn primary" type="submit" disabled={saving}>{saving ? '저장 중...' : '수정 완료'}</button>
+        <button className="btn soft" type="button" onClick={cancelUpdate} disabled={saving}>취소</button>
       </div>
-      </form>) : (
-        <><h2>회원 정보</h2>
-        <div className='form-grid'>
+    </form>) : (
+      <><h2>회원 정보</h2>
+        <div className="form-grid">
           <Input label="이름" name="name" value={user?.name || ''} readOnly />
           <Input label="이메일" name="email" type="email" value={user?.email || ''} readOnly />
-          <Input label="활동 지역 시/도" name="regionSido" value={user?.regionSido || ''} readOnly />
-          <Input label="활동 지역 시/군/구" name="regionSigungu" value={user?.regionSigungu || ''} readOnly /></div>
-          <div className="actions">
-            <button className="btn primary" onClick={() => setEditing(true)}>내 정보 수정</button></div></>)}
+          <Input label="활동 지역 · 시/도" name="regionSido" value={parsedRegion.sido || ''} readOnly />
+          <Input label="활동 지역 · 시/군/구" name="regionSigungu" value={parsedRegion.sigungu || ''} readOnly />
+          <Input label="활동 지역 · 읍/면/동" name="regionDong" value={parsedRegion.dong || '미설정 (수정에서 선택 가능)'} readOnly />
+        </div>
+        <div className="actions">
+          <button className="btn primary" onClick={startEditing}>내 정보 수정</button></div></>)}
     <div className="divider"/>
     <h2>회원 탈퇴</h2>
-    <p className="muted mini">탈퇴 시 회원 계정이 비활성화되며, 기존 모임 참여 상태에 따라 탈퇴가 제한퇼 수 있습니다.</p>
+    <p className="muted mini">탈퇴 시 회원 계정이 비활성화되며, 기존 모임 참여 상태에 따라 탈퇴가 제한될 수 있습니다.</p>
     <div className="field">
       <label htmlFor="withdrawPassword">비밀번호 확인</label>
       <input id="withdrawPassword" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="현재 비밀번호 입력" autoComplete="current-password"/>
@@ -255,8 +293,8 @@ export function Account() {
       <button className="btn danger" type="button" onClick={handleWithdraw} disabled={withdrawing}>{withdrawing ? '탈퇴 처리 중...' : '회원 탈퇴'}</button>
     </div>
     <div className="theme-settings">
-      <h2>🎨 화면 테마 설정</h2>
-      <p className="muted mini">밝은 스카이 브리즈 또는 어두운 네이비.민트 테마를 선택할 수 있습니다.</p>
+      <h2>화면 테마 설정</h2>
+      <p className="muted mini">밝은 테마 또는 어두운 테마를 선택할 수 있습니다.</p>
       <ThemeSwitcher/>
     </div>
     </Card></>;

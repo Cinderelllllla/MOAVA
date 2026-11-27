@@ -13,7 +13,8 @@ export const MAX_LENGTH = 500;
 /** 내 채팅방(승인된 회원인 모임) 목록 → [{groupId, title, status, memberCount, lastSentAt, canSend}] */
 export const fetchRooms = () => apiFetch('/api/v1/chat/rooms');
 
-/** 이전 메시지 (오래된 것 → 최신 순) → {items:[{messageId, groupId, memberId, senderName, body, sentAt}], hasMore, canSend} */
+/** 이전 메시지 (오래된 것 → 최신 순) → {items:[{messageId, groupId, memberId, senderName, body, sentAt, system}], hasMore, canSend}
+    system=true 면 운영 규칙 변경 안내 같은 시스템 메시지 (memberId·senderName 은 null). 실시간(/topic)도 같은 모양 */
 export function fetchMessages(groupId, { beforeId, size = 30 } = {}) {
   const q = new URLSearchParams({ size: String(size) });
   if (beforeId) q.set('beforeId', String(beforeId));

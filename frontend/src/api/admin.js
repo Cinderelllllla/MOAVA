@@ -1,7 +1,68 @@
 /* F26 F32 F37 F39 F40 F41 — 관리자: 해산 승인 · 제재 · 참조번호 · 미납 조치 · 계좌 확인 · 신고 처리 · 알림 */
 import * as D from './mock/db';
+import { apiFetch } from './client';
 const { db, save, fail } = D;
 const needAdmin = () => { if (!D.isAdmin()) fail('관리자만 처리할 수 있습니다.'); };
+
+/* ============================================================
+   실제 서버 연동 API (AdminDashboardController · AdminDemoController · AdminGroupAuditController · AdminSanctionController · DissolutionController)
+   ============================================================ */
+
+export {
+  fetchAdminGroups,
+  fetchAdminGroupDetail,
+  fetchAdminAuditLogs,
+  fetchAdminAuditFilterOptions,
+} from './adminGroups';
+
+export {
+  fetchAdminSanctionOverview,
+  fetchBanCandidates,
+  fetchBannedMembers,
+  banMember,
+  releaseMemberBan,
+  fetchMemberWarnings,
+  fetchSanctionHistory,
+} from './adminSanctions';
+
+/** A01 관리자 대시보드 통계 + 최근 운영 이력 7건 + 시연 초기화 가능 여부 */
+export async function fetchDashboardSummary() {
+  return apiFetch('/api/v1/admin/dashboard', { method: 'GET' });
+}
+
+/** A01 시연용 테스트 회원 5명 생성 (비밀번호 Test1234!) */
+export async function createDemoTestMembers() {
+  return apiFetch('/api/v1/admin/demo/test-members', { method: 'POST' });
+}
+
+/** A01 시연 데이터 초기화 (운영 환경에서는 비활성화) */
+export async function resetDemoData() {
+  return apiFetch('/api/v1/admin/demo/reset', { method: 'POST' });
+}
+
+/** A04 관리자 해산 신청/완료 목록 조회 (status 생략 시 전체) */
+export async function fetchAdminDissolutions(status) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  const data = await apiFetch(`/api/v1/admin/dissolutions${qs}`, { method: 'GET' });
+  return Array.isArray(data) ? data : [];
+}
+
+/** A04 관리자 해산 최종 승인 */
+export async function approveAdminDissolution(groupId) {
+  return apiFetch(`/api/v1/admin/groups/${Number(groupId)}/dissolution/approve`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+/** A04 관리자 해산 신청 반려 */
+export async function rejectAdminDissolution(groupId, rejectReason) {
+  if (!rejectReason?.trim()) throw new Error('반려 사유를 입력해 주세요.');
+  return apiFetch(`/api/v1/admin/groups/${Number(groupId)}/dissolution/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ rejectReason: rejectReason.trim() }),
+  });
+}
 
 export const members = () => db.members;
 export const history = () => db.history;
@@ -73,3 +134,56 @@ export const myNotices = () => db.notices.filter(n => !n.deleted && (D.isAdmin()
 export async function readNotice(id) { const n = myNotices().find(x => x.id === id); if (n) n.read = true; save(); }
 export async function readAllNotices() { myNotices().forEach(x => x.read = true); save(); }
 export async function deleteNotices(ids) { if (!ids.length) fail('삭제할 알림을 선택해 주세요.'); myNotices().filter(n => ids.includes(n.id)).forEach(n => n.deleted = true); save(); }
+
+/* ============================================================
+   실제 서버 연동 API — 참조번호 (F24, A05) · 미납 조치 (F26, A06)
+   RefNoController · OverdueController
+   ============================================================ */
+
+/** A05 참조번호 대상 증빙 목록 (ref: 'UNASSIGNED' 미지정 | 'ASSIGNED' 지정 완료) */
+export async function fetchAdminRefProofs(ref = 'UNASSIGNED') {
+  const data = await apiFetch(`/api/v1/admin/payment-proofs?ref=${encodeURIComponent(ref)}`, { method: 'GET' });
+  return Array.isArray(data) ? data : [];
+}
+
+/** A05 다음 참조번호 미리 보기 (번호를 소모하지 않음) */
+export async function fetchRefNoSuggestion() {
+  const data = await apiFetch('/api/v1/admin/payment-proofs/ref-no/suggestion', { method: 'GET' });
+  return data?.refNo ?? null;
+}
+
+/** A05 참조번호 지정 (refNo 를 비우면 서버가 다음 번호로 지정) */
+export async function assignAdminRefNo(proofId, refNo) {
+  const value = refNo?.trim();
+  return apiFetch(`/api/v1/admin/payment-proofs/${Number(proofId)}/ref-no`, {
+    method: 'PATCH',
+    body: JSON.stringify({ refNo: value || null }),
+  });
+}
+
+/** A05 참조번호 정정 (새 번호·사유 필수) */
+export async function correctAdminRefNo(proofId, refNo, reason) {
+  if (!refNo?.trim()) throw new Error('변경할 참조번호를 입력해 주세요.');
+  if (!/^MOAVA-\d{5}$/.test(refNo.trim())) throw new Error('참조번호는 MOAVA-00001 형식이어야 합니다.');
+  if (!reason?.trim()) throw new Error('정정 사유를 입력해 주세요.');
+  return apiFetch(`/api/v1/admin/payment-proofs/${Number(proofId)}/ref-no/correction`, {
+    method: 'PATCH',
+    body: JSON.stringify({ refNo: refNo.trim(), reason: reason.trim() }),
+  });
+}
+
+/** A06 미납 목록 (status: 'OPEN' 미해소 | 'RESOLVED' 해소 | 'ALL') */
+export async function fetchAdminOverdueCases(status = 'OPEN') {
+  const data = await apiFetch(`/api/v1/admin/overdue-cases?status=${encodeURIComponent(status)}`, { method: 'GET' });
+  return Array.isArray(data) ? data : [];
+}
+
+/** A06 미납 조치 (action: 'WARN' | 'CHAT_RESTRICT' | 'CHAT_RELEASE' | 'ORDER_REVIEW') — WARN 외에는 사유 필수 */
+export async function applyOverdueAction(overdueCaseId, action, reason) {
+  const text = reason?.trim();
+  if (action !== 'WARN' && !text) throw new Error('조치 사유를 입력해 주세요.');
+  return apiFetch(`/api/v1/admin/overdue-cases/${Number(overdueCaseId)}/actions`, {
+    method: 'POST',
+    body: JSON.stringify(text ? { action, reason: text } : { action }),
+  });
+}

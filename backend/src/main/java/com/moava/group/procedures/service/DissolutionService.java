@@ -2,7 +2,9 @@ package com.moava.group.procedures.service;
 
 import com.moava.group.procedures.dto.DissolutionDTO;
 import com.moava.group.procedures.mapper.DissolutionMapper;
-import lombok.RequiredArgsConstructor;
+import com.moava.group.search.event.GroupSearchSyncEvent;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +18,6 @@ import java.util.Map;
 import java.util.Set;
 
 @Service
-@RequiredArgsConstructor
 public class DissolutionService {
 
     private static final Set<String> VALID_STATUS_FILTERS = Set.of("PENDING", "APPROVED", "REJECTED");
@@ -24,6 +25,17 @@ public class DissolutionService {
             "확인된 납입액 합계를 활성 회원 수로 단순 나눈 참고치이며, 이미 지급된 곗돈과 중도 탈퇴 정산 내역은 반영되지 않아 실제 환급·정산 금액과 다를 수 있습니다.";
 
     private final DissolutionMapper dissolutionMapper;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    public DissolutionService(DissolutionMapper dissolutionMapper, ApplicationEventPublisher eventPublisher) {
+        this.dissolutionMapper = dissolutionMapper;
+        this.eventPublisher = eventPublisher;
+    }
+
+    public DissolutionService(DissolutionMapper dissolutionMapper) {
+        this(dissolutionMapper, null);
+    }
 
     /**
      * 특정 모임의 해산 신청 현황 조회 (모임 운영 센터 현재 상태 배지 표시용)
@@ -132,6 +144,10 @@ public class DissolutionService {
                 "계모임 해산 신청 접수 (사유: " + cleanReason + ")"
         );
 
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+        }
+
         return "관리자에게 해산 승인을 요청했습니다.";
     }
 
@@ -202,9 +218,10 @@ public class DissolutionService {
             );
         }
 
-        // 4) [TODO] Elasticsearch(ES) 모임 검색 인덱스 문서 삭제 연동
-        // TODO: Elasticsearch 연동 완료 시 아래 코드 활성화 (해산된 모임을 검색 결과에서 즉시 제거)
-        // groupSearchRepository.deleteById(groupId);
+        // 4) Elasticsearch(ES) 모임 검색 인덱스 문서 삭제 연동 (커밋 후 DISSOLVED 감지 -> ES 문서 삭제)
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+        }
 
         // 5) AUDIT_LOG (DISSOLVE_APPROVE) 기록 — ACTOR_ADMIN_ID에 기록 (ACTOR_MEMBER_ID는 NULL)
         dissolutionMapper.insertAdminAuditLog(
@@ -274,6 +291,10 @@ public class DissolutionService {
                 "DISSOLVE_REJECT",
                 "계모임 해산 신청 반려 (사유: " + reasonText + ")"
         );
+
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+        }
 
         return "해산 신청을 반려했어요.";
     }

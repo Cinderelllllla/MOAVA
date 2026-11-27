@@ -108,7 +108,7 @@ public class ProofQueryService {
     /**
      * F25 계원별 납입 현황 (본인 납입 후 열람)
      * - 귀속 월마다 따로 판단: 그 달 내 증빙이 CONFIRMED이거나 모임장이면 전체 회원 상태, 아니면 본인 행만
-     * - 경고 횟수는 모임장만, 이름은 본인 외 마스킹, 증빙 파일은 넣지 않음
+     * - 경고 횟수는 모임장만, 회원 이름은 실명 표시, 증빙 파일은 넣지 않음
      * - 내 증빙 내역은 기존 F22 목록(getProofList)이 회원에게 본인 것만 주므로 여기서 다시 주지 않음
      *
      * @param payMonth 조회할 귀속 월 YYYYMM (null이면 이번 달)
@@ -136,12 +136,10 @@ public class ProofQueryService {
             members = members.stream().filter(m -> memberId.equals(m.getMemberId())).toList();   // 본인 행만
         }
 
-        // 4. 본인 표시 · 이름 마스킹 (F03) · 경고 횟수는 모임장만
+        // 4. 본인 표시 · 경고 횟수는 모임장만
         for (PaymentStatusResponse.MemberStatus m : members) {
             m.setMe(memberId.equals(m.getMemberId()));
-            if (!m.isMe()) {
-                m.setMemberName(NameMasker.mask(m.getMemberName()));
-            }
+
             if (!isOwner) {
                 m.setWarningCount(null);
             }

@@ -14,10 +14,21 @@
             PURPOSE AS "purpose",
             REGION_SIDO AS "regionSido",
             REGION_SIGUNGU AS "regionSigungu",
+            REGION_DONG AS "regionDong",
             VISIBILITY AS "visibility"
         FROM GYE_GROUP
         WHERE INVITE_CODE = #{inviteCode}
 
+    </select>
+
+    <!-- [F18 추가] 모임장 전용 초대 토큰 조회 -->
+    <select id="findInviteCodeForOwner"
+            resultType="java.lang.String">
+        SELECT INVITE_CODE
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        AND OWNER_ID = #{ownerId}
+        AND VISIBILITY = 'PRIVATE'
     </select>
 
 </mapper>

@@ -12,8 +12,10 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import java.util.UUID;
 
-/** 금융(F07·F10) 컨트롤러 전용 오류 변환. 다른 패키지 컨트롤러에는 영향을 주지 않는다. */
-@RestControllerAdvice(assignableTypes = {FinanceMonthlyController.class, SpendingDefaultController.class})
+/** 금융(F05·F07·F10·F14·AI 분석) 컨트롤러 전용 오류 변환. 다른 패키지 컨트롤러에는 영향을 주지 않는다. */
+@RestControllerAdvice(assignableTypes = {FinanceProfileController.class, FinanceMonthlyController.class,
+        SpendingDefaultController.class, SavingProductController.class,
+        AiFinanceController.class, AiPayoutOrderController.class})
 public class FinanceExceptionHandler {
 
     @ExceptionHandler(FinanceException.class)
@@ -45,6 +47,9 @@ public class FinanceExceptionHandler {
         }
         if ("months".equals(name)) {
             return error(HttpStatus.BAD_REQUEST, "INVALID_MONTHS", "조회 개월 수를 확인해 주세요.");
+        }
+        if ("termMonths".equals(name)) {
+            return error(HttpStatus.BAD_REQUEST, "INVALID_TERM", "저축 기간은 1~120개월 사이여야 합니다.");
         }
         return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "요청 값을 확인해 주세요.");
     }

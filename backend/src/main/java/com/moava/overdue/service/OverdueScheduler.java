@@ -27,7 +27,8 @@ public class OverdueScheduler {
         LocalDate today = LocalDate.now(SEOUL);
         try {
             OverdueDetectService.DetectResult r = overdueDetectService.detect(today);
-            log.info("[F26] 미납 감지 완료 {} — 새 미납 {}건, 회원 안내 {}건", today, r.newCases(), r.memberNotices());
+            log.info("[F26] 미납 감지 완료 {} — 새 미납 {}건, 3일 전 안내 {}건, 미납 안내 {}건, 실패 {}건",
+                    today, r.newCases(), r.dueNotices(), r.memberNotices(), r.failures());
         } catch (Exception e) {
             log.error("[F26] 미납 감지 실패 {}", today, e);
         }

@@ -1,6 +1,5 @@
 package com.moava.overdue.service;
 
-import com.moava.common.util.NameMasker;
 import com.moava.notification.common.domain.NotifType;
 import com.moava.notification.common.service.NotificationService;
 import com.moava.overdue.dto.OverdueTargetDto;
@@ -20,17 +19,17 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * OverdueDetectService 단위 테스트 (F26 미납 자동 감지) — DB 없이 가짜 Mapper·알림 서비스(Mock)로 처리 흐름만 확인
+ * OverdueDetectService 단위 테스트 (F26 미납 자동 감지) — DB 없이 가짜 Mapper·알림·등록기(Mock)로 처리 흐름만 확인
  * 감지 쿼리 조건(시작일·가입일·운영 기간)은 SQL이라 여기서는 확인하지 않음 → DB에서 따로 확인
+ * 미납 건 저장·관리자 알림·감사 로그 내용은 OverdueCaseRegistrarTest에서 확인
  */
 @ExtendWith(MockitoExtension.class)
 class OverdueDetectServiceTest {
@@ -41,47 +40,61 @@ class OverdueDetectServiceTest {
     @Mock
     NotificationService notificationService;        // 가짜 알림 서비스 (실제 알림 저장 안 함)
 
+    @Mock
+    OverdueCaseRegistrar overdueCaseRegistrar;      // 가짜 미납 건 등록기
+
     @InjectMocks
     OverdueDetectService overdueDetectService;      // 위 가짜들을 넣어서 만든 진짜 Service
 
     static final LocalDate TODAY = LocalDate.of(2026, 11, 10);   // 납입일 5일 모임 기준 11월분 5일 차
     static final Long GROUP_ID = 10L;
 
+    // ===================== 새 미납 건 =====================
+
     @Test
-    @DisplayName("새 미납 건: OVERDUE_CASE 저장 → 관리자 알림(OVERDUE_5D, 회원 이름 마스킹) → 감사 로그 OVERDUE_DETECT")
-    void newCase_savesAndNotifiesAdmins() {
-        when(overdueMapper.findNewOverdueTargets(TODAY, 5)).thenReturn(List.of(target(20L, "홍길동", 5)));
-        doAnswer(inv -> {                           // 실제 DB처럼 저장하면서 미납 건 ID를 채워 줌 (selectKey 흉내)
-            ((OverdueTargetDto) inv.getArgument(0)).setOverdueCaseId(500L);
-            return 1;
-        }).when(overdueMapper).insertOverdueCase(any());
+    @DisplayName("새 미납 건은 한 건씩 등록기(OverdueCaseRegistrar)에 넘김")
+    void newCase_delegatesToRegistrar() {
+        OverdueTargetDto t = target(20L, "홍길동", 5);
+        when(overdueMapper.findNewOverdueTargets(TODAY, 5)).thenReturn(List.of(t));
 
         OverdueDetectService.DetectResult r = overdueDetectService.detect(TODAY);
 
         assertEquals(1, r.newCases());
-        verify(notificationService).notifyAdmins(eq(NotifType.OVERDUE_5D), eq(500L), eq(Map.of(
-                "group", "테스트모임",
-                "member", NameMasker.mask("홍길동"),
-                "month", "11월분",
-                "days", 5)));
-        verify(overdueMapper).insertAuditLog(eq(GROUP_ID), eq(20L), eq("OVERDUE_DETECT"), contains("#500"));
+        assertEquals(0, r.failures());
+        verify(overdueCaseRegistrar).register(t);
     }
 
     @Test
-    @DisplayName("같은 건이 이미 저장돼 있으면(UNIQUE 위반) 관리자 알림·감사 로그를 다시 남기지 않음")
-    void duplicateCase_noSecondAlert() {
+    @DisplayName("같은 건이 이미 저장돼 있으면(UNIQUE 위반) 건너뜀 — 실패로 세지 않음")
+    void duplicateCase_skipped() {
         when(overdueMapper.findNewOverdueTargets(TODAY, 5)).thenReturn(List.of(target(20L, "홍길동", 5)));
-        when(overdueMapper.insertOverdueCase(any())).thenThrow(new DuplicateKeyException("UK_OVERDUE_CASE_1"));
+        doThrow(new DuplicateKeyException("UK_OVERDUE_CASE_1")).when(overdueCaseRegistrar).register(any());
 
         OverdueDetectService.DetectResult r = overdueDetectService.detect(TODAY);
 
         assertEquals(0, r.newCases());
-        verify(notificationService, never()).notifyAdmins(any(), any(), any());
-        verify(overdueMapper, never()).insertAuditLog(any(), any(), any(), any());
+        assertEquals(0, r.failures());
     }
 
     @Test
-    @DisplayName("미납 1일 차·5일 차 회원에게 납입 안내(PAY_OVERDUE), 새 미납 건이 없으면 관리자 알림 없음")
+    @DisplayName("미납 건 하나가 실패해도 다음 건은 계속 등록 (실패 1건으로 셈)")
+    void registerFails_nextCaseContinues() {
+        OverdueTargetDto fail = target(20L, "홍길동", 5);
+        OverdueTargetDto ok = target(21L, "김철수", 5);
+        when(overdueMapper.findNewOverdueTargets(TODAY, 5)).thenReturn(List.of(fail, ok));
+        doThrow(new IllegalStateException("알림 저장 실패")).when(overdueCaseRegistrar).register(fail);
+
+        OverdueDetectService.DetectResult r = overdueDetectService.detect(TODAY);
+
+        assertEquals(1, r.newCases());
+        assertEquals(1, r.failures());
+        verify(overdueCaseRegistrar).register(ok);
+    }
+
+    // ===================== 회원 안내 =====================
+
+    @Test
+    @DisplayName("미납 1일 차·5일 차 회원에게 납입 안내(PAY_OVERDUE)")
     void memberNotice_day1AndDay5() {
         when(overdueMapper.findUnpaidOnDay(TODAY, 1)).thenReturn(List.of(target(21L, "김일일", 1)));
         when(overdueMapper.findUnpaidOnDay(TODAY, 5)).thenReturn(List.of(target(22L, "박오일", 5)));
@@ -96,10 +109,24 @@ class OverdueDetectServiceTest {
                         && "11월분".equals(p.get("month"))));
         verify(notificationService).notifyMember(eq(22L), eq(NotifType.PAY_OVERDUE), isNull(),
                 argThat(p -> Integer.valueOf(5).equals(p.get("days"))));
-        verify(notificationService, never()).notifyAdmins(any(), any(), any());
+        verify(overdueCaseRegistrar, never()).register(any());
     }
 
-    // ===================== 도우미 =====================
+    @Test
+    @DisplayName("한 회원의 안내가 실패해도 다음 회원에게는 계속 보냄 (실패 1건으로 셈)")
+    void memberNoticeFails_nextMemberContinues() {
+        when(overdueMapper.findUnpaidOnDay(TODAY, 1))
+                .thenReturn(List.of(target(21L, "김일일", 1), target(24L, "최일일", 1)));
+        when(notificationService.notifyMember(eq(21L), any(), any(), any()))
+                .thenThrow(new IllegalArgumentException("알림 값 누락"));
+
+        OverdueDetectService.DetectResult r = overdueDetectService.detect(TODAY);
+
+        assertEquals(1, r.memberNotices());
+        assertEquals(1, r.failures());
+        verify(notificationService).notifyMember(eq(24L), eq(NotifType.PAY_OVERDUE), isNull(), any());
+    }
+
     @Test
     @DisplayName("납입일 3일 전 회원에게 납입 안내(PAY_DUE_3D): 납입일은 'M월 D일', 약정액은 천 단위 쉼표")
     void dueNotice_3DaysBefore() {
@@ -118,6 +145,8 @@ class OverdueDetectServiceTest {
                 "payDate", "11월 5일",
                 "amount", "100,000")));
     }
+
+    // ===================== 도우미 =====================
 
     // 감지 쿼리 결과 1행 흉내 (같은 모임 · 11월분 · 납부 기한 11/05)
     private OverdueTargetDto target(Long memberId, String name, int elapsedDays) {

@@ -492,7 +492,7 @@ class PaymentProofServiceTest {
         assertEquals(2, res.getMembers().size());
         PaymentStatusResponse.MemberStatus other = res.getMembers().get(1);
         assertFalse(other.isMe());
-        assertEquals(NameMasker.mask("박다른"), other.getMemberName());    // 타인 이름 마스킹
+        assertEquals("박다른", other.getMemberName());    // 납입 현황은 실명 표시
         assertNull(other.getWarningCount());                               // 일반 회원에게는 경고 숨김
     }
 
@@ -508,7 +508,7 @@ class PaymentProofServiceTest {
         assertFalse(res.isLocked());
         PaymentStatusResponse.MemberStatus row = res.getMembers().get(0);
         assertEquals(2, row.getWarningCount());                            // 모임장에게는 경고 보임
-        assertEquals(NameMasker.mask("이회원"), row.getMemberName());      // 모임장이 봐도 타인은 마스킹
+        assertEquals("이회원", row.getMemberName());      // 납입 현황은 실명 표시
     }
 
     @Test

@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
-import { auth, proofs, fetchUnreadNotificationCount } from '../api';
+import { auth, finance, fetchUnreadNotificationCount } from '../api';
 import { NOTIFICATIONS_CHANGED } from '../common/notificationEvents';
+import Icon, { Logo } from './Icon';
 
 export const MENU = [
   ['/dashboard', '◈', '마이 홈'], ['/journey', '✧', '맞춤 추천 시작'], ['/finance', '◉', 'AI 금융 분석'], ['/finance/monthly', '▤', '월별 금융 데이터'],
@@ -16,13 +17,16 @@ export const ADMIN_MENU = [
 ];
 const GROUPS = [{ key: 'ai', title: 'AI', icon: '✧', pages: ['/finance', '/simulator'] }, { key: 'group', title: '계모임', icon: '☁', pages: ['/my-groups', '/groups/new', '/operations', '/procedures', '/chat', '/groups'] }];
 const TITLES = Object.fromEntries([...MENU, ...ADMIN_MENU].map(([p, , t]) => [p, t]));
+/* 같은 특수문자를 쓰는 메뉴(채팅·고객센터 등)를 구분하기 위한 경로별 아이콘 */
+const ROUTE_ICON = { '/support': 'headset', '/admin/support': 'headset', '/admin/groups': 'users', '/admin/overdue': 'bell', '/admin/notifications': 'bell', '/admin/refs': 'file' };
+const NavIco = ({ p, icon }) => <span className="nav-ico"><Icon name={ROUTE_ICON[p]} g={icon} /></span>;
 const QUOTES = ['서로의 목표를 존중하며 안전하게 모아봐요.', '작은 저축이 모여 더 큰 내일을 만들어요.', '함께 정한 약속이 든든한 신뢰가 돼요.', '오늘의 꾸준함이 내일의 여유를 선물해요.', '혼자보다 함께라서 목표에 더 가까워져요.'];
 
 export function ThemeSwitcher() {
   const { theme, setTheme } = useApp();
-  return <div className="sidebar-theme" aria-label="화면 테마 변경"><span className="sidebar-theme-title">◐ 테마 변경</span><div className="sidebar-theme-actions">
-    <button type="button" className={`sidebar-theme-btn ${theme === 'v9' ? 'selected' : ''}`} onClick={() => setTheme('v9')}>☀ 밝음</button>
-    <button type="button" className={`sidebar-theme-btn ${theme === 'v9meeting' ? 'selected' : ''}`} onClick={() => setTheme('v9meeting')}>☾ 어두움</button></div></div>;
+  return <div className="sidebar-theme" aria-label="화면 테마 변경"><span className="sidebar-theme-title">화면 테마</span><div className="sidebar-theme-actions">
+    <button type="button" className={`sidebar-theme-btn ${theme === 'v9' ? 'selected' : ''}`} onClick={() => setTheme('v9')}><Icon name="sun" size={15} /> 밝음</button>
+    <button type="button" className={`sidebar-theme-btn ${theme === 'v9meeting' ? 'selected' : ''}`} onClick={() => setTheme('v9meeting')}><Icon name="moon" size={15} /> 어두움</button></div></div>;
 }
 function Quote() {
   const [i, setI] = useState(0), [fade, setFade] = useState(false);
@@ -32,13 +36,13 @@ function Quote() {
 function MemberMenu({ pathname }) {
   const [open, setOpen] = useState(() => JSON.parse(sessionStorage.getItem('moava-menu') || '{}'));
   const toggle = k => setOpen(o => { const n = { ...o, [k]: !o[k] }; sessionStorage.setItem('moava-menu', JSON.stringify(n)); return n; });
-  const Item = ({ p, icon, title, child }) => <NavLink to={p} end className={({ isActive }) => `nav-btn ${child ? 'compact-subnav' : ''} ${isActive ? 'active' : ''}`}><span className="nav-ico">{icon}</span><span>{title}</span></NavLink>;
+  const Item = ({ p, icon, title, child }) => <NavLink to={p} end className={({ isActive }) => `nav-btn ${child ? 'compact-subnav' : ''} ${isActive ? 'active' : ''}`}><NavIco p={p} icon={icon} /><span>{title}</span></NavLink>;
   const find = p => MENU.find(m => m[0] === p);
   const grouped = new Set(['/dashboard', ...GROUPS.flatMap(g => g.pages)]);
   return <>
     <Item p="/dashboard" icon="◈" title="마이 홈" />
     {GROUPS.map(g => { const active = g.pages.includes(pathname), expanded = open[g.key] || active; return <div key={g.key}>
-      <button type="button" className={`nav-btn compact-group ${active ? 'compact-parent-active' : ''}`} aria-expanded={expanded} onClick={() => toggle(g.key)}><span className="nav-ico">{g.icon}</span><span>{g.title}</span><span className="compact-chevron">{expanded ? '⌄' : '›'}</span></button>
+      <button type="button" className={`nav-btn compact-group ${active ? 'compact-parent-active' : ''}`} aria-expanded={expanded} onClick={() => toggle(g.key)}><span className="nav-ico"><Icon g={g.icon} /></span><span>{g.title}</span><span className="compact-chevron"><Icon name={expanded ? 'down' : 'right'} size={16} /></span></button>
       {expanded && <div className="compact-children">{g.pages.map(p => { const [, icon, title] = find(p); return <Item key={p} p={p} icon={icon} title={title} child />; })}</div>}
     </div>; })}
     {MENU.filter(m => !grouped.has(m[0])).map(([p, icon, title]) => <Item key={p} p={p} icon={icon} title={title} />)}
@@ -50,13 +54,26 @@ export default function Shell({ role }) {
   const { session, isAdmin, user, run } = useApp();
   const { pathname } = useLocation(); const nav = useNavigate();
   const [mobile, setMobile] = useState(false);
-  useEffect(() => { if (isAdmin) proofs.detectOverdue(); }, [isAdmin, pathname]);
-  // 로그인 회원 정보(이름 등)를 서버(/api/auth/me)에서 다시 받아 온다. 실패하면 로그인 때 받은 정보를 그대로 쓴다.
+  // 좁은 화면 서랍 메뉴: 다른 화면으로 이동하면 자동으로 닫는다
+  useEffect(() => { setMobile(false); }, [pathname]);
+  // 서랍 메뉴가 열린 채로 화면을 넓히면(761px 이상) 닫는다
+  useEffect(() => {
+    const wide = window.matchMedia('(min-width: 761px)');
+    const close = e => { if (e.matches) setMobile(false); };
+    wide.addEventListener('change', close);
+    return () => wide.removeEventListener('change', close);
+  }, []);
+  // 로그인 회원 정보(/api/auth/me)와 저장된 금융 프로필(/api/v1/finance/profile)을 서버에서 다시 받아 온다.
   const sessionId = session?.id;
-  useEffect(() => { if (sessionId != null && !isAdmin) auth.refreshMe().catch(() => {}); }, [sessionId, isAdmin]);
-  // 상단 알림 배지: 서버의 안 읽은 개수 (회원만. 관리자 알림함은 관리자 로그인 연결 전까지 미지원)
+  useEffect(() => {
+    if (sessionId != null && !isAdmin) {
+      auth.refreshMe().catch(() => {});
+      finance.refreshFinanceProfile().catch(() => {});
+    }
+  }, [sessionId, isAdmin]);
+  // 상단 알림 배지: 서버의 안 읽은 개수 (회원·관리자 공통 /api/v1/notifications/unread-count)
   const [unread, setUnread] = useState(0);
-  const canNotify = Boolean(session) && !isAdmin;
+  const canNotify = Boolean(session);
   const canNotifyRef = useRef(canNotify);
   useEffect(() => { canNotifyRef.current = canNotify; }, [canNotify]);
   const loadUnread = useCallback(() => {
@@ -74,23 +91,24 @@ export default function Shell({ role }) {
   }, [canNotify, loadUnread]);
   // 화면 이동·로그인 시 한 번 갱신
   useEffect(() => { if (canNotify) loadUnread(); }, [canNotify, pathname, loadUnread]);
-  if (!session || !user) return <Navigate to="/login" replace />;
+  if (!session || !user) return <Navigate to={role === 'ADMIN' ? '/admin/login' : '/login'} replace />;
   if (role === 'ADMIN' && !isAdmin) return <Navigate to="/dashboard" replace />;
   if (role === 'MEMBER' && isAdmin) return <Navigate to="/admin" replace />;
   const logout = async () => { await run(() => auth.logout()); nav('/'); };
   return <div className="app">
+    {mobile && <div className="sidebar-dim" onClick={() => setMobile(false)} aria-hidden="true" />}
     <aside className={`sidebar ${mobile ? 'open' : ''}`}>
-      <div className="brand" onClick={() => nav(isAdmin ? '/admin' : '/dashboard')}><span className="brand-logo">☁</span><div><b>모아바</b><small>MOAVA</small></div></div>
-      <div className="nav-label">{isAdmin ? 'ADMIN CONSOLE' : 'MY SKY WORKSPACE'}</div>
-      {isAdmin ? ADMIN_MENU.map(([p, icon, t]) => <NavLink key={p} to={p} end className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}><span className="nav-ico">{icon}</span>{t}</NavLink>) : <MemberMenu pathname={pathname} />}
-      <div className="side-bottom"><div className="side-foot">☁ <b>함께 모으는 내일</b><br /><Quote /></div><ThemeSwitcher /></div>
+      <div className="brand" onClick={() => nav(isAdmin ? '/admin' : '/dashboard')}><span className="brand-logo"><Logo /></span><div><b>모아바</b><small>MOAVA</small></div></div>
+      <div className="nav-label">{isAdmin ? 'ADMIN CONSOLE' : 'MY WORKSPACE'}</div>
+      {isAdmin ? ADMIN_MENU.map(([p, icon, t]) => <NavLink key={p} to={p} end className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}><NavIco p={p} icon={icon} />{t}</NavLink>) : <MemberMenu pathname={pathname} />}
+      <div className="side-bottom"><div className="side-foot"><b>함께 모으는 내일</b><br /><Quote /></div><ThemeSwitcher /></div>
     </aside>
     <div className="main">
       <header className="topbar">
-        <div className="actions"><button className="top-icon mobile-menu" onClick={() => setMobile(m => !m)}>☰</button><span className="muted">MOAVA / </span><strong>{TITLES[pathname] || (pathname === '/account' ? '내 정보' : pathname === '/invite' ? '초대받은 계모임' : '내 공간')}</strong></div>
+        <div className="actions"><button className="top-icon mobile-menu" onClick={() => setMobile(m => !m)} aria-label="메뉴 열기" aria-expanded={mobile}><Icon name="menu" /></button><span className="muted">MOAVA / </span><strong>{TITLES[pathname] || (pathname === '/account' ? '내 정보' : pathname === '/invite' ? '초대받은 계모임' : '내 공간')}</strong></div>
         <div className="top-actions">
-          <button className="pill profile-link" onClick={() => isAdmin ? null : nav('/account')} title={isAdmin ? '관리자' : '내 정보 보기'}>{isAdmin ? 'ADMIN' : '👤'} · {user.name}</button>
-          <button className="top-icon notification-trigger" onClick={() => nav(isAdmin ? '/admin/notifications' : '/notifications')} aria-label={`알림함, 읽지 않은 알림 ${unread}개`}>♧{unread > 0 && <span className="notification-count">{unread > 99 ? '99+' : unread}</span>}</button>
+          <button className="pill profile-link" onClick={() => isAdmin ? null : nav('/account')} title={isAdmin ? '관리자' : '내 정보 보기'}>{isAdmin ? 'ADMIN' : <Icon name="user" size={16} />} {user.name}</button>
+          <button className="top-icon notification-trigger" onClick={() => nav(isAdmin ? '/admin/notifications' : '/notifications')} aria-label={`알림함, 읽지 않은 알림 ${unread}개`}><Icon name="bell" />{unread > 0 && <span className="notification-count">{unread > 99 ? '99+' : unread}</span>}</button>
           <button className="btn small" onClick={logout}>로그아웃</button>
         </div>
       </header>

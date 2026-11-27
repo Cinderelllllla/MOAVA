@@ -33,6 +33,11 @@ public class RefNoService {
     private static final int MAX_REASON_BYTES = 600;     // 한글 약 200자 (AUDIT_LOG.DESCRIPTION 1000바이트 안에 들어가도록)
     private static final int MAX_NEXT_TRIES = 10;        // 수동 입력 번호와 겹치면 다음 번호로 넘어가는 최대 횟수
     // 계좌번호·연락처처럼 숫자 10개 이상 연속(사이 하이픈·공백 1개 허용) → 사유 입력 금지 (AUDIT_LOG.DESCRIPTION에 계좌·연락처 기록 금지)
+    // 날짜(2026-11-24, 2026.11.24, 2026/11/24)는 긴 숫자 검사 전에 지움 — "2026-11-24 10시 입금"이 계좌번호로 오인되지 않게
+    // 앞뒤에 숫자가 바로 붙거나 구분자(-./)를 사이에 두고 숫자가 이어지면 날짜로 안 봄
+    // (계좌번호 123456-78-901234 안의 일부, 2026-11-24-12345678 같은 이어진 숫자를 날짜로 지우지 않도록)
+    private static final Pattern DATE = Pattern.compile(
+            "(?<!\\d)(?<!\\d[-./])20\\d{2}[-./](0?[1-9]|1[0-2])[-./](0?[1-9]|[12]\\d|3[01])(?!\\d)(?![-./]\\d)");
     private static final Pattern LONG_NUMBER = Pattern.compile("(\\d[\\s-]?){10,}");
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
@@ -112,7 +117,7 @@ public class RefNoService {
         if (reason.getBytes(StandardCharsets.UTF_8).length > MAX_REASON_BYTES) {
             throw badRequest("정정 사유는 한글 기준 약 200자까지 입력할 수 있습니다.");
         }
-        if (LONG_NUMBER.matcher(reason).find()) {                                         // ← 추가
+        if (LONG_NUMBER.matcher(DATE.matcher(reason).replaceAll(" ")).find()) {   // 날짜를 빼고 긴 숫자 검사                                         // ← 추가
             throw badRequest("정정 사유에 계좌번호·연락처 같은 긴 숫자는 입력할 수 없습니다.");
         }
 

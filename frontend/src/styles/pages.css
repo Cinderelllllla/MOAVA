@@ -118,6 +118,25 @@ html[data-theme="v9meeting"] .ops-log>div{border-color:#d5ebe2;background:#fbfef
 .ld-theme button{border:0;background:transparent;font:inherit;font-size:12px;font-weight:800;color:var(--muted);padding:6px 10px;border-radius:8px;cursor:pointer}
 .ld-theme button.on{background:#fff;color:var(--blue);box-shadow:0 2px 6px rgba(0,0,0,.08)}
 .auth-back{text-align:center;margin:-8px 0 14px}
+.auth-admin-entry{margin-top:14px;text-align:right}
+.auth-admin-entry a{font-size:12px;color:var(--t-text5,var(--muted));text-decoration:none}
+.auth-admin-entry a:hover{color:var(--t-text2,var(--blue));text-decoration:underline}
+
+/* ---- F13 Kakao Maps 지역 계모임 지도 ---- */
+.map.kakao-map-wrap{background:#e9f1f8!important;position:relative;overflow:hidden}
+.map.kakao-map-wrap::before{display:none!important}
+.kakao-map-canvas{width:100%;height:100%;min-height:510px}
+@media(max-width:850px){.kakao-map-canvas{min-height:380px}}
+.kakao-map-wrap .map-hint{z-index:20;pointer-events:none}
+.kakao-map-status{position:absolute;inset:0;z-index:15;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;text-align:center;background:rgba(244,249,255,.94);color:var(--ink)}
+.kakao-map-status.error strong{color:#b42318;font-size:15px}
+.kakao-map-status p{margin:0;max-width:420px;line-height:1.6;font-size:13px}
+.kakao-map-pin{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;border:2px solid #fff;background:#2f84d0;color:#fff;border-radius:999px;padding:7px 12px;font:inherit;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px rgba(17,67,114,.32);transition:transform .15s,background .15s,box-shadow .15s}
+.kakao-map-pin:hover{background:#1c6bb5;transform:translateY(-2px) scale(1.05)}
+.kakao-map-pin.active{background:#0f3b69;outline:3px solid rgba(47,132,208,.35);transform:scale(1.08)}
+.kakao-pin-cloud{flex:0 0 auto;opacity:.95}
+html[data-theme="v9meeting"] .kakao-map-pin{background:#18a98d;box-shadow:0 6px 16px rgba(11,140,107,.32)}
+html[data-theme="v9meeting"] .kakao-map-pin:hover,html[data-theme="v9meeting"] .kakao-map-pin.active{background:#087c67}
 .auth-back button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
 .auth-back button:hover{color:var(--blue)}
 html[data-theme="v9meeting"] .ld-nav{background:rgba(16,35,62,.92);border-color:#1e3a56;color:#e5edf5}
@@ -137,3 +156,11 @@ html[data-theme="v9meeting"] .ld-nav .btn:not(.primary){background:#1a3554!impor
 
 /* ---- 차트 모바일 보정 ---- */
 .chart{overflow:hidden;min-width:0}.bar-pair{min-width:0;flex:1 1 0}@media(max-width:760px){.chart{gap:8px;padding-left:4px;padding-right:4px}.bar{width:14px}.chart-labels{font-size:11px}}
+
+/* ---- 전국 시/도·시/군/구·읍/면/동 3단계 드롭다운 ---- */
+.region-selector-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:13px 0}
+.region-selector-grid>.field{margin:0!important;min-width:0}
+.region-selector-grid.region-selector-compact{grid-template-columns:repeat(2,minmax(0,1fr))}
+.region-selector-grid.region-selector-compact>.region-field-sido{grid-column:1 / -1}
+.field select:disabled{opacity:.6;cursor:not-allowed}
+@media(max-width:540px){.region-selector-grid,.region-selector-grid.region-selector-compact{grid-template-columns:1fr}}

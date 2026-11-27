@@ -1,17 +1,20 @@
 package com.moava.notification.common.domain;
 
 /**
- * 알림 코드표 v3.1 (v3 21개 + OVERDUE_WARNED = 22개, 2026-11-24).
+ * 알림 코드표 v3.2 (v3 21개 + OVERDUE_WARNED + RULE_UPDATED = 23개, 2026-11-26).
  * v3.1 변경: SMS 대상을 기능명세서 v3.1 F36 · API 명세서 7.4 기준으로 통일
  *   - SMS 대상: PAY_DUE_3D(납입 3일 전), RISK_UP(위험 등급 전환), OVERDUE_WARNED(관리자 미납 경고)
  *   - PAY_OVERDUE(자동 감지 배치의 회원 안내)는 인앱만, SMS 없음
+ * v3.2 변경: RULE_UPDATED 추가 (F31 운영 규칙 수정, MOA-76). 인앱만, SMS 없음
  *
  * <p>이동 경로는 프론트 라우트 기준. 모임 화면은 ?groupId= 로 선택 모임을 넘긴다.
+ * 특정 탭을 바로 열어야 하면 &amp;tab= 을 붙인다 (예: JOIN_REQUEST 의 tab=joinRequests, RULE_UPDATED 의 tab=rules).
  *
  * <p>제목·본문·이동 경로의 {키}는 호출 시 넘기는 params 값으로 바뀐다.
  * 다른 회원 이름(member)은 넘기기 전에 NameMasker.mask()로 가린다.
  *
- * <p>모임 전체 공지성 정보(공개 설정·규칙 변경, 곗돈 수령 기록 등)는 알림이 아니라 채팅방 시스템 메시지로 남긴다.
+ * <p>모임 전체 공지성 정보(공개 설정 변경, 곗돈 수령 기록 등)는 알림이 아니라 채팅방 시스템 메시지로 남긴다.
+ * 단, 운영 규칙 변경(F31)은 모든 회원이 꼭 확인해야 해서 알림(RULE_UPDATED)과 채팅 시스템 메시지를 함께 남긴다.
  */
 public enum NotifType {
 
@@ -34,9 +37,11 @@ public enum NotifType {
     DISSOLVED(Receiver.MEMBER, "모임이 해산됐어요", "{group} 해산이 승인됐어요. 정산 안내를 확인해 주세요.", "/my-groups", false),
     REPORT_STATUS(Receiver.MEMBER, "신고 처리 상태가 바뀌었어요", "접수하신 신고가 '{status}'(으)로 변경됐어요.", "/support", false),
     RISK_UP(Receiver.MEMBER, "납입 부담 신호가 높아졌어요", "최근 금융 정보 기준으로 납입 부담이 커졌어요. 추천 납입액을 다시 확인해 보세요.", "/finance", true),
+    /** F31 모임장이 운영 규칙 수정 → 모임장 제외 ACTIVE 회원. title: 새 규칙 제목. tab=rules 로 규칙 탭을 바로 연다 */
+    RULE_UPDATED(Receiver.MEMBER, "운영 규칙이 바뀌었어요", "{group} 운영 규칙이 '{title}'(으)로 업데이트됐어요.", "/procedures?groupId={groupId}&tab=rules", false),
 
     // ── 유저(모임장) ──────────────────────────────────────────
-    JOIN_REQUEST(Receiver.LEADER, "새 가입 신청이 있어요", "{member}님이 {group} 가입을 신청했어요. 7일 안에 처리하지 않으면 자동 만료돼요.", "/operations?groupId={groupId}", false),
+    JOIN_REQUEST(Receiver.LEADER, "새 가입 신청이 있어요", "{member}님이 {group} 가입을 신청했어요. 7일 안에 처리하지 않으면 자동 만료돼요.", "/operations?groupId={groupId}&tab=joinRequests", false),
     /** 같은 모임 하루 1건 */
     PROOF_PENDING(Receiver.LEADER, "확인할 납입 증빙이 있어요", "{group}에 새 납입 증빙이 올라왔어요. 증빙 화면에서 확인해 주세요.", "/evidence?groupId={groupId}", false),
     /** stage: 신청 / 수정 */

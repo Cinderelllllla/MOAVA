@@ -34,7 +34,7 @@ export default function PaymentStatusPanel({ groupId }) {
   return (
     <div className="policy-panel">
       <h3>납입 현황 · {payMonth.slice(0, 4)}년 {Number(payMonth.slice(4))}월분</h3>
-      {locked && <p className="policy-lock">🔒 본인 납입이 확인되기 전에는 다른 회원의 납입 현황을 볼 수 없습니다.</p>}
+      {locked && <p className="policy-lock">본인 납입이 확인되기 전에는 다른 회원의 납입 현황을 볼 수 없습니다.</p>}
       <div className="tablewrap"><table className="policy-table">
         <thead><tr><th>회원</th><th>납입 상태</th>{showWarning && <th>경고</th>}</tr></thead>
         <tbody>{members.map((m, i) => (
