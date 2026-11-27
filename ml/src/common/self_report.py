@@ -53,6 +53,16 @@ def to_features(answers: dict[str, str]) -> dict[str, float]:
     return {q.column: float(q.value_of(answers[q.key])) for q in QUESTIONS}
 
 
+def answer_label(key: str, code: str) -> str:
+    """문항 key · 선택지 코드 → 화면 라벨 (예: card_usage, P70_90 → "70~90%")"""
+    for q in QUESTIONS:
+        if q.key == key:
+            for c, label, _ in q.choices:
+                if c == code:
+                    return label
+    raise KeyError((key, code))
+
+
 def bucketize(df: pd.DataFrame) -> pd.DataFrame:
     """학습 데이터 원본 값을 화면 선택지와 같은 값으로 바꾼다."""
     out = pd.DataFrame(index=df.index)

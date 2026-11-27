@@ -10,8 +10,12 @@ import joblib
 import pandas as pd
 
 from ..common.config import INCOME_CAP_RATIO, ROUND_UNIT, risk_level_of
-from ..common.self_report import FEATURES as SELF_FEATURES, to_features
-from ..schemas.risk import RiskResult, Subject
+from ..common.self_report import FEATURES as SELF_FEATURES, QUESTIONS, answer_label, to_features
+from ..schemas.risk import RiskFactor, RiskResult, Subject
+
+# 위험 등급 요인: 이 문항 때문에 연체 확률이 1%p 이상 올라간 경우만, 큰 순서로 최대 2개
+FACTOR_MIN_IMPACT = 0.01
+FACTOR_MAX_COUNT = 2
 
 
 class UnknownPersona(Exception):
@@ -91,7 +95,32 @@ class RiskService:
         values = to_features(answers)
         row = pd.DataFrame([values], columns=SELF_FEATURES, dtype="float64")
         p = float(self.self_model.predict_proba(row)[0, 1])
-        return self._result(p, "self_report", len(SELF_FEATURES))
+        result = self._result(p, "self_report", len(SELF_FEATURES))
+        result.factors = self._factors(answers, values, p)
+        return result
+
+    def _factors(self, answers: dict[str, str], values: dict[str, float], p: float) -> list[RiskFactor]:
+        """문항마다 그 문항만 다른 선택지로 바꿔 예측한 확률 중 가장 낮은 값(p_min)을 구해
+        impact = p - p_min 을 계산한다. 나머지 3문항은 그대로. 모든 경우를 한 번에 predict_proba 한다."""
+        rows, owners = [], []
+        for q in QUESTIONS:
+            for code, _, v in q.choices:
+                if code == answers[q.key]:
+                    continue
+                rows.append({**values, q.column: float(v)})
+                owners.append(q.key)
+        probs = self.self_model.predict_proba(pd.DataFrame(rows, columns=SELF_FEATURES, dtype="float64"))[:, 1]
+        p_min: dict[str, float] = {}
+        for key, prob in zip(owners, probs):
+            p_min[key] = min(p_min.get(key, 1.0), float(prob))
+        found = []
+        for q in QUESTIONS:
+            impact = max(0.0, p - p_min.get(q.key, p))
+            if impact >= FACTOR_MIN_IMPACT:
+                found.append(RiskFactor(key=q.key, question=q.text,
+                                        answer_label=answer_label(q.key, answers[q.key]), impact=round(impact, 4)))
+        found.sort(key=lambda f: f.impact, reverse=True)
+        return found[:FACTOR_MAX_COUNT]
 
     def assess(self, subject: Subject) -> RiskResult:
         if subject.self_report is not None:
