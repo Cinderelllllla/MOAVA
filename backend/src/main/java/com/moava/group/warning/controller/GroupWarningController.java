@@ -30,14 +30,14 @@ public class GroupWarningController {
         this.service = service;
     }
 
-    @PostMapping("/members/memberId/warnings")
+    @PostMapping("/members/{memberId}/warnings")
     public ApiResponse<GroupWarningResponse> warn(Authentication authentication, @PathVariable long groupId,
                                                   @PathVariable long memberId,
                                                   @RequestBody(required = false) GroupWarningRequest request) {
         return ApiResponse.ok(service.warn(leaderId(authentication), groupId, memberId, request), requestId());
     }
 
-    @PostMapping("/members/memberId/expulsion")
+    @PostMapping("/members/{memberId}/expulsion")
     public ApiResponse<GroupWarningResponse> expel(Authentication authentication, @PathVariable long groupId,
                                                    @PathVariable long memberId,
                                                    @RequestBody(required = false) GroupWarningRequest request) {
