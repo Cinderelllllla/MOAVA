@@ -1,0 +1,24 @@
+{
+  "roc_auc": 0.6225,
+  "pr_auc": 0.1867,
+  "base_rate": 0.0985,
+  "n_train": 124596,
+  "n_test": 31150,
+  "tiers": {
+    "STABLE": {
+      "share": 0.7432,
+      "count": 23152,
+      "actual_default_rate": 0.0741
+    },
+    "CAUTION": {
+      "share": 0.2249,
+      "count": 7005,
+      "actual_default_rate": 0.1435
+    },
+    "RISK": {
+      "share": 0.0319,
+      "count": 993,
+      "actual_default_rate": 0.3505
+    }
+  }
+}
