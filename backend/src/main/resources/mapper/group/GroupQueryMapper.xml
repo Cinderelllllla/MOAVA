@@ -247,13 +247,15 @@
 
     </select>
 
-    <!-- F11: 모임별 건강도 점수 조회 (GYE_MEMBER ACTIVE 회원 최신 RISK_SCORE.PROB 평균 기반 0~100점) -->
+    <!-- F11: 모임별 건강도 점수 조회 (GYE_MEMBER ACTIVE 회원 최신 RISK_SCORE.PROB 평균 기반 0~100점)
+         MOA-98: AI 분석 기록이 있는 회원만 평균한다(AVG 는 NULL 을 빼고 계산). 아무도 기록이 없으면 NULL →
+         서비스에서 기본 점수(DEFAULT_HEALTH_SCORE)를 쓴다. 예전 NVL(PROB, 0.20) 의 0.20 은 '위험' 안전계수였음 -->
     <select id="findGroupHealthScoresByIds"
             resultType="com.moava.group.query.dto.GroupHealthRow">
 
         SELECT
             GM.GROUP_ID AS "groupId",
-            ROUND((1 - AVG(NVL(RS.PROB, 0.20))) * 100) AS "healthScore"
+            ROUND((1 - AVG(RS.PROB)) * 100) AS "healthScore"
         FROM GYE_MEMBER GM
         LEFT JOIN (
             SELECT

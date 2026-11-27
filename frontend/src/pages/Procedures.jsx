@@ -340,6 +340,7 @@ function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChan
             <p className="info">
               현재 <b>{mine.roundNo}회차</b> 신청이 <b>{mine.statusLabel || mine.status}</b> 상태입니다.
               {mine.aiSuggestedRound != null && <> · AI 제안 회차: <b>{mine.aiSuggestedRound}회차</b></>}
+              {mine.aiAnalyzed === false && ' · AI 분석 전(맞춤 추천에서 분석하면 제안 회차가 정확해져요)'}
               {mine.status === 'REQUESTED'
                 ? ' 다시 제출하면 기존 신청 내용이 수정됩니다.'
                 : ' 동의 요청 진행 중에는 수정할 수 없습니다.'}
@@ -410,6 +411,7 @@ function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChan
               <p className="muted mini">
                 {r.reason}
                 {r.aiSuggestedRound != null && ` · AI 제안 ${r.aiSuggestedRound}회차`}
+                {r.aiAnalyzed === false && ' · AI 분석 전'}
                 {r.status === 'CONSENT_PENDING' && ` · 동의 ${r.agreedCount ?? consentedIds.length}/${r.targetCount ?? affectedIds.length}`}
                 {r.createdAt && ` · 신청 ${formatDateTime(r.createdAt)}`}
               </p>
