@@ -18,6 +18,7 @@ import Chat from './pages/Chat';
 import Evidence from './pages/Evidence';
 import { Notifications, Account, Support } from './pages/Misc';
 import { AdminDashboard, AdminGroups, AdminSanctions, AdminDissolve, AdminRefs, AdminOverdue } from './pages/admin/AdminPages';
+import SocialCallback from './pages/SocialCallback';
 
 export default function App() {
   return <BrowserRouter><Routes>
@@ -25,6 +26,16 @@ export default function App() {
     <Route path="/" element={<Landing />} />
     <Route path="/login" element={<Login />} />
     <Route path="/signup" element={<Signup />} />
+
+    <Route
+    path="/oauth/callback"
+    element={<SocialCallback />}
+    />
+
+    <Route
+        path="/signup/social"
+        element={<SocialCallback />}
+    />
     <Route path="/invite" element={<InviteRoute />} />
     {/* 회원 (S02~S15) */}
     <Route element={<Shell role="MEMBER" />}>

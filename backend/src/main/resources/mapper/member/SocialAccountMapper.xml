@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC
+    "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.member.mapper.SocialAccountMapper">
+
+    <!-- 소셜 계정으로 회원 조회 -->
+    <select id="findMemberId" resultType="java.lang.Long">
+        SELECT MEMBER_ID
+        FROM MEMBER_SOCIAL_ACCOUNT
+        WHERE PROVIDER = #{provider}
+            AND PROVIDER_USER_ID = #{providerUserId}
+    </select>
+
+    <!-- 소셜 계정 연결 -->
+    <insert id="insertSocialAccount">
+        INSERT INTO MEMBER_SOCIAL_ACCOUNT (
+            SOCIAL_ACCOUNT_ID,
+            MEMBER_ID,
+            PROVIDER,
+            PROVIDER_USER_ID,
+            PROVIDER_EMAIL,
+            LINKED_AT
+        )
+        VALUES (
+            SEQ_MEMBER_SOCIAL_ACCOUNT.NEXTVAL,
+            #{memberId},
+            #{provider},
+            #{providerUserId},
+            #{providerEmail, jdbcType=VARCHAR},
+            SYSDATE
+        )
+    </insert>
+
+    <!-- 마지막 로그인 시각 수정 -->
+    <update id="updateLastLogin">
+        UPDATE MEMBER_SOCIAL_ACCOUNT
+        SET LAST_LOGIN_AT = SYSDATE
+        WHERE MEMBER_ID = #{memberId}
+            AND PROVIDER = #{provider}
+    </update>
+
+    <!-- 연결 계정 조회 -->
+    <select id="findSocialAccounts" resultType="map">
+        SELECT
+            SOCIAL_ACCOUNT_ID,
+            PROVIDER,
+            PROVIDER_EMAIL,
+            LINKED_AT,
+            LAST_LOGIN_AT
+        FROM MEMBER_SOCIAL_ACCOUNT
+        WHERE MEMBER_ID = #{memberId}
+        ORDER BY LINKED_AT
+    </select>
+
+    <!-- 연결 계정 개수 -->
+    <select id="countSocialAccounts" resultType="int">
+        SELECT COUNT(*)
+        FROM MEMBER_SOCIAL_ACCOUNT
+        WHERE MEMBER_ID = #{memberId}
+    </select>
+
+    <!-- 소셜 계정 연결 해제 -->
+    <delete id="deleteSocialAccount">
+        DELETE FROM MEMBER_SOCIAL_ACCOUNT
+        WHERE MEMBER_ID = #{memberId}
+            AND PROVIDER = #{provider}
+    </delete>
+
+    <!-- 개인정보 파기 시 소셜 계정 삭제 -->
+    <delete id="deleteAllSocialAccounts">
+        DELETE FROM MEMBER_SOCIAL_ACCOUNT
+        WHERE MEMBER_ID = #{memberId}
+    </delete>
+
+</mapper>

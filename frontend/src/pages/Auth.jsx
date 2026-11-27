@@ -188,6 +188,59 @@ export function Login() {
         </button>
       </form>
 
+      <div style={{
+        display: 'grid',
+        gap: '10px',
+        marginTop: '20px'
+      }}>
+
+      <div style={{
+          textAlign: 'center',
+          color: '#888',
+          fontSize: '13px'
+      }}>
+          간편 로그인
+      </div>
+
+      <a
+          href="/api/auth/social/kakao/authorize"
+          className="btn"
+          style={{
+              background: '#FEE500',
+              color: '#191919',
+              textAlign: 'center'
+          }}
+      >
+          카카오 로그인
+      </a>
+
+      <a
+          href="/api/auth/social/naver/authorize"
+          className="btn"
+          style={{
+              background: '#03C75A',
+              color: '#FFFFFF',
+              textAlign: 'center'
+          }}
+      >
+          네이버 로그인
+      </a>
+
+      <a
+          href="/api/auth/social/google/authorize"
+          className="btn"
+          style={{
+              background: '#FFFFFF',
+              color: '#333333',
+              border: '1px solid #DADCE0',
+              textAlign: 'center'
+          }}
+      >
+          Google 로그인
+      </a>
+
+  </div>
+
       <div className="auth-link">
         아직 계정이 없나요?{' '}
         <Link

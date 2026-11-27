@@ -163,4 +163,42 @@
             AND STATUS = 'WITHDRAWN'
             AND PURGE_DUE_AT &lt;= SYSDATE
     </update>
+
+        <!-- 소셜 회원가입 -->
+    <insert id="insertSocialUser">
+        INSERT INTO MEMBER (
+            MEMBER_ID,
+            NAME,
+            EMAIL,
+            PASSWORD_HASH,
+            SIGNUP_TYPE,
+            PHONE_ENC,
+            REGION_SIDO,
+            REGION_SIGUNGU,
+            STATUS,
+            BANNED_YN,
+            KEY_VER
+        )
+        VALUES (
+            SEQ_MEMBER.NEXTVAL,
+            #{name},
+            #{email},
+            NULL,
+            #{signupType},
+            #{phoneEnc},
+            #{regionSido},
+            #{regionSigungu},
+            'ACTIVE',
+            'N',
+            #{keyVer}
+        )
+    </insert>
+
+    <!-- 회원 행 잠금 -->
+    <select id="lockMember" resultType="java.lang.Long">
+        SELECT MEMBER_ID
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+        FOR UPDATE
+    </select>
 </mapper>
