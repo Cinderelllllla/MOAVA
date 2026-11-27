@@ -1048,6 +1048,27 @@ export async function updateRules(groupId, { rulesTitle, rulesBody }) {
   });
 }
 
+/** F30 모임장 경고 — POST /api/v1/groups/{groupId}/members/{memberId}/warnings {reason} */
+export async function warnMember(groupId, memberId, reason) {
+  return apiFetch(`/api/v1/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(memberId)}/warnings`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+/** F30 강제 탈퇴 (경고 2회 회원만) — POST /api/v1/groups/{groupId}/members/{memberId}/expulsion {reason} */
+export async function expelMember(groupId, memberId, reason) {
+  return apiFetch(`/api/v1/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(memberId)}/expulsion`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+/** F30 나의 누적 경고 — GET /api/v1/groups/{groupId}/warnings/me */
+export async function fetchMyWarnings(groupId) {
+  return apiFetch(`/api/v1/groups/${encodeURIComponent(groupId)}/warnings/me`);
+}
+
 // TODO(MOA-76): 목업 전용. 화면은 fetchRules / updateRules 를 쓴다. 다른 목업 화면 정리 때 함께 삭제 예정.
 export async function editRule(id, title, body) {
   const g = D.group(id);
@@ -1071,42 +1092,6 @@ export async function editRule(id, title, body) {
           '운영 규칙 업데이트',
           `${g.title}: ${g.rulesTitle}`
       )
-  );
-
-  save();
-}
-
-export async function warnMember(id, x, reason) {
-  const g = D.group(id);
-
-  if (!D.leader(g)) {
-    fail('권한이 없습니다.');
-  }
-
-  if (!x || !reason?.trim()) {
-    fail('대상과 사유를 입력해 주세요.');
-  }
-
-  if (!g.members.includes(x)) {
-    fail('현재 참여 회원만 경고할 수 있습니다.');
-  }
-
-  if ((g.warnings[x] || 0) >= 2) {
-    fail('경고는 모임별 최대 2회입니다. 강제 탈퇴 검토 절차를 진행해 주세요.');
-  }
-
-  g.warnings[x] = (g.warnings[x] || 0) + 1;
-
-  D.notice(
-      x,
-      '모임 경고 알림',
-      `${g.title}: 경고 ${g.warnings[x]}회 · ${reason}`
-  );
-
-  D.audit(
-      '경고',
-      id,
-      `${D.memberName(x)} · ${reason}`
   );
 
   save();
