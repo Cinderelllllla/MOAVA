@@ -1,6 +1,7 @@
 package com.moava.finance.controller;
 
 import com.moava.common.response.ApiResponse;
+import com.moava.finance.dto.MonthlyBatchRequest;
 import com.moava.finance.dto.MonthlyListResponse;
 import com.moava.finance.dto.MonthlyUpsertRequest;
 import com.moava.finance.service.FinanceMonthlyService;
@@ -16,6 +17,7 @@ import java.util.UUID;
  * <pre>
  * GET    /api/v1/finance/monthly?months=6       최근 N개월 (월순)
  * PUT    /api/v1/finance/monthly                {"yearMonth":"202611","income":3200000,"expense":2080000} 저장(덮어쓰기)
+ * PUT    /api/v1/finance/monthly/batch          {"items":[{...},{...}]} 여러 달 한 번에 저장 (1~12개, 전부 또는 전무)
  * DELETE /api/v1/finance/monthly/{yearMonth}    삭제
  * </pre>
  * 로그인(JWT)한 본인의 기록만 다룬다.
@@ -40,6 +42,12 @@ public class FinanceMonthlyController {
     public ApiResponse<MonthlyListResponse.Item> upsert(Authentication authentication,
                                                         @RequestBody MonthlyUpsertRequest request) {
         return ApiResponse.ok(service.upsert(memberId(authentication), request), requestId());
+    }
+
+    @PutMapping("/batch")
+    public ApiResponse<MonthlyListResponse> upsertBatch(Authentication authentication,
+                                                        @RequestBody MonthlyBatchRequest request) {
+        return ApiResponse.ok(service.upsertBatch(memberId(authentication), request), requestId());
     }
 
     @DeleteMapping("/{yearMonth}")

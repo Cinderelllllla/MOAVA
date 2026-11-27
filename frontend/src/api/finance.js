@@ -171,26 +171,33 @@ export function setSelfReport(answers) {
   selfReport = { memberId: currentMemberId(), answers: Object.fromEntries(SELF_REPORT_QUESTIONS.map(q => [q.key, answers[q.key]])) };
   selfReportVersion += 1;
 }
-/* ---- F10 월별 수입·지출 (서버: 원 · yearMonth "202611" ↔ 화면: 만 원 · month "11월") ---- */
+/* ---- F10 월별 수입·지출 (서버: 원 · yearMonth "202611" ↔ 화면: 만 원)
+        목록 항목 모양 { month:'11월', yearMonth:'202611', label:'2026년 11월', income, expense }
+        (month 는 다른 화면 호환용 짧은 라벨, 연도가 필요한 곳은 yearMonth·label 을 쓴다) ---- */
 const MONTHLY_API = '/api/v1/finance/monthly';
 const pad2 = n => String(n).padStart(2, '0');
 const ymOf = (y, m) => `${y}${pad2(m)}`;
-/** 화면은 '1월'~'12월'만 고르므로 "오늘 기준 최근 12개월" 안의 달로 해석한다.
- *  (예: 2026년 11월에 '11월' → 202611, '12월' → 202512) */
-function toYearMonth(month) {
-  const m = Number(String(month).replace('월', '')), now = new Date();
-  const y = m > now.getMonth() + 1 ? now.getFullYear() - 1 : now.getFullYear();
-  return ymOf(y, m);
-}
 const toMonthLabel = ym => `${Number(String(ym).slice(4))}월`;
-/** 최근 12개월 범위 [시작, 이번 달] — 같은 '11월' 라벨이 두 번 나오지 않게 이 범위 밖 기록은 화면에서 뺀다. */
+/** "202512" → "2025년 12월" */
+export const yearMonthLabel = ym => `${String(ym).slice(0, 4)}년 ${Number(String(ym).slice(4))}월`;
+/** 최근 12개월 범위 [시작, 이번 달] — 서버 저장 가능 범위와 같다. 이 범위 밖 기록은 화면에서 뺀다. */
 function monthWindow() {
   const now = new Date(), start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
   return [ymOf(start.getFullYear(), start.getMonth() + 1), ymOf(now.getFullYear(), now.getMonth() + 1)];
 }
-
-/** 화면 기본 선택 월 = 이번 달 ('11월' 형태) */
-export const currentMonthLabel = () => `${new Date().getMonth() + 1}월`;
+/** 오늘 기준 최근 12개월 (오래된 달 → 이번 달) [{ yearMonth:'202512', label:'2025년 12월' }, ...] */
+export function recentMonths() {
+  const now = new Date();
+  return Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+    const ym = ymOf(d.getFullYear(), d.getMonth() + 1);
+    return { yearMonth: ym, label: yearMonthLabel(ym) };
+  });
+}
+/** 이번 달 yearMonth ('202611') */
+export const currentYearMonth = () => monthWindow()[1];
+/** 최근 12개월 안의 yearMonth 인지 */
+export const isRecentMonth = ym => { const [from, to] = monthWindow(); return /^\d{6}$/.test(String(ym)) && ym >= from && ym <= to; };
 
 /* 월별 기록은 서버 값만 쓴다. 브라우저(localStorage)에는 저장하지 않고 메모리에만 둔다.
    status: 'loading'(불러오는 중) | 'ready'(완료, items 가 비어 있으면 기록 없음) | 'error'(실패, error 에 안내 문구) */
@@ -209,7 +216,7 @@ export async function refreshMonthly() {
     const [from, to] = monthWindow();
     const items = (data?.items || [])
       .filter(x => x.yearMonth >= from && x.yearMonth <= to)
-      .map(x => ({ month: toMonthLabel(x.yearMonth), income: Number(x.income) / 10000, expense: Number(x.expense) / 10000 }));
+      .map(x => ({ month: toMonthLabel(x.yearMonth), yearMonth: x.yearMonth, label: yearMonthLabel(x.yearMonth), income: Number(x.income) / 10000, expense: Number(x.expense) / 10000 }));
     setMonthly({ status: 'ready', items, error: '' });
     return items;
   } catch (e) {
@@ -228,7 +235,7 @@ export function getMonthlyState() {
   }
   return monthly;
 }
-/** 월별 기록 [{ month:'11월', income, expense }] (만 원). 불러오는 중·실패면 빈 배열 */
+/** 월별 기록 [{ month:'11월', yearMonth, label, income, expense }] (만 원). 불러오는 중·실패면 빈 배열 */
 export const getMonthly = () => getMonthlyState().items;
 /** F07 지출 기본값 제안 · F06 평균 지출 비교(MOA-94). income 은 화면 단위(만 원).
  *  로그인 상태이고 서버가 available=true 를 줄 때만
@@ -433,16 +440,66 @@ export async function setJourneyStep(n) {
     }).catch(() => {});
   }
 }
-export async function saveMonth(month, income, expense) {
+/** 한 달 저장 (yearMonth '202611', 금액은 만 원). 같은 달이면 덮어쓴다 */
+export async function saveMonth(yearMonth, income, expense) {
+  if (!isRecentMonth(yearMonth)) fail('최근 12개월 중에서 대상 월을 골라 주세요.');
   if (!Number.isFinite(income) || !Number.isFinite(expense)) fail('금액을 입력해 주세요.');
   if (income < 0 || expense < 0) fail('음수는 입력할 수 없어요.');
   if (!getToken()) fail('로그인이 필요해요.');
   // 서버에 저장(같은 달이면 덮어쓰기) 후 목록 다시 받기
-  await apiFetch(MONTHLY_API, { method: 'PUT', body: JSON.stringify({ yearMonth: toYearMonth(month), income: Math.round(income * 10000), expense: Math.round(expense * 10000) }) });
+  await apiFetch(MONTHLY_API, { method: 'PUT', body: JSON.stringify({ yearMonth, income: Math.round(income * 10000), expense: Math.round(expense * 10000) }) });
   await refreshMonthly();
 }
-export async function removeMonth(month) {
+/** 여러 달 한 번에 저장 (MOA-102). rows [{ yearMonth, income, expense }] (만 원). 하나라도 틀리면 서버가 아무것도 저장하지 않는다 */
+export async function saveMonths(rows) {
+  if (!Array.isArray(rows) || !rows.length) fail('저장할 달을 입력해 주세요.');
+  if (rows.length > 12) fail('한 번에 12개월까지 저장할 수 있어요.');
   if (!getToken()) fail('로그인이 필요해요.');
-  await apiFetch(`${MONTHLY_API}/${toYearMonth(month)}`, { method: 'DELETE' });
+  const items = rows.map(r => ({ yearMonth: r.yearMonth, income: Math.round(Number(r.income) * 10000), expense: Math.round(Number(r.expense) * 10000) }));
+  await apiFetch(`${MONTHLY_API}/batch`, { method: 'PUT', body: JSON.stringify({ items }) });
   await refreshMonthly();
+}
+export async function removeMonth(yearMonth) {
+  if (!getToken()) fail('로그인이 필요해요.');
+  await apiFetch(`${MONTHLY_API}/${yearMonth}`, { method: 'DELETE' });
+  await refreshMonthly();
+}
+
+/* ---- 월별 기록 CSV (브라우저에서만 읽고 쓴다, 서버로 파일을 보내지 않음) ----
+   형식: 연월,수입(만원),지출(만원)   예) 2026-01,300,200   (연월은 2026-01 · 202601 · 2026.01 허용, 첫 줄 제목은 있어도 됨) */
+const CSV_HEADER = '연월,수입(만원),지출(만원)';
+/** 최근 12개월이 채워진 빈 양식 (엑셀에서 한글이 깨지지 않게 BOM 포함) */
+export function monthlyCsvTemplate() {
+  const lines = [CSV_HEADER, ...recentMonths().map(m => `${m.yearMonth.slice(0, 4)}-${m.yearMonth.slice(4)},,`)];
+  return '\uFEFF' + lines.join('\r\n') + '\r\n';
+}
+/** CSV 글자 → { rows:[{ yearMonth, income, expense }], errors:['3번째 줄: …'] }. 금액은 만 원 */
+export function parseMonthlyCsv(text) {
+  const rows = [], errors = [];
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
+  lines.forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line) return;
+    const cells = line.split(',').map(c => c.trim().replace(/^"(.*)"$/, '$1').trim());
+    const n = i + 1;
+    const m = /^(\d{4})[-./]?(\d{1,2})$/.exec(cells[0] || '');
+    if (!m) {
+      if (i === 0) return;   // 첫 줄 제목
+      errors.push(`${n}번째 줄: 연월을 알 수 없어요 (예: 2026-01)`);
+      return;
+    }
+    const month = Number(m[2]);
+    if (month < 1 || month > 12) { errors.push(`${n}번째 줄: 연월을 알 수 없어요 (예: 2026-01)`); return; }
+    const ym = ymOf(m[1], month);
+    if (!isRecentMonth(ym)) { errors.push(`${n}번째 줄: 최근 12개월이 아니에요 (${yearMonthLabel(ym)})`); return; }
+    if ((cells[1] ?? '') === '' && (cells[2] ?? '') === '') return;   // 빈 양식 줄은 조용히 건너뜀
+    const income = Number((cells[1] ?? '').replace(/\s/g, '')), expense = Number((cells[2] ?? '').replace(/\s/g, ''));
+    if (cells[1] === '' || cells[2] === '' || !Number.isFinite(income) || !Number.isFinite(expense)) {
+      errors.push(`${n}번째 줄: 수입·지출을 숫자로 적어 주세요`);
+      return;
+    }
+    if (income < 0 || expense < 0) { errors.push(`${n}번째 줄: 음수는 넣을 수 없어요`); return; }
+    rows.push({ yearMonth: ym, income, expense });
+  });
+  return { rows, errors };
 }
