@@ -256,7 +256,9 @@ export default function Evidence() {
                     value={redo ? redo.round : form.round}
                     onChange={(event) => setForm((current) => ({ ...current, round: event.target.value }))}
                   />
-                  <Input label="약정 납입액 (만 원)" name="amount" type="number" readOnly value={amountInManwon} />
+                  <Field label="약정 납입액 (변경 불가)">
+                    <div className="control">{won(amountInManwon)}</div>
+                  </Field>
                   <Input
                     label="실제 납입일"
                     name="date"
