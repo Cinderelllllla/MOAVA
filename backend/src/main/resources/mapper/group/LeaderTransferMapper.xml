@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.transfer.mapper.LeaderTransferMapper">
+
+    <!-- 모임 행 잠금: 승계 관련 쓰기 요청 직렬화 -->
+    <select id="lockGroup" resultType="map">
+        SELECT GROUP_ID, OWNER_ID, STATUS
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        FOR UPDATE
+    </select>
+
+    <!-- 진행 중인 승계 신청 -->
+    <select id="findPending" resultType="map">
+        SELECT
+            TRANSFER_ID,
+            GROUP_ID,
+            FROM_MEMBER_ID,
+            TO_MEMBER_ID,
+            ACCEPTED_YN,
+            STATUS
+        FROM LEADER_TRANSFER_REQUEST
+        WHERE GROUP_ID = #{groupId}
+          AND STATUS = 'PENDING'
+        ORDER BY TRANSFER_ID DESC
+        FETCH FIRST 1 ROWS ONLY
+    </select>
+
+    <!-- 회원 활성 상태 -->
+    <select id="countActive" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_MEMBER
+        WHERE GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+          AND STATUS = 'ACTIVE'
+    </select>
+
+    <select id="countActiveAll" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_MEMBER
+        WHERE GROUP_ID = #{groupId}
+          AND STATUS = 'ACTIVE'
+    </select>
+
+    <!-- 동의 현황 -->
+    <select id="countAgreed" resultType="int">
+        SELECT COUNT(*)
+        FROM CONSENT C
+        JOIN GYE_MEMBER GM
+          ON GM.GROUP_ID = C.GROUP_ID
+         AND GM.MEMBER_ID = C.MEMBER_ID
+         AND GM.STATUS = 'ACTIVE'
+        WHERE C.GROUP_ID = #{groupId}
+          AND C.TARGET_ID = #{transferId}
+          AND C.CONSENT_TYPE = 'TRANSFER'
+          AND C.AGREED_YN = 'Y'
+    </select>
+
+    <select id="countRejected" resultType="int">
+        SELECT COUNT(*)
+        FROM CONSENT C
+        JOIN GYE_MEMBER GM
+          ON GM.GROUP_ID = C.GROUP_ID
+         AND GM.MEMBER_ID = C.MEMBER_ID
+         AND GM.STATUS = 'ACTIVE'
+        WHERE C.GROUP_ID = #{groupId}
+          AND C.TARGET_ID = #{transferId}
+          AND C.CONSENT_TYPE = 'TRANSFER'
+          AND C.AGREED_YN = 'N'
+    </select>
+
+    <select id="myConsent" resultType="string">
+        SELECT AGREED_YN
+        FROM CONSENT
+        WHERE GROUP_ID = #{groupId}
+          AND TARGET_ID = #{transferId}
+          AND CONSENT_TYPE = 'TRANSFER'
+          AND MEMBER_ID = #{memberId}
+    </select>
+
+    <!-- 승계 후보 -->
+    <resultMap
+        id="memberOption"
+        type="com.moava.group.transfer.dto.LeaderTransferDtos$MemberOption">
+        <constructor>
+            <arg column="MEMBER_ID" javaType="java.lang.Long"/>
+            <arg column="NAME" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="candidates" resultMap="memberOption">
+        SELECT GM.MEMBER_ID, M.NAME
+        FROM GYE_MEMBER GM
+        JOIN MEMBER M
+          ON M.MEMBER_ID = GM.MEMBER_ID
+        WHERE GM.GROUP_ID = #{groupId}
+          AND GM.STATUS = 'ACTIVE'
+          AND GM.MEMBER_ID != #{ownerId}
+        ORDER BY GM.MEMBER_ID
+    </select>
+
+    <select id="nextId" resultType="long">
+        SELECT SEQ_LEADER_TRANSFER_REQUEST.NEXTVAL
+        FROM DUAL
+    </select>
+
+    <!-- 승계 신청 -->
+    <insert id="create">
+        INSERT INTO LEADER_TRANSFER_REQUEST (
+            TRANSFER_ID,
+            GROUP_ID,
+            FROM_MEMBER_ID,
+            TO_MEMBER_ID,
+            ACCEPTED_YN,
+            STATUS,
+            CREATED_AT
+        )
+        VALUES (
+            #{transferId},
+            #{groupId},
+            #{fromId},
+            #{toId},
+            'N',
+            'PENDING',
+            SYSDATE
+        )
+    </insert>
+
+    <!-- 승계 대상 수락 -->
+    <update id="accept">
+        UPDATE LEADER_TRANSFER_REQUEST
+        SET ACCEPTED_YN = 'Y',
+            ACCEPTED_AT = SYSDATE
+        WHERE TRANSFER_ID = #{transferId}
+          AND GROUP_ID = #{groupId}
+          AND STATUS = 'PENDING'
+          AND ACCEPTED_YN = 'N'
+    </update>
+
+    <!-- 승계 신청 취소·거절 -->
+    <update id="cancel">
+        UPDATE LEADER_TRANSFER_REQUEST
+        SET STATUS = 'CANCELLED',
+            DECIDED_AT = SYSDATE
+        WHERE TRANSFER_ID = #{transferId}
+          AND GROUP_ID = #{groupId}
+          AND STATUS = 'PENDING'
+    </update>
+
+    <!-- 회원 동의 -->
+    <insert id="recordConsent">
+        INSERT INTO CONSENT (
+            CONSENT_ID,
+            CONSENT_TYPE,
+            TARGET_ID,
+            GROUP_ID,
+            MEMBER_ID,
+            AGREED_YN,
+            AGREED_AT
+        )
+        VALUES (
+            SEQ_CONSENT.NEXTVAL,
+            'TRANSFER',
+            #{transferId},
+            #{groupId},
+            #{memberId},
+            #{agreedYn},
+            SYSDATE
+        )
+    </insert>
+
+    <!-- 실제 모임장 변경 -->
+    <update id="changeOwner">
+        UPDATE GYE_GROUP
+        SET OWNER_ID = #{newId},
+            UPDATED_AT = SYSDATE
+        WHERE GROUP_ID = #{groupId}
+          AND OWNER_ID = #{oldId}
+    </update>
+
+    <update id="requireCurrentAccountReverification">
+        UPDATE GYE_ACCOUNT
+        SET VERIFY_STATUS = 'REVERIFY_REQUIRED',
+            VERIFIED_BY = NULL,
+            VERIFIED_AT = NULL
+        WHERE GROUP_ID = #{groupId}
+          AND ACCOUNT_STATUS = 'CURRENT'
+    </update>
+
+    <!-- 승계 확정 -->
+    <update id="confirm">
+        UPDATE LEADER_TRANSFER_REQUEST
+        SET STATUS = 'CONFIRMED',
+            DECIDED_AT = SYSDATE
+        WHERE TRANSFER_ID = #{transferId}
+          AND GROUP_ID = #{groupId}
+          AND STATUS = 'PENDING'
+          AND ACCEPTED_YN = 'Y'
+    </update>
+
+    <!-- 감사 로그 -->
+    <insert id="audit">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            TARGET_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        )
+        VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId},
+            #{actorId},
+            #{targetId},
+            #{eventType},
+            #{description},
+            SYSDATE
+        )
+    </insert>
+
+</mapper>

@@ -4,7 +4,7 @@
    - 계모임 해산: /api/v1/groups/{groupId}/dissolution
    - 운영 규칙(F31): /api/v1/groups/{groupId}/rules (조회: 모임 회원 / 수정: 모임장)
    - 회원 경고·강제 탈퇴(F30): /api/v1/groups/{groupId}/members/{memberId}/warnings · /expulsion (모임장)
-   - 모임장 승계: 준비 중
+   - 모임장 승계(F21): /api/v1/groups/{groupId}/leader-transfers
    알림 링크 /procedures?groupId=…&tab=rules 로 들어오면 규칙 탭을 연다. */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -15,6 +15,7 @@ import { fetchPayoutReceipts } from '../api/groupOperations';
 import { PageHead, Card, Flow, Select, Input, Empty } from '../components/ui';
 import { LoadState } from '../components/shared';
 import { formatKrw } from '../common/format';
+import LeaderTransferPanel from '../components/LeaderTransferPanel';
 
 const REASON_LABELS = {
   ECONOMIC: '경제적 사정',
@@ -979,10 +980,7 @@ function RulesTab({ groupId }) {
 
     {rules && <WarningCard groupId={groupId} leader={!!rules.leader} dissolved={dissolved} />}
 
-    <Card>
-      <h2>모임장 승계</h2>
-      <Empty>모임장 승계 기능은 서버 API 연결 준비 중이에요.</Empty>
-    </Card>
+    <LeaderTransferPanel groupId={groupId} />
 
   </>;
 
