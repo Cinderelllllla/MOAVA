@@ -34,7 +34,7 @@ class AiFinanceControllerTest {
     MockMvc mvc;
 
     private static final String BODY = """
-            {"monthly_income":3200000,"monthly_expense":2080000,"monthly_saving":350000,"emergency_fund":250000}""";
+            {"monthly_income":3200000,"monthly_expense":2080000,"monthly_saving":350000,"emergency_fund":250000,            "self_report":{"late_count_12m":"0","max_late_period":"NONE","loan_count":"2","card_usage":"UNDER_30"}}""";
 
     @BeforeEach
     void setUp() {
@@ -58,7 +58,7 @@ class AiFinanceControllerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void 회원은_토큰의_회원_번호로_분석된다_본문의_member_id_는_무시() throws Exception {
+    void 자가_응답으로_분석하고_본문의_member_id_는_ML_에_넘기지_않는다() throws Exception {
         when(ml.contribution(anyMap())).thenReturn(Map.of("recommended_amount", 150000, "available_amount", 520000));
 
         mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
@@ -68,8 +68,38 @@ class AiFinanceControllerTest {
                 .andExpect(jsonPath("$.data.recommended_amount").value(150000));
 
         verify(ml).contribution((Map<String, Object>) argThat(m ->
-                Long.valueOf(7).equals(((Map<String, Object>) m).get("member_id"))
+                !((Map<String, Object>) m).containsKey("member_id")
+                        && Map.of("late_count_12m", "0", "max_late_period", "NONE", "loan_count", "2", "card_usage", "UNDER_30")
+                        .equals(((Map<String, Object>) m).get("self_report"))
                         && Long.valueOf(3200000).equals(((Map<String, Object>) m).get("monthly_income"))));
+    }
+
+    @Test
+    void 자가_응답이_없으면_400() throws Exception {
+        mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"monthly_income\":3200000,\"monthly_expense\":2080000}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_SELF_REPORT"));
+        verifyNoInteractions(ml);
+    }
+
+    @Test
+    void 자가_응답이_하나라도_빠지면_400() throws Exception {
+        mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
+                        .contentType(MediaType.APPLICATION_JSON).content(BODY.replace(",\"card_usage\":\"UNDER_30\"", "")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_SELF_REPORT"));
+        verifyNoInteractions(ml);
+    }
+
+    @Test
+    void 자가_응답_선택지가_목록에_없으면_400() throws Exception {
+        mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
+                        .contentType(MediaType.APPLICATION_JSON).content(BODY.replace("\"UNDER_30\"", "\"10%\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_SELF_REPORT"));
+        verifyNoInteractions(ml);
     }
 
     @Test
@@ -87,7 +117,8 @@ class AiFinanceControllerTest {
                 .andExpect(jsonPath("$.data.risk.risk_label").value("안정"))
                 .andExpect(jsonPath("$.data.risk.safety_factor").value(0.5))
                 .andExpect(jsonPath("$.data.risk.default_probability").doesNotExist())
-                .andExpect(jsonPath("$.data.risk.source").doesNotExist());
+                .andExpect(jsonPath("$.data.risk.source").doesNotExist())
+                .andExpect(jsonPath("$.data.fallback").value(false));
     }
 
     @Test
@@ -109,15 +140,19 @@ class AiFinanceControllerTest {
     }
 
     @Test
-    void ML_서버가_꺼져_있으면_503_안내() throws Exception {
+    void ML_서버가_꺼져_있어도_대체값으로_200_응답() throws Exception {
         when(ml.contribution(anyMap())).thenThrow(new FinanceException(HttpStatus.SERVICE_UNAVAILABLE,
                 "ML_UNAVAILABLE", "분석 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요."));
 
+        // 3,200,000 − 2,080,000 − 350,000 − 250,000 = 520,000 × 0.35 = 182,000 → 150,000 (기록 없음 → 기본 '주의')
         mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error.code").value("ML_UNAVAILABLE"))
-                .andExpect(jsonPath("$.error.message").value("분석 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요."));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fallback").value(true))
+                .andExpect(jsonPath("$.data.fallback_source").value("DEFAULT"))
+                .andExpect(jsonPath("$.data.recommended_amount").value(150000))
+                .andExpect(jsonPath("$.data.risk.risk_level").value("CAUTION"))
+                .andExpect(jsonPath("$.data.risk.default_probability").doesNotExist());
     }
 
     // ---- 정책 값 ----

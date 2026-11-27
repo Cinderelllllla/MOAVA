@@ -10,6 +10,7 @@ import joblib
 import pandas as pd
 
 from ..common.config import INCOME_CAP_RATIO, ROUND_UNIT, risk_level_of
+from ..common.self_report import FEATURES as SELF_FEATURES, to_features
 from ..schemas.risk import RiskResult, Subject
 
 
@@ -34,6 +35,15 @@ class RiskService:
         self.features: list[str] = bundle["features"]
         self.meta = {k: v for k, v in bundle.items() if k not in ("model", "features")}
         self._feature_set = set(self.features)
+        # 자가 응답 4문항 모델 (python -m src.train_self 로 만든다). 맞춤 추천(F09) 위험 등급은 이 모델로 낸다.
+        self_path = model_dir / "self_model.joblib"
+        if not self_path.exists():
+            raise RuntimeError(f"{self_path} 가 없습니다. 먼저 ml 폴더에서 `python -m src.train_self` 를 실행하세요.")
+        self_bundle = joblib.load(self_path)
+        if self_bundle["features"] != SELF_FEATURES:
+            raise RuntimeError("self_model.joblib 의 문항이 src/common/self_report.py 와 다릅니다. train_self 를 다시 실행하세요.")
+        self.self_model = self_bundle["model"]
+        self.self_meta = {k: v for k, v in self_bundle.items() if k not in ("model", "features")}
         with scores_path.open(encoding="utf-8", newline="") as f:
             self.scores: dict[str, float] = {r["persona_id"]: float(r["default_probability"]) for r in csv.DictReader(f)}
                     # 시연용 계정 연결표 {회원 번호: 가상 인물 ID}. 여기 없는 회원은 persona_of() 의 계산식을 따른다.
@@ -76,7 +86,16 @@ class RiskService:
         p = float(self.model.predict_proba(row)[0, 1])
         return self._result(p, "features", len(known))
 
+    def by_self_report(self, answers: dict[str, str]) -> RiskResult:
+        """자가 응답 4문항(선택지 코드) → 연체 확률·등급. 선택지 검사는 스키마에서 끝난 상태."""
+        values = to_features(answers)
+        row = pd.DataFrame([values], columns=SELF_FEATURES, dtype="float64")
+        p = float(self.self_model.predict_proba(row)[0, 1])
+        return self._result(p, "self_report", len(SELF_FEATURES))
+
     def assess(self, subject: Subject) -> RiskResult:
+        if subject.self_report is not None:
+            return self.by_self_report(subject.self_report.model_dump())
         if subject.member_id is not None:
             return self.by_member(subject.member_id)
         if subject.persona_id is not None:

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request
 
 from ..common.config import INCOME_CAP_RATIO, RISK_LEVELS, ROUND_UNIT
 from ..common.security import require_internal_key
+from ..common.self_report import describe as describe_self_report
 from ..schemas import risk as s
 from ..service.risk_service import RiskService, recommend_amount
 
@@ -27,6 +28,13 @@ def model_info(request: Request):
             for lv in RISK_LEVELS
         ],
         "round_unit": ROUND_UNIT, "income_cap_ratio": INCOME_CAP_RATIO,
+        # 맞춤 추천(F09) 위험 등급에 쓰는 자가 응답 4문항 모델
+        "self_report": {
+            "questions": describe_self_report(),
+            "test_auc": sv.self_meta.get("test_auc"),
+            "trained_at": sv.self_meta.get("trained_at"),
+            "sklearn_version": sv.self_meta.get("sklearn_version"),
+        },
     }
 
 

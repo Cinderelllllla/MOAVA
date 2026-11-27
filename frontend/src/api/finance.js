@@ -147,6 +147,30 @@ export async function getSavingComparison(termMonths) {
 
 /** 이 기기에 보관된 금융 프로필 (값이 null 이면 아직 입력 안 함) */
 export const getFinance = () => db.finance;
+
+/* ---- F09 자가 응답 4문항 (MOA-98). 위험 등급은 이 답변으로 AI 가 계산한다.
+        민감한 신용 정보라 서버 DB·브라우저 저장소에 남기지 않고 이 탭의 메모리에만 둔다
+        (새로고침하면 사라짐 → 다시 분석할 때 1단계에서 다시 답한다). 코드값은 ML 서버와 같다. ---- */
+export const SELF_REPORT_QUESTIONS = [
+  { key: 'late_count_12m', label: '최근 1년간 30일 이상 연체한 횟수', options: [['0', '0회'], ['1', '1회'], ['2', '2회'], ['3_PLUS', '3회 이상']] },
+  { key: 'max_late_period', label: '최근 6개월 동안 가장 길게 연체한 기간', options: [['NONE', '없음'], ['UNDER_1M', '1개월 미만'], ['M1_2', '1~2개월'], ['M2_3', '2~3개월'], ['OVER_3M', '3개월 이상']] },
+  { key: 'loan_count', label: '지금 갚고 있는 대출 수', options: [['0', '0개'], ['1', '1개'], ['2', '2개'], ['3', '3개'], ['4', '4개'], ['5_PLUS', '5개 이상']] },
+  { key: 'card_usage', label: '신용카드 한도 중 쓰고 있는 비율', options: [['NO_CARD', '카드 없음'], ['UNDER_30', '30% 미만'], ['P30_50', '30~50%'], ['P50_70', '50~70%'], ['P70_90', '70~90%'], ['OVER_90', '90% 이상']] },
+];
+let selfReport = null;   // { memberId, answers }
+let selfReportVersion = 0;   // 답할 때마다 1씩 늘어 분석 훅이 다시 돌게 한다
+export const getSelfReportVersion = () => selfReportVersion;
+const currentMemberId = () => (getAccessToken() ? getAccessTokenMemberId() : Number(db.session?.id));
+/** 4문항 모두 정해진 선택지로 답했는지 */
+export const isSelfReportComplete = answers =>
+  SELF_REPORT_QUESTIONS.every(q => q.options.some(([code]) => code === answers?.[q.key]));
+/** 지금 로그인한 회원이 이 탭에서 답한 4문항 (없으면 null) */
+export const getSelfReport = () => (selfReport && selfReport.memberId === currentMemberId() ? selfReport.answers : null);
+export function setSelfReport(answers) {
+  if (!isSelfReportComplete(answers)) fail('신용 관련 질문 4개에 모두 답해 주세요.');
+  selfReport = { memberId: currentMemberId(), answers: Object.fromEntries(SELF_REPORT_QUESTIONS.map(q => [q.key, answers[q.key]])) };
+  selfReportVersion += 1;
+}
 /* ---- F10 월별 수입·지출 (서버: 원 · yearMonth "202611" ↔ 화면: 만 원 · month "11월") ---- */
 const MONTHLY_API = '/api/v1/finance/monthly';
 const pad2 = n => String(n).padStart(2, '0');
@@ -321,6 +345,8 @@ export async function saveFinance(values) {
   applyServerProfile(saved, token, { preserveAssessment: false });
 }
 export async function assessWithMl(memberId) {
+  const answers = getSelfReport();
+  if (!answers) fail('맞춤 추천 1단계에서 신용 관련 질문 4개에 답하면 AI 분석을 할 수 있어요.');
   const f = db.finance;
   const input = {
     income: Number(f.income),
@@ -331,7 +357,7 @@ export async function assessWithMl(memberId) {
   };
   const profileKey = financeProfileKey(input);
   if (!getToken()) fail('로그인이 필요해요.');
-  // 백엔드가 로그인 토큰으로 본인 회원 번호를 넣어 ML 서버에 대신 묻는다 (member_id 는 보내지 않음).
+  // 위험 등급은 자가 응답 4문항(self_report)으로, 추천액은 금액으로 계산한다. member_id 는 보내지 않는다.
   // 오류 안내(분석 서버 연결 실패 503, 입력 확인 400 등)는 apiFetch 가 서버의 한국어 문장으로 던져 준다.
   const result = await apiFetch('/api/v1/finance/ai/contribution', {
     method: 'POST',
@@ -340,6 +366,7 @@ export async function assessWithMl(memberId) {
       monthly_expense: Math.round((input.fixed + input.variable) * 10000),
       monthly_saving: Math.round(input.saving * 10000),
       emergency_fund: Math.round(input.reserve * 10000),
+      self_report: answers,
     }),
   });
   // 위험 등급 이름은 ML 서버가 기준이라 프론트 목록(RISK)과 비교하지 않는다
@@ -365,10 +392,18 @@ export async function assessWithMl(memberId) {
     recommendedAmount: Number(result.recommended_amount) / 10000,
     capped: Boolean(result.capped),
     risk: result.risk,
+    // MOA-95 ML 장애 대체값: 서버가 직전 등급(PREVIOUS) 또는 기본 '주의'(DEFAULT)로 계산했는지
+    fallback: result.fallback === true,
+    fallbackSource: result.fallback === true ? (result.fallback_source || 'DEFAULT') : null,
     assessedAt: nowText(),
   };
   save();
   return db.finance.mlAssessment;
+}
+/** 지금 분석 결과를 비워 AI 분석을 다시 하게 한다(대체값 안내의 '다시 분석'). 신용 질문 답이 없으면 1단계에서 다시 답해야 한다 */
+export function clearMlAssessment() {
+  db.finance.mlAssessment = null;
+  save();
 }
 export async function setJourneyStep(n) {
   if (n > db.journey.step + 1) fail('앞 단계를 먼저 완료해 주세요.');

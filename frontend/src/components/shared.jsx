@@ -149,9 +149,25 @@ export function RiskPanel({ compact }) {
   const assessment = finance.getMlAssessment(), a = finance.affordability();
   const cap = Math.round(finance.getPolicy().incomeCapRatio * 100);   // 상한 적용 안내용(%) — ML 서버 값 기준
   return <div className="policy-panel" style={{ marginTop: 0 }}><h3>연체 위험 등급 {assessment && <span className="policy-tag">AI 분석</span>}</h3>
-    {assessment ? <p className="muted mini">위험 등급 <RiskBadge risk={assessment.risk} />{assessment.risk.safety_factor != null && <> · 안전계수 {assessment.risk.safety_factor}</>}</p>
+    {assessment ? <><p className="muted mini">위험 등급 <RiskBadge risk={assessment.risk} />{assessment.risk.safety_factor != null && <> · 안전계수 {assessment.risk.safety_factor}</>}</p>
+      {!assessment.fallback && <p className="muted mini">입력하신 신용 답변 기준 · 교육용 모델 (실제 신용평가가 아니에요)</p>}</>
       : <><p className="muted mini">아직 분석 결과가 없어요. 맞춤 추천에서 금융정보를 입력하고 이용에 동의하면 AI가 위험 등급과 추천 납입액을 계산해 드려요.</p><div className="actions"><button type="button" className="btn small soft" onClick={() => nav('/journey')}>맞춤 추천 시작 →</button></div></>}
-    {!compact && assessment && a && <p className="info mini" style={{ marginTop: 12 }}>추천 월 납입액 <b>{a.rec > 0 ? won(a.rec) : '추천 없음'}</b>{a.rec <= 0 ? ` · ${finance.noRecommendReason(a)}` : ''}{a.capped && a.rec > 0 ? ` · 월수입 ${cap}% 상한 적용` : ''}</p>}</div>;
+    {!compact && assessment && a && <p className="info mini" style={{ marginTop: 12 }}>추천 월 납입액 <b>{a.rec > 0 ? won(a.rec) : '추천 없음'}</b>{a.rec <= 0 ? ` · ${finance.noRecommendReason(a)}` : ''}{a.capped && a.rec > 0 ? ` · 월수입 ${cap}% 상한 적용` : ''}</p>}
+    {!compact && assessment && a && a.free > 0 && <RecommendCalc free={a.free} k={assessment.risk.safety_factor} rec={a.rec} />}</div>;
+}
+
+const manwon1 = v => `${Math.round(v * 10) / 10}만 원`;   // 소수 첫째 자리까지 (예: 47.3만 원)
+/** 추천 납입액 계산 과정: min(남는 돈 × 안전계수, 월수입 × 상한) → 절사 단위로 내림 */
+function RecommendCalc({ free, k, rec }) {
+  const income = Number(finance.getFinance().income), policy = finance.getPolicy();
+  const factor = Number(k);
+  if (!Number.isFinite(income) || !Number.isFinite(factor)) return null;
+  const byRisk = free * factor, cap = income * policy.incomeCapRatio;
+  return <ol className="muted mini" style={{ margin: '10px 0 0', paddingLeft: 18, lineHeight: 1.8 }}>
+    <li>매달 남는 돈 {manwon1(free)} × 안전계수 {factor} = <b>{manwon1(byRisk)}</b></li>
+    <li>월수입 {manwon1(income)}의 {Math.round(policy.incomeCapRatio * 100)}% 상한 = <b>{manwon1(cap)}</b></li>
+    <li>둘 중 작은 값 {manwon1(Math.min(byRisk, cap))}을 {policy.amountUnitManwon}만 원 단위로 내림 → <b>{won(rec)}</b></li>
+  </ol>;
 }
 /* F09 위험 등급 배지 — 등급 코드(STABLE/CAUTION/RISK) 기준으로 색을 정한다. 라벨 글자로 비교하지 않는다.
    코드가 오는 곳: ML 실시간 응답 risk.risk_level / 저장된 결과(GET /finance/profile) assessment.riskLevel(= RISK_SCORE.TIER)
@@ -170,9 +186,31 @@ export function RiskBadge({ risk }) {
 }
 export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return assessment ? <>위험 등급 <RiskBadge risk={assessment.risk} /></> : <>아직 위험 등급 분석 전이에요.</>; };
 
+const FALLBACK_TEXT = {
+  PREVIOUS: 'AI 분석 서버에 연결하지 못해 최근 위험 등급으로 계산했어요. 잠시 후 다시 분석하면 최신 결과로 바뀌어요.',
+  DEFAULT: "AI 분석 서버에 연결하지 못해 기본 '주의' 등급으로 계산했어요. 잠시 후 다시 분석하면 최신 결과로 바뀌어요.",
+};
+/** MOA-95 ML 장애 대체값 안내 (오류가 아니라 안내 색). 대체값이 아니면 아무것도 그리지 않는다 */
+export function FallbackNotice() {
+  const nav = useNavigate();
+  const assessment = finance.getMlAssessment();
+  if (!assessment?.fallback) return null;
+  const hasAnswers = Boolean(finance.getSelfReport());
+  // 신용 질문 답이 이 탭에 남아 있으면 바로 다시 분석, 없으면(새로고침 등) 1단계에서 다시 답하게 한다
+  const reanalyze = () => {
+    if (hasAnswers) { finance.clearMlAssessment(); return; }
+    finance.setJourneyStep(1).then(() => nav('/journey')).catch(() => nav('/journey'));
+  };
+  return <p className="info mini" role="status" style={{ marginBottom: 12 }}>
+    {FALLBACK_TEXT[assessment.fallbackSource] || FALLBACK_TEXT.DEFAULT}{' '}
+    <button type="button" className="btn small soft" onClick={reanalyze}>{hasAnswers ? '다시 분석' : '1단계에서 다시 분석'}</button>
+  </p>;
+}
+
 export function FinanceAssessmentStatus({ status, error, retry }) {
   const text = status === 'loading' ? 'AI가 금융정보를 분석하고 있어요.'
     : status === 'success' ? 'AI 금융 분석이 끝났어요.'
+      : status === 'needs-answers' ? '맞춤 추천 1단계에서 신용 관련 질문 4개에 답하면 AI 분석을 다시 할 수 있어요.'
       : status === 'error' ? `금융 분석을 하지 못했어요. ${error}`
         : '금융정보를 입력하고 이용에 동의하면 AI 분석을 시작해요.';
   return <p className={`info mini finance-api-status ${status === 'error' ? 'warning' : ''}`} role={status === 'error' ? 'alert' : 'status'}>

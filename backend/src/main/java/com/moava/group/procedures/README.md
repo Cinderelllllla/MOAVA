@@ -43,6 +43,7 @@ F27(수령 순서), F29(중도 탈퇴), F32(해산) 및 관련 기능이며,
 
 - 신청 시 희망 회차 범위(`1 ~ MAX_MEMBERS`), 사유 필수 및 UTF-8 500바이트 이하, 기확정 회원 및 타 회원 기확정 회차 중복 여부를 검사하며 `CONSENT_PENDING` 상태에서는 수정할 수 없다.
 - AI 추천 회차(`AI_SUGGESTED_ROUND`)는 회원별 최신 `RISK_SCORE.PROB`를 내림차순 정렬해 산출한다(동률이면 `MEMBER_ID` 오름차순).
+  AI 분석 기록이 없는 회원은 맨 뒤 회차로 보낸다(MOA-98). 신청 목록의 `aiAnalyzed=false` 면 화면에 "AI 분석 전"을 표시한다.
 - 동의 요청·확정 시 신청자의 현재 `ACTIVE` 상태와 기확정 회차 중복 여부를 재검증한다. 동의 응답은 대상 회원 여부를 먼저 확인해 비대상은 `403`, 이미 응답 완료(`AGREED_YN != 'P'`)는 `409`를 반환하며, 1명이라도 거부(`N`)하면 즉시 `REJECTED`로 전환하고 신청자에게 `CONSENT_RESULT` 알림을 발송한다.
 - 확정 시 회차 중복, 회원 중복 확정, 동의 대상 스냅샷 존재 여부 및 ACTIVE 대상 전원 `'Y'` 동의를 확인한다. 확정 직후 동일 회차로 경합 중이던 타 회원의 미확정 신청(`REQUESTED`/`CONSENT_PENDING`)을 자동 `REJECTED` 처리하고 반려 알림(`CONSENT_RESULT`)을 발송한다. 모든 ACTIVE 회원의 신청이 확정되면 `GYE_GROUP.ORDER_CONFIRMED_YN`을 `'Y'`로 변경한다.
 

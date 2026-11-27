@@ -14,6 +14,8 @@ export default function useMlFinanceAssessment() {
   // 금융정보를 다시 저장하면 saveFinance 가 분석 결과를 비운다. 희망 납입액(goal)처럼 분석에 안 쓰는 값만 바뀌어도
   // 결과가 비워지므로, 결과가 없어지면 아래 effect 가 다시 돌아 분석을 새로 하도록 의존값에 넣는다.
   const hasAssessment = Boolean(finance.getMlAssessment());
+  // 금액은 그대로 두고 신용 질문 답만 새로 해도 다시 분석하도록
+  const selfReportVersion = finance.getSelfReportVersion();
 
   useEffect(() => {
     if (!profile.consentAt) {
@@ -26,6 +28,8 @@ export default function useMlFinanceAssessment() {
     }
 
     if (finance.getMlAssessment()) { setState({ status: 'success', error: '' }); return undefined; }
+    // 위험 등급은 자가 응답 4문항이 있어야 계산할 수 있다 (답변은 저장하지 않으므로 새로고침 뒤에는 다시 답해야 함)
+    if (!finance.getSelfReport()) { setState({ status: 'needs-answers', error: '' }); return undefined; }
 
     let active = true;
     setState({ status: 'loading', error: '' });
@@ -47,6 +51,7 @@ export default function useMlFinanceAssessment() {
     token,
     retryKey,
     hasAssessment,
+    selfReportVersion,
   ]);
 
   return { ...state, retry: () => setRetryKey(value => value + 1) };
