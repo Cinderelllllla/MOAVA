@@ -34,7 +34,7 @@ export function getServerMember() {
 }
 export function setServerMember(user) {
     if (!user) { sessionStorage.removeItem(MEMBER_KEY); return; }
-    const { adminId, role, name = '', email = '', regionSido = '', regionSigungu = '', status = 'ACTIVE' } = user;
+    const { adminId, role, name = '', email = '', regionSido = '', regionSigungu = '', regionDong = '', status = 'ACTIVE' } = user;
     sessionStorage.setItem(MEMBER_KEY, JSON.stringify({
         ...(adminId != null ? { adminId } : {}),
         ...(role ? { role } : {}),
@@ -42,6 +42,7 @@ export function setServerMember(user) {
         email,
         regionSido,
         regionSigungu,
+        ...(regionDong ? { regionDong } : {}),
         status,
     }));
 }

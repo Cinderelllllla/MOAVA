@@ -1,9 +1,13 @@
+
 package com.moava.group.create.service;
 
 import com.moava.group.create.dto.GroupJoinRequestResponse;
 import com.moava.group.create.dto.GroupPendingJoinRequestResponse;
 import com.moava.group.create.mapper.GroupJoinRequestMapper;
+import com.moava.group.search.event.GroupSearchSyncEvent;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,13 +22,81 @@ public class GroupJoinRequestService {
 
     private final GroupJoinRequestMapper mapper;
     private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    public GroupJoinRequestService(
+            GroupJoinRequestMapper mapper,
+            NotificationService notificationService,
+            ApplicationEventPublisher eventPublisher
+    ) {
+        this.mapper = mapper;
+        this.notificationService = notificationService;
+        this.eventPublisher = eventPublisher;
+    }
 
     public GroupJoinRequestService(
             GroupJoinRequestMapper mapper,
             NotificationService notificationService
     ) {
-        this.mapper = mapper;
-        this.notificationService = notificationService;
+        this(mapper, notificationService, null);
+    }
+
+    // ==================================================
+    // F16 - 공통 회원 상태 검증
+    // ==================================================
+
+    private void validateMemberJoinEligibility(Long memberId) {
+
+        Map<String, Object> member =
+                mapper.findMemberStatus(memberId);
+
+        if (member == null) {
+            throw new IllegalArgumentException(
+                    "존재하지 않는 회원입니다."
+            );
+        }
+
+        // 탈퇴 회원 및 비활성 회원 가입 제한
+        if (!"ACTIVE".equals(member.get("STATUS"))) {
+            throw new IllegalStateException(
+                    "이용할 수 없는 회원입니다."
+            );
+        }
+
+        // 플랫폼 가입 제한 회원 차단
+        if (!"N".equals(member.get("BANNED_YN"))) {
+            throw new IllegalStateException(
+                    "플랫폼 가입 제한 회원입니다."
+            );
+        }
+    }
+
+    // ==================================================
+    // F16 - 공통 감사 로그 저장
+    // ==================================================
+
+    private void saveJoinAuditLog(
+            Long groupId,
+            Long actorMemberId,
+            Long targetMemberId,
+            String eventType,
+            String description
+    ) {
+
+        int inserted = mapper.insertAuditLog(
+                groupId,
+                actorMemberId,
+                targetMemberId,
+                eventType,
+                description
+        );
+
+        if (inserted != 1) {
+            throw new IllegalStateException(
+                    "가입 관련 감사 로그 저장에 실패했습니다."
+            );
+        }
     }
 
     // ==================================================
@@ -61,6 +133,9 @@ public class GroupJoinRequestService {
             );
         }
 
+        // 가입 신청 회원 상태 검증
+        validateMemberJoinEligibility(memberId);
+
         Long ownerId =
                 ((Number) group.get("OWNER_ID")).longValue();
 
@@ -89,7 +164,6 @@ public class GroupJoinRequestService {
 
         // 5. 기존 참여 이력 확인
         // ACTIVE, WITHDRAWN, EXPELLED 모두 가입 신청 불가
-        // 탈퇴 완료 회원은 동일 모임에 재가입할 수 없음
         if (mapper.countExistingMembership(
                 groupId, memberId) > 0) {
             throw new IllegalStateException(
@@ -154,7 +228,17 @@ public class GroupJoinRequestService {
             );
         }
 
-        // 11. 가입 신청 성공 시 모임장에게 알림
+        // 11. 가입 신청 감사 로그 저장
+        saveJoinAuditLog(
+                groupId,
+                memberId,
+                memberId,
+                "JOIN_REQUEST",
+                "모임 가입 신청 (신청 ID: "
+                        + requestId + ", 경로: " + via + ")"
+        );
+
+        // 12. 가입 신청 성공 시 모임장에게 알림
         String applicantName =
                 mapper.findMemberName(memberId);
 
@@ -198,7 +282,6 @@ public class GroupJoinRequestService {
         }
 
         // 2. 모임 정보 조회
-        // 읽기 전용 조회이므로 FOR UPDATE 사용하지 않음
         Map<String, Object> group =
                 mapper.findGroup(groupId);
 
@@ -310,6 +393,9 @@ public class GroupJoinRequestService {
                 ((Number) joinRequest.get("MEMBER_ID"))
                         .longValue();
 
+        // 승인 시 신청 회원 상태 재검증
+        validateMemberJoinEligibility(memberId);
+
         if (actualOwnerId.equals(memberId)) {
             throw new IllegalStateException(
                     "모임장은 가입 신청 대상이 될 수 없습니다."
@@ -317,8 +403,6 @@ public class GroupJoinRequestService {
         }
 
         // 9. 기존 참여 이력 재확인
-        // 신청 이후 회원 상태가 변경되었을 수 있으므로 재검사
-        // 기존 가입 이력이 있는 회원은 승인 불가
         if (mapper.countExistingMembership(
                 groupId, memberId) > 0) {
             throw new IllegalStateException(
@@ -358,7 +442,6 @@ public class GroupJoinRequestService {
         }
 
         // 12. 가입 신청 상태 APPROVED 변경
-        // Mapper에서도 PENDING 및 7일 만료 조건 재확인
         int updated = mapper.approveJoinRequest(
                 groupId,
                 requestId,
@@ -372,7 +455,6 @@ public class GroupJoinRequestService {
         }
 
         // 13. 신규 회원 참여 관계 생성
-        // 기존 탈퇴 회원의 재활성화는 허용하지 않음
         int inserted = mapper.insertApprovedMember(
                 groupId,
                 memberId
@@ -384,7 +466,17 @@ public class GroupJoinRequestService {
             );
         }
 
-        // 14. 가입 승인 성공 시 신청자에게 알림
+        // 14. 가입 승인 감사 로그 저장
+        saveJoinAuditLog(
+                groupId,
+                ownerId,
+                memberId,
+                "JOIN_APPROVE",
+                "모임 가입 승인 (신청 ID: "
+                        + requestId + ")"
+        );
+
+        // 15. 가입 승인 성공 시 신청자에게 알림
         notificationService.notifyMember(
                 memberId,
                 NotifType.JOIN_RESULT,
@@ -394,6 +486,11 @@ public class GroupJoinRequestService {
                         "result", "승인"
                 )
         );
+
+        // 16. F12 - 커밋 후 ES 공개 모임 검색 인덱스 동기화 (참여 인원 갱신)
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+        }
     }
 
     // ==================================================
@@ -481,11 +578,22 @@ public class GroupJoinRequestService {
             );
         }
 
-        // 8. 가입 거절 성공 시 신청자에게 알림
+        // 8. 신청 회원 ID 확인
         Long applicantId =
                 ((Number) joinRequest.get("MEMBER_ID"))
                         .longValue();
 
+        // 9. 가입 거절 감사 로그 저장
+        saveJoinAuditLog(
+                groupId,
+                ownerId,
+                applicantId,
+                "JOIN_REJECT",
+                "모임 가입 거절 (신청 ID: "
+                        + requestId + ")"
+        );
+
+        // 10. 가입 거절 성공 시 신청자에게 알림
         notificationService.notifyMember(
                 applicantId,
                 NotifType.JOIN_RESULT,

@@ -4,6 +4,7 @@
 import * as D from './mock/db';
 import { getAccessToken } from './auth';
 import { apiFetch } from './client';
+import { encodeRegionForServer, parseRegionFromServer } from '../common/regions';
 
 const { db, save, fail } = D;
 
@@ -23,13 +24,32 @@ const OVERDUE_POLICY_CODES = {
 };
 
 function toGroupCreateRequest(f) {
-  const region = String(f.region || '').trim().split(/\s+/);
+  let regionSido = '';
+  let regionSigungu = '';
+  let regionDong = null;
+
+  if (f.regionSido || f.regionSigungu || f.regionDong) {
+    const encoded = encodeRegionForServer({
+      sido: f.regionSido,
+      sigungu: f.regionSigungu,
+      dong: f.regionDong
+    });
+    regionSido = encoded.regionSido;
+    regionSigungu = encoded.regionSigungu;
+    regionDong = encoded.regionDong;
+  } else {
+    const region = String(f.region || '').trim().split(/\s+/);
+    regionSido = region[0] || '';
+    regionSigungu = region[1] || '';
+    regionDong = region.slice(2).join(' ') || null;
+  }
 
   return {
     title: f.title.trim(),
     purpose: PURPOSE_CODES[f.purpose] || f.purpose,
-    regionSido: region[0] || '',
-    regionSigungu: region.slice(1).join(' '),
+    regionSido,
+    regionSigungu,
+    regionDong,
     amount: Number(f.amount) * 10000,
     maxMembers: Number(f.max),
     months: Number(f.months),
@@ -98,6 +118,136 @@ export const groupStatusLabel = (s, currentMembers, maxMembers) => {
 /** 서버 모임 목적 코드(GYE_GROUP.PURPOSE) → 화면 문구 */
 export const PURPOSE_LABEL = { SAVINGS: '목돈 마련', INVEST: '재테크', SOCIAL: '친목', STARTUP: '창업', TRAVEL: '여행' };
 export const purposeLabel = p => PURPOSE_LABEL[p] || p || '-';
+
+/** 서버 공개 모임 DTO(PublicGroupResponse) → 화면(Groups / KakaoGroupMap / GroupCard / GroupInfo) 형식 변환 */
+export function mapPublicGroup(dto) {
+  const maxMembers = Number(dto.maxMembers || 0);
+  const currentMembers = Number(dto.currentMembers ?? 1);
+  const amountKrw = Number(dto.amount || 0);
+  const rawSido = String(dto.regionSido || '').trim();
+  const rawSigungu = String(dto.regionSigungu || '').trim();
+  const rawDong = String(dto.regionDong || '').trim();
+  const parsedRegion = parseRegionFromServer(rawSido, rawSigungu, rawDong);
+  const regionSido = parsedRegion.sido || rawSido;
+  const regionSigungu = parsedRegion.sigungu || rawSigungu;
+  const regionDong = parsedRegion.dong || rawDong;
+  const lat = dto.lat != null && dto.lat !== '' && Number.isFinite(Number(dto.lat)) ? Number(dto.lat) : null;
+  const lng = dto.lng != null && dto.lng !== '' && Number.isFinite(Number(dto.lng)) ? Number(dto.lng) : null;
+
+  return {
+    id: dto.groupId,
+    groupId: dto.groupId,
+    title: dto.title || '',
+    ownerId: dto.ownerId,
+    ownerName: dto.ownerName || '회원',
+    statusCode: dto.status || 'RECRUITING',
+    status: groupStatusLabel(dto.status, currentMembers, maxMembers),
+    purposeCode: dto.purpose || '',
+    purpose: purposeLabel(dto.purpose),
+    regionSido,
+    regionSigungu,
+    regionDong,
+    region: parsedRegion.displayLabel || [regionSido, regionSigungu, regionDong].filter(Boolean).join(' '),
+    lat,
+    lng,
+    amountKrw,
+    amount: amountKrw / 10000,
+    max: maxMembers,
+    maxMembers,
+    currentMembers,
+    months: Number(dto.months || 0),
+    payDay: Number(dto.payDay || 0),
+    rate: Number(dto.assumedRate ?? 0),
+    visibility: dto.visibility || 'PUBLIC',
+    description: dto.description || '',
+    rulesTitle: dto.rulesTitle || '운영 규칙',
+    rules: dto.rulesBody || '',
+    rulesBody: dto.rulesBody || '',
+    orderConfirmed: Boolean(dto.orderConfirmed),
+    role: dto.role || 'NONE',
+    source: 'SERVER'
+  };
+}
+
+/** 공개 모임 목록·지도 조회 (GET /api/groups?region=&purpose=&q=) */
+export async function fetchPublicGroups({ region, purpose, q } = {}) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const params = new URLSearchParams();
+
+  const normalizedRegion = String(region || '').trim();
+  if (normalizedRegion && normalizedRegion !== '전체') {
+    params.set('region', normalizedRegion);
+  }
+
+  const normalizedPurpose = String(purpose || '').trim();
+  if (normalizedPurpose && normalizedPurpose !== '전체') {
+    params.set('purpose', PURPOSE_CODES[normalizedPurpose] || normalizedPurpose);
+  }
+
+  const normalizedQuery = String(q || '').trim();
+  if (normalizedQuery) {
+    params.set('q', normalizedQuery);
+  }
+
+  const qs = params.toString();
+  const data = await apiFetch(qs ? `/api/groups?${qs}` : '/api/groups');
+
+  if (!Array.isArray(data)) {
+    throw new Error('공개 모임 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.');
+  }
+
+  return data.map(mapPublicGroup);
+}
+
+/** F11 추천액·회원 활동 지역 기반 계모임 추천 조회 (GET /api/groups/recommendations) */
+export async function fetchRecommendedGroups({ amountManwon, regionSido, regionSigungu } = {}) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const params = new URLSearchParams();
+  if (amountManwon != null && Number.isFinite(Number(amountManwon)) && Number(amountManwon) >= 0) {
+    params.set('amount', String(Math.round(Number(amountManwon) * 10000)));
+  }
+  const cleanSido = String(regionSido || '').trim();
+  if (cleanSido && cleanSido !== '전체') {
+    params.set('regionSido', cleanSido);
+  }
+  const cleanSigungu = String(regionSigungu || '').trim();
+  if (cleanSigungu && cleanSigungu !== '전체') {
+    params.set('regionSigungu', cleanSigungu);
+  }
+
+  const qs = params.toString();
+  const data = await apiFetch(qs ? `/api/groups/recommendations?${qs}` : '/api/groups/recommendations');
+
+  const items = Array.isArray(data?.items)
+    ? data.items.map((item) => ({
+        ...mapPublicGroup(item),
+        healthScore: Number.isFinite(Number(item.healthScore)) ? Number(item.healthScore) : null,
+        amountDiffKrw: Number.isFinite(Number(item.amountDiff)) ? Number(item.amountDiff) : 0,
+        amountDiff: Number.isFinite(Number(item.amountDiff)) ? Number(item.amountDiff) / 10000 : 0,
+      }))
+    : [];
+
+  const parsedRegion = parseRegionFromServer(data?.regionSido, data?.regionSigungu, data?.regionDong);
+  return {
+    recommendedAmountKrw: Number(data?.recommendedAmount || 0),
+    recommendedAmount: Number(data?.recommendedAmount || 0) / 10000,
+    maxAmountKrw: Number(data?.maxAmount || 0),
+    maxAmount: Number(data?.maxAmount || 0) / 10000,
+    regionSido: parsedRegion.sido || data?.regionSido || '',
+    regionSigungu: parsedRegion.sigungu || data?.regionSigungu || '',
+    regionDong: parsedRegion.dong || data?.regionDong || '',
+    regionLabel: parsedRegion.displayLabel || [data?.regionSido, data?.regionSigungu, data?.regionDong].filter(Boolean).join(' '),
+    matchedScope: data?.matchedScope || 'NONE',
+    expandedToSido: Boolean(data?.expandedToSido),
+    items,
+  };
+}
 
 export const endedGroups = () =>
     db.groups.filter(g => D.joined(g) && D.isEnded(g));
@@ -283,8 +433,8 @@ export async function createGroup(f) {
   // 7. Spring Boot DTO 변환
   const payload = toGroupCreateRequest(f);
 
-  if (!payload.regionSido || !payload.regionSigungu) {
-    fail('지역을 시·도와 시·군·구까지 입력해 주세요.');
+  if (!payload.regionSido || !payload.regionSigungu || ('regionDong' in f && !payload.regionDong)) {
+    fail('지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
   }
 
   // 8. 서버에 생성 요청 (오류는 apiFetch 가 사용자용 문장으로 바꿔 준다)

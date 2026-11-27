@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
-import { auth, fetchUnreadNotificationCount } from '../api';
+import { auth, finance, fetchUnreadNotificationCount } from '../api';
 import { NOTIFICATIONS_CHANGED } from '../common/notificationEvents';
 import Icon, { Logo } from './Icon';
 
@@ -63,9 +63,14 @@ export default function Shell({ role }) {
     wide.addEventListener('change', close);
     return () => wide.removeEventListener('change', close);
   }, []);
-  // 로그인 회원 정보(이름 등)를 서버(/api/auth/me)에서 다시 받아 온다. 실패하면 로그인 때 받은 정보를 그대로 쓴다.
+  // 로그인 회원 정보(/api/auth/me)와 저장된 금융 프로필(/api/v1/finance/profile)을 서버에서 다시 받아 온다.
   const sessionId = session?.id;
-  useEffect(() => { if (sessionId != null && !isAdmin) auth.refreshMe().catch(() => {}); }, [sessionId, isAdmin]);
+  useEffect(() => {
+    if (sessionId != null && !isAdmin) {
+      auth.refreshMe().catch(() => {});
+      finance.refreshFinanceProfile().catch(() => {});
+    }
+  }, [sessionId, isAdmin]);
   // 상단 알림 배지: 서버의 안 읽은 개수 (회원·관리자 공통 /api/v1/notifications/unread-count)
   const [unread, setUnread] = useState(0);
   const canNotify = Boolean(session);

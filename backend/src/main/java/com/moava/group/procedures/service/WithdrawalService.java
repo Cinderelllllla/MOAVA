@@ -3,6 +3,9 @@ package com.moava.group.procedures.service;
 import com.moava.group.procedures.dto.WithdrawalDTO;
 import com.moava.group.procedures.exception.ProcedureException;
 import com.moava.group.procedures.mapper.WithdrawalMapper;
+import com.moava.group.search.event.GroupSearchSyncEvent;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,9 +20,16 @@ public class WithdrawalService {
     private static final Set<String> VALID_REASON_TYPES = Set.of("ECONOMIC", "PERSONAL", "OTHER");
 
     private final WithdrawalMapper withdrawalMapper;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    public WithdrawalService(WithdrawalMapper withdrawalMapper, ApplicationEventPublisher eventPublisher) {
+        this.withdrawalMapper = withdrawalMapper;
+        this.eventPublisher = eventPublisher;
+    }
 
     public WithdrawalService(WithdrawalMapper withdrawalMapper) {
-        this.withdrawalMapper = withdrawalMapper;
+        this(withdrawalMapper, null);
     }
 
     /**
@@ -442,6 +452,11 @@ public class WithdrawalService {
                 "WITHDRAW_APPROVE",
                 "전원 동의 확인 및 중도 탈퇴 최종 승인 완료 (신청번호: " + withdrawalRequestId + ")"
         );
+
+        // 5) F12 - 커밋 후 ES 공개 모임 검색 인덱스 동기화 (참여 인원 갱신)
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+        }
     }
 
     private Map<String, Object> getGroupInfo(Long groupId) {

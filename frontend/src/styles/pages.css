@@ -118,6 +118,9 @@ html[data-theme="v9meeting"] .ops-log>div{border-color:#d5ebe2;background:#fbfef
 .ld-theme button{border:0;background:transparent;font:inherit;font-size:12px;font-weight:800;color:var(--muted);padding:6px 10px;border-radius:8px;cursor:pointer}
 .ld-theme button.on{background:#fff;color:var(--blue);box-shadow:0 2px 6px rgba(0,0,0,.08)}
 .auth-back{text-align:center;margin:-8px 0 14px}
+.auth-admin-entry{margin-top:14px;text-align:right}
+.auth-admin-entry a{font-size:12px;color:var(--t-text5,var(--muted));text-decoration:none}
+.auth-admin-entry a:hover{color:var(--t-text2,var(--blue));text-decoration:underline}
 
 /* ---- F13 Kakao Maps 지역 계모임 지도 ---- */
 .map.kakao-map-wrap{background:#e9f1f8!important;position:relative;overflow:hidden}
@@ -153,3 +156,11 @@ html[data-theme="v9meeting"] .ld-nav .btn:not(.primary){background:#1a3554!impor
 
 /* ---- 차트 모바일 보정 ---- */
 .chart{overflow:hidden;min-width:0}.bar-pair{min-width:0;flex:1 1 0}@media(max-width:760px){.chart{gap:8px;padding-left:4px;padding-right:4px}.bar{width:14px}.chart-labels{font-size:11px}}
+
+/* ---- 전국 시/도·시/군/구·읍/면/동 3단계 드롭다운 ---- */
+.region-selector-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:13px 0}
+.region-selector-grid>.field{margin:0!important;min-width:0}
+.region-selector-grid.region-selector-compact{grid-template-columns:repeat(2,minmax(0,1fr))}
+.region-selector-grid.region-selector-compact>.region-field-sido{grid-column:1 / -1}
+.field select:disabled{opacity:.6;cursor:not-allowed}
+@media(max-width:540px){.region-selector-grid,.region-selector-grid.region-selector-compact{grid-template-columns:1fr}}

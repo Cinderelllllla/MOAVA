@@ -3,7 +3,7 @@
 <mapper namespace="com.moava.member.mapper.MemberMapper">
 
     <select id="findByEmail" resultType="com.moava.member.dto.MemberResponse">
-        SELECT MEMBER_ID AS ID, NAME, EMAIL, PHONE_ENC AS PHONE_ENC, REGION_SIDO AS REGION_SIDO, REGION_SIGUNGU AS REGION_SIGUNGU, STATUS, BANNED_YN AS BANNED_YN, KEY_VER AS KEY_VER
+        SELECT MEMBER_ID AS ID, NAME, EMAIL, PHONE_ENC AS PHONE_ENC, REGION_SIDO AS REGION_SIDO, REGION_SIGUNGU AS REGION_SIGUNGU, REGION_DONG AS REGION_DONG, STATUS, BANNED_YN AS BANNED_YN, KEY_VER AS KEY_VER
           FROM MEMBER
          WHERE LOWER(EMAIL) = LOWER(#{email})
     </select>
@@ -33,6 +33,7 @@
             PHONE_ENC AS PHONE_ENC,
             REGION_SIDO AS REGION_SIDO,
             REGION_SIGUNGU AS REGION_SIGUNGU,
+            REGION_DONG AS REGION_DONG,
             STATUS,
             BANNED_YN,
             KEY_VER
@@ -45,10 +46,10 @@
     <insert id="insertUser">
         INSERT INTO MEMBER
             (MEMBER_ID, NAME, EMAIL, PASSWORD_HASH, PHONE_ENC, REGION_SIDO,
-             REGION_SIGUNGU, STATUS, BANNED_YN, KEY_VER)
+             REGION_SIGUNGU, REGION_DONG, STATUS, BANNED_YN, KEY_VER)
         VALUES
             (SEQ_MEMBER.NEXTVAL, #{name}, #{email}, #{passwordHash}, #{phoneEnc}, #{regionSido},
-             #{regionSigungu}, 'ACTIVE', 'N', #{keyVer})
+             #{regionSigungu}, #{regionDong, jdbcType=VARCHAR}, 'ACTIVE', 'N', #{keyVer})
     </insert>
 
     <select id="findPasswordHashById" resultType="string">
@@ -75,6 +76,7 @@
             KEY_VER = #{keyVer},
             REGION_SIDO = #{regionSido},
             REGION_SIGUNGU = #{regionSigungu},
+            REGION_DONG = #{regionDong, jdbcType=VARCHAR},
             UPDATED_AT = SYSDATE
         WHERE MEMBER_ID = #{memberId}
             AND STATUS = 'ACTIVE'
@@ -94,12 +96,9 @@
     <update id="withdraw">
         UPDATE MEMBER
         SET
-            NAME = '탈퇴회원',
-            EMAIL = NULL,
-            PHONE_ENC = NULL,
-            PASSWORD_HASH = #{passwordHash},
             STATUS = 'WITHDRAWN',
             WITHDRAWN_AT = SYSDATE,
+            PURGE_DUE_AT = SYSDATE + 30,
             UPDATED_AT = SYSDATE
         WHERE MEMBER_ID = #{memberId}
             AND STATUS = 'ACTIVE'
@@ -112,13 +111,58 @@
             ON GG.GROUP_ID = GM.GROUP_ID
         WHERE GM.MEMBER_ID = #{memberId}
             AND GM.STATUS = 'ACTIVE'
-            AND GG.STATUS = 'ACTIVE'
+            AND GG.STATUS IN ('RECRUITING', 'ACTIVE', 'DISSOLVE_PENDING')
     </select>
 
     <select id="countOwnedActiveGroups" resultType="int">
         SELECT COUNT(*)
         FROM GYE_GROUP
         WHERE OWNER_ID = #{memberId}
-            AND STATUS = 'ACTIVE'
+            AND STATUS IN ('RECRUITING', 'ACTIVE', 'DISSOLVE_PENDING')
     </select>
+
+    <!--탈퇴 회원의 대기중인 가입 신청 정리-->
+    <update id="rejectPendingJoinRequests">
+        UPDATE JOIN_REQUEST
+        SET STATUS = 'REJECTED',
+            DECIDED_AT = SYSDATE
+        WHERE MEMBER_ID = #{memberId}
+            AND STATUS = 'PENDING'
+    </update>
+
+    <!--탈퇴 회원의 선택 약관 동의 철회-->
+    <update id="revokeOptionalConsents">
+        UPDATE MEMBER_CONSENT
+        SET AGREED_YN = 'N',
+            REVOKED_AT = SYSDATE
+        WHERE MEMBER_ID = #{memberId}
+            AND AGREED_YN = 'Y'
+            AND TERMS_ID IN (SELECT TERMS_ID
+                            FROM TERMS_POLICY
+                            WHERE REQUIRED_YN = 'N')
+    </update>
+
+    <select id="findExpiredWithdrawnMember" resultType="java.lang.Long">
+        SELECT MEMBER_ID
+        FROM MEMBER
+        WHERE STATUS = 'WITHDRAWN'
+            AND PURGE_DUE_AT IS NOT NULL
+            AND PURGE_DUE_AT &lt;= SYSDATE
+    </select>
+
+    <update id="deleteWithdrawnMember">
+        UPDATE MEMBER
+        SET
+            NAME = '탈퇴회원',
+            EMAIL = NULL,
+            PASSWORD_HASH = NULL,
+            PHONE_ENC = NULL,
+            SYN_ID = NULL,
+            STATUS = 'DELETED',
+            PURGED_AT = SYSDATE,
+            UPDATED_AT = SYSDATE
+        WHERE MEMBER_ID = #{memberId}
+            AND STATUS = 'WITHDRAWN'
+            AND PURGE_DUE_AT &lt;= SYSDATE
+    </update>
 </mapper>

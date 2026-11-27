@@ -15,6 +15,7 @@ import { groups, finance } from '../api';
 import { PageHead, Card } from '../components/ui';
 import { LoadState } from '../components/shared';
 import { wonFromKrw } from '../common/format';
+import { formatRegionFromServer } from '../common/regions';
 
 export default function MyGroups() {
   const nav = useNavigate();
@@ -169,9 +170,7 @@ export default function MyGroups() {
 
                 {/* 모임 기본 정보 */}
                 <p className="muted mg-meta">
-                  {[g.regionSido, g.regionSigungu]
-                    .filter(Boolean)
-                    .join(' ')}
+                  {formatRegionFromServer(g)}
 
                   {' · '}
                   {groups.purposeLabel(g.purpose)}
@@ -253,9 +252,7 @@ export default function MyGroups() {
                       <div>
                         <span>지역</span>
                         <strong>
-                          {[g.regionSido, g.regionSigungu]
-                            .filter(Boolean)
-                            .join(' ') || '미등록'}
+                          {formatRegionFromServer(g, '미등록')}
                         </strong>
                       </div>
 

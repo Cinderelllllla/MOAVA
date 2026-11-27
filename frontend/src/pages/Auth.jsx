@@ -19,6 +19,7 @@ import { useApp } from '../common/store';
 import { auth } from '../api';
 import { Input } from '../components/ui';
 import { Logo } from '../components/Icon';
+import RegionSelector from '../components/RegionSelector';
 
 // ========================================
 // 공통 인증 화면
@@ -195,6 +196,10 @@ export function Login() {
           회원가입
         </Link>
       </div>
+
+      <div className="auth-admin-entry">
+        <Link to="/admin/login">관리자 로그인 →</Link>
+      </div>
     </AuthCard>
   );
 }
@@ -215,6 +220,7 @@ export function Signup() {
     phone: '',
     regionSido: '',
     regionSigungu: '',
+    regionDong: '',
     termsAgreed: false,
     privacyAgreed: false
   });
@@ -323,25 +329,22 @@ export function Signup() {
           onChange={on('phone')}
         />
 
-        <div className="form-grid">
-          <Input
-            label="활동 지역 · 시/도"
-            name="regionSido"
-            placeholder="예: 서울"
-            required
-            value={f.regionSido}
-            onChange={on('regionSido')}
-          />
-
-          <Input
-            label="활동 지역 · 시/군/구"
-            name="regionSigungu"
-            placeholder="예: 마포구"
-            required
-            value={f.regionSigungu}
-            onChange={on('regionSigungu')}
-          />
-        </div>
+        <RegionSelector
+          mode="required"
+          className="region-selector-grid region-selector-compact"
+          sido={f.regionSido}
+          sigungu={f.regionSigungu}
+          dong={f.regionDong}
+          disabled={submitting}
+          onChange={({ sido, sigungu, dong }) =>
+            setF(prev => ({
+              ...prev,
+              regionSido: sido,
+              regionSigungu: sigungu,
+              regionDong: dong
+            }))
+          }
+        />
 
         <label className="checkline">
           <input

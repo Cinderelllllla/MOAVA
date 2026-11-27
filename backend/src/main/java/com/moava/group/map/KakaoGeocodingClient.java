@@ -73,9 +73,15 @@ public class KakaoGeocodingClient {
 
     /** 시/도와 시/군/구를 조합해 대표 좌표를 조회한다. */
     public Optional<GeoPoint> geocodeRegion(String regionSido, String regionSigungu) {
-        String sido = regionSido == null ? "" : regionSido.strip();
-        String sigungu = regionSigungu == null ? "" : regionSigungu.strip();
-        String query = (sido + " " + sigungu).strip();
+        return geocodeRegion(regionSido, regionSigungu, null);
+    }
+
+    /** 시/도, 시/군/구, 읍/면/동을 조합해 대표 좌표를 조회한다. */
+    public Optional<GeoPoint> geocodeRegion(String regionSido, String regionSigungu, String regionDong) {
+        String query = java.util.stream.Stream.of(regionSido, regionSigungu, regionDong)
+                .filter(s -> s != null && !s.isBlank())
+                .map(String::strip)
+                .collect(java.util.stream.Collectors.joining(" "));
         return geocode(query);
     }
 
