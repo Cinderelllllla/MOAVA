@@ -260,6 +260,21 @@ class GroupQueryServiceTest {
         verify(mapper).findPublicGroups(10L, "마포구", "SAVINGS", "100\\%목돈");
     }
 
+    @Test
+    @DisplayName("지도·공개 모임 목록 조회 시 모집 마감(ACTIVE) 또는 정원이 가득 찬 모임은 제외된다")
+    void excludesClosedAndFullGroupsFromPublicMapList() {
+        when(mapper.findPublicGroups(10L, null, null, null)).thenReturn(List.of(
+                recruitingRow(1L, 200_000L, 6, 3, "RECRUITING", "PUBLIC", "NONE"),
+                recruitingRow(2L, 200_000L, 6, 4, "ACTIVE", "PUBLIC", "NONE"),
+                recruitingRow(3L, 200_000L, 6, 6, "RECRUITING", "PUBLIC", "NONE")
+        ));
+
+        List<PublicGroupResponse> res = service.getPublicGroups(10L, null, null, null);
+
+        assertEquals(1, res.size());
+        assertEquals(1L, res.get(0).groupId());
+    }
+
     private static PublicGroupRow recruitingRow(
             Long groupId,
             Long amount,

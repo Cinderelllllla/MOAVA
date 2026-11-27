@@ -177,6 +177,44 @@ public interface MockBankLedgerMapper {
             """)
     int countOwnedActiveGroups(@Param("memberId") Long memberId);
 
+    @Update("""
+            UPDATE MOCK_KFTC_ACCOUNT
+            SET STATUS     = 'CLOSED',
+                UPDATED_AT = #{updatedAt, jdbcType=TIMESTAMP}
+            WHERE USER_SEQ_NO = #{userSeqNo}
+              AND BANK_CODE = #{bankCode}
+              AND STATUS <> 'CLOSED'
+            """)
+    int closeAccountsByUserAndBank(
+            @Param("userSeqNo") String userSeqNo,
+            @Param("bankCode") String bankCode,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
+    @Select("""
+            SELECT COUNT(*)
+            FROM MOCK_KFTC_ACCOUNT
+            WHERE USER_SEQ_NO = #{userSeqNo}
+              AND STATUS = 'ACTIVE'
+            """)
+    int countActiveAccountsByUserSeqNo(@Param("userSeqNo") String userSeqNo);
+
+    @Select("""
+            SELECT
+                TO_CHAR(t.TRAN_AT, 'YYYYMM') AS yearMonth,
+                NVL(SUM(CASE WHEN t.INOUT_TYPE = '입금' THEN t.TRAN_AMT ELSE 0 END), 0) AS totalDepositAmt,
+                NVL(SUM(CASE WHEN t.INOUT_TYPE = '출금' THEN t.TRAN_AMT ELSE 0 END), 0) AS totalWithdrawAmt,
+                COUNT(*) AS txCount
+            FROM MOCK_KFTC_TRANSACTION t
+            INNER JOIN MOCK_KFTC_ACCOUNT a
+              ON a.FINTECH_USE_NUM = t.FINTECH_USE_NUM
+            WHERE a.USER_SEQ_NO = #{userSeqNo}
+              AND a.STATUS <> 'CLOSED'
+            GROUP BY TO_CHAR(t.TRAN_AT, 'YYYYMM')
+            ORDER BY TO_CHAR(t.TRAN_AT, 'YYYYMM') ASC
+            """)
+    List<MockBankDto.MonthlyAggregate> findMonthlySummaryByUserSeqNo(@Param("userSeqNo") String userSeqNo);
+
     @Select("""
             SELECT
                 g.GROUP_ID AS groupId,

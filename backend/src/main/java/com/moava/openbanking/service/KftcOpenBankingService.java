@@ -151,7 +151,7 @@ public class KftcOpenBankingService {
                 fintechUseNum,
                 inoutFilter,
                 fromDate.atStartOfDay(),
-                toDate.atTime(LocalTime.MAX),
+                toDate.plusDays(1).atStartOfDay(),
                 sortOrder,
                 limit
         );

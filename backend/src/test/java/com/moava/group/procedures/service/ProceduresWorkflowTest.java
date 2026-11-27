@@ -144,28 +144,74 @@ class ProceduresWorkflowTest {
         private PayoutOrderService service;
 
         @Test
-        void requestAllowsRecruitingGroupAndRejectsDissolvePending() {
+        void requestRejectsRecruitingAndDissolvePendingAndAllowsActiveWithConfirmedProof() {
             when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
+            PayoutOrderDTO.RequestForm form = new PayoutOrderDTO.RequestForm();
+            form.setRoundNo(1);
+            form.setReason("운영 개시 및 납입 완료 후 신청");
+
+            // RECRUITING 차단
             when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "RECRUITING", 3));
+            ResponseStatusException recruitingError = assertThrows(ResponseStatusException.class,
+                    () -> service.requestOrUpdatePayoutOrder(GROUP_ID, MEMBER_ID, form));
+            assertEquals(HttpStatus.CONFLICT, recruitingError.getStatusCode());
+
+            // DISSOLVE_PENDING 차단
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "DISSOLVE_PENDING", 3));
+            ResponseStatusException dissolveError = assertThrows(ResponseStatusException.class,
+                    () -> service.requestOrUpdatePayoutOrder(GROUP_ID, MEMBER_ID, form));
+            assertEquals(HttpStatus.CONFLICT, dissolveError.getStatusCode());
+
+            // ACTIVE + 납입 증빙 승인 완료 -> 허용
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
             when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.countConfirmedPaymentProof(GROUP_ID, MEMBER_ID)).thenReturn(1);
             when(mapper.countConfirmedRequestByMember(GROUP_ID, MEMBER_ID)).thenReturn(0);
             when(mapper.selectActiveRequestByMember(GROUP_ID, MEMBER_ID)).thenReturn(null);
             when(mapper.countConfirmedRoundDuplicate(GROUP_ID, 1, -1L)).thenReturn(0);
             when(mapper.selectAiSuggestedRound(GROUP_ID, MEMBER_ID)).thenReturn(2);
 
-            PayoutOrderDTO.RequestForm form = new PayoutOrderDTO.RequestForm();
-            form.setRoundNo(1);
-            form.setReason("모집 중 사전 신청");
-
             String message = service.requestOrUpdatePayoutOrder(GROUP_ID, MEMBER_ID, form);
 
             assertEquals("수령 순서 신청이 완료되었습니다.", message);
-            verify(mapper).insertPayoutRequest(GROUP_ID, MEMBER_ID, 1, "모집 중 사전 신청", 2);
+            verify(mapper).insertPayoutRequest(GROUP_ID, MEMBER_ID, 1, "운영 개시 및 납입 완료 후 신청", 2);
+        }
 
-            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "DISSOLVE_PENDING", 3));
+        @Test
+        void requestRejectsMemberWithoutConfirmedPaymentProof() {
+            when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
+            when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.countConfirmedPaymentProof(GROUP_ID, MEMBER_ID)).thenReturn(0);
+
+            PayoutOrderDTO.RequestForm form = new PayoutOrderDTO.RequestForm();
+            form.setRoundNo(1);
+            form.setReason("납입 전 수령순서 신청");
+
             ResponseStatusException error = assertThrows(ResponseStatusException.class,
                     () -> service.requestOrUpdatePayoutOrder(GROUP_ID, MEMBER_ID, form));
+
             assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+            verify(mapper, never()).insertPayoutRequest(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        void requestCapsRoundByActiveMembersWhenClosedBelowMaxMembers() {
+            when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(
+                    Map.of("OWNER_ID", OWNER_ID, "STATUS", "ACTIVE", "MAX_MEMBERS", 6, "ACTIVE_MEMBERS", 3));
+            when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.countConfirmedPaymentProof(GROUP_ID, MEMBER_ID)).thenReturn(1);
+
+            PayoutOrderDTO.RequestForm form = new PayoutOrderDTO.RequestForm();
+            form.setRoundNo(4);
+            form.setReason("3명 마감 모임에 4회차 신청");
+
+            ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> service.requestOrUpdatePayoutOrder(GROUP_ID, MEMBER_ID, form));
+
+            assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+            verify(mapper, never()).insertPayoutRequest(any(), any(), any(), any(), any());
         }
 
         @Test
@@ -173,6 +219,7 @@ class ProceduresWorkflowTest {
             when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
             when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
             when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.countConfirmedPaymentProof(GROUP_ID, MEMBER_ID)).thenReturn(1);
             when(mapper.countConfirmedRequestByMember(GROUP_ID, MEMBER_ID)).thenReturn(0);
             when(mapper.selectActiveRequestByMember(GROUP_ID, MEMBER_ID)).thenReturn(null);
             when(mapper.countConfirmedRoundDuplicate(GROUP_ID, 2, -1L)).thenReturn(1);
@@ -228,6 +275,7 @@ class ProceduresWorkflowTest {
             when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
             when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
             when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.countConfirmedPaymentProof(GROUP_ID, MEMBER_ID)).thenReturn(1);
             PayoutOrderDTO.RequestForm form = new PayoutOrderDTO.RequestForm();
             form.setRoundNo(4);
             form.setReason("요청 사유");
@@ -256,12 +304,29 @@ class ProceduresWorkflowTest {
         }
 
         @Test
+        void confirmationRejectsApplicantWithoutConfirmedPaymentProof() {
+            when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
+            when(mapper.selectPayoutRequestForUpdate(GROUP_ID, REQUEST_ID))
+                    .thenReturn(payoutRequest("CONSENT_PENDING"));
+            when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.countConfirmedPaymentProof(GROUP_ID, MEMBER_ID)).thenReturn(0);
+
+            ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> service.confirmPayoutOrder(GROUP_ID, REQUEST_ID, OWNER_ID));
+
+            assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+            verify(mapper, never()).updatePayoutRequestStatus(any(), any(), any(), any());
+        }
+
+        @Test
         void confirmationConflictsUntilEveryActiveMemberHasAgreed() {
             when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
             when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
             when(mapper.selectPayoutRequestForUpdate(GROUP_ID, REQUEST_ID))
                     .thenReturn(payoutRequest("CONSENT_PENDING"));
             when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.countConfirmedPaymentProof(GROUP_ID, MEMBER_ID)).thenReturn(1);
             when(mapper.countConfirmedRoundDuplicate(GROUP_ID, 2, REQUEST_ID)).thenReturn(0);
             when(mapper.countConfirmedRequestByMember(GROUP_ID, MEMBER_ID)).thenReturn(0);
             when(mapper.lockActiveConsentTargets(GROUP_ID, REQUEST_ID, MEMBER_ID)).thenReturn(List.of(30L));
@@ -282,6 +347,7 @@ class ProceduresWorkflowTest {
             when(mapper.selectPayoutRequestForUpdate(GROUP_ID, REQUEST_ID))
                     .thenReturn(payoutRequest("CONSENT_PENDING"));
             when(mapper.countActiveMember(GROUP_ID, MEMBER_ID)).thenReturn(1);
+            when(mapper.countConfirmedPaymentProof(GROUP_ID, MEMBER_ID)).thenReturn(1);
             when(mapper.countConfirmedRoundDuplicate(GROUP_ID, 2, REQUEST_ID)).thenReturn(0);
             when(mapper.countConfirmedRequestByMember(GROUP_ID, MEMBER_ID)).thenReturn(0);
             when(mapper.lockActiveConsentTargets(GROUP_ID, REQUEST_ID, MEMBER_ID)).thenReturn(List.of(30L));

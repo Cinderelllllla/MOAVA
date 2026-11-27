@@ -164,8 +164,12 @@ public class KftcSecurityGuard {
             throw new KftcOpenBankingException(KftcResponseCode.INVALID_PARAMETER, "통장 적요에 허용되지 않은 특수문자/스크립트가 포함되어 있습니다.");
         }
         String trimmed = raw.trim();
-        if (trimmed.length() > 40) {
-            throw new KftcOpenBankingException(KftcResponseCode.INVALID_PARAMETER, "통장 적요는 40자를 초과할 수 없습니다.");
+        if (trimmed.length() > 40
+                || trimmed.getBytes(StandardCharsets.UTF_8).length > 90) {
+            throw new KftcOpenBankingException(
+                    KftcResponseCode.INVALID_PARAMETER,
+                    "통장 적요는 90바이트(한글 최대 30자)를 초과할 수 없습니다."
+            );
         }
         return trimmed;
     }

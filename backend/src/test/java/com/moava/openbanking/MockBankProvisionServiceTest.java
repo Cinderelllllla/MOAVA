@@ -197,6 +197,21 @@ class MockBankProvisionServiceTest {
         assertTrue(blocked.startsWith("blocked:"));
     }
 
+    @Test
+    void 연결해제_비활성화시_계좌종료_및_활성계좌_0건일때만_OAuth토큰_폐기() {
+        when(ledgerMapper.closeAccountsByUserAndBank(eq("1000000010"), eq("004"), any())).thenReturn(1);
+        when(ledgerMapper.countActiveAccountsByUserSeqNo("1000000010")).thenReturn(1, 0);
+
+        // 1) 다른 은행 활성 계좌가 1건 남아 있으면 OAuth 토큰 유지
+        service.deactivateBankAccountsForDisconnect(10L, CodefBankCode.KB);
+        verify(ledgerMapper).closeAccountsByUserAndBank(eq("1000000010"), eq("004"), any());
+        verify(kftcMapper, never()).revokeOAuthTokensByUserSeqNo(anyString());
+
+        // 2) 남은 활성 계좌가 0건이면 OAuth 토큰 일괄 폐기
+        service.deactivateBankAccountsForDisconnect(10L, CodefBankCode.KB);
+        verify(kftcMapper).revokeOAuthTokensByUserSeqNo("1000000010");
+    }
+
     private static CodefDto.TransactionItem codefTx(
             String date, String time, String inout, long amt, long afterBal, String desc1, String desc3
     ) {

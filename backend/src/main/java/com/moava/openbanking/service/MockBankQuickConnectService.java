@@ -50,7 +50,6 @@ public class MockBankQuickConnectService {
     private static final int MAX_VERIFY_ATTEMPTS = 5;
     private static final int MAX_SESSIONS = 5_000;
     private static final String QUICK_OAUTH_SCOPE = "login inquiry transfer";
-    private static final String QUICK_OAUTH_REDIRECT_URI = "http://localhost:3000/openbanking/bank-auth";
 
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final DateTimeFormatter HHMMSS = DateTimeFormatter.ofPattern("HHmmss");
@@ -230,9 +229,10 @@ public class MockBankQuickConnectService {
             String userSeqNo = provisionService.deriveUserSeqNo(memberId);
 
             // 1) KFTC 모의 OAuth 인가코드 발급 -> Access Token 교환 (실제 OAuth 원장 기록)
+            String redirectUri = openBankingProperties.getQuickOAuthRedirectUri();
             KftcOAuthDto.AuthorizeRequest authzReq = new KftcOAuthDto.AuthorizeRequest();
             authzReq.setClientId(openBankingProperties.getClientId());
-            authzReq.setRedirectUri(QUICK_OAUTH_REDIRECT_URI);
+            authzReq.setRedirectUri(redirectUri);
             authzReq.setScope(QUICK_OAUTH_SCOPE);
             authzReq.setUserSeqNo(userSeqNo);
             authzReq.setState(trimmedToken.substring(0, Math.min(16, trimmedToken.length())));
@@ -243,44 +243,49 @@ public class MockBankQuickConnectService {
             tokenReq.setCode(authzRes.getCode());
             tokenReq.setClientId(openBankingProperties.getClientId());
             tokenReq.setClientSecret(openBankingProperties.getClientSecret());
-            tokenReq.setRedirectUri(QUICK_OAUTH_REDIRECT_URI);
+            tokenReq.setRedirectUri(redirectUri);
             KftcOAuthDto.TokenResponse tokenRes = kftcOAuthService.issueToken(tokenReq, ip);
 
             // 2) 모의은행 원장(MOCK_KFTC_ACCOUNT + 1원 인증 입금 및 초기 잔액 거래내역) 적재
-            //    - 신규 계좌: initialBalanceOverride 미지정 시 기본 100만 원 적용
-            //    - 기존 계좌 재연결: initialBalanceOverride 미지정 시 기존 잔액 보존 및 중복 초기잔액 행 미생성
+            //    - 신규 계좌: initialBalanceOverride 미지정 시 기본 100만 원 적용 (0원 지정 시 1원 입금 행 생략)
+            //    - 기존 계좌 재연결: initialBalanceOverride 미지정 시 기존 잔액 + 1원 인증 입금 반영으로 잔액·원장 정합성 유지
             LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
             KftcRecordDto.AccountRecord existingAccount =
                     ledgerMapper.findAccountByBankAndDigits(session.bank.getKftcCode(), session.accountDigits);
             long newAccountDefaultBalance = session.initialBalanceOverride != null
                     ? session.initialBalanceOverride
                     : DEFAULT_INITIAL_MOCK_BALANCE;
-            long txAfterBalance = existingAccount != null
-                    ? (session.initialBalanceOverride != null
-                        ? session.initialBalanceOverride
-                        : (existingAccount.getBalance() != null ? existingAccount.getBalance() : 0L))
+            boolean isReconnectWithoutOverride = existingAccount != null && session.initialBalanceOverride == null;
+            long existingBalance = (existingAccount != null && existingAccount.getBalance() != null)
+                    ? existingAccount.getBalance()
+                    : 0L;
+            boolean canCreditOneWonOnReconnect = isReconnectWithoutOverride && existingBalance < MAX_MOCK_BALANCE;
+            long targetBalanceForProvision = isReconnectWithoutOverride
+                    ? (canCreditOneWonOnReconnect ? existingBalance + 1L : existingBalance)
                     : newAccountDefaultBalance;
+            boolean updateBalanceIfExists = canCreditOneWonOnReconnect;
 
             List<CodefDto.TransactionItem> seedTxs = buildInitialSeedTransactions(
                     session.bank.getBankName(),
-                    txAfterBalance,
+                    targetBalanceForProvision,
                     "모아바" + verifiedAuthCode,
                     now,
-                    existingAccount == null
+                    existingAccount == null,
+                    !isReconnectWithoutOverride || canCreditOneWonOnReconnect
             );
             MockBankDto.ProvisionResult mockAccount = provisionService.provisionFromCodef(
                     memberId,
                     session.bank,
                     session.accountDigits,
                     session.holderName,
-                    newAccountDefaultBalance,
+                    targetBalanceForProvision,
                     seedTxs,
                     session.initialBalanceOverride,
                     session.leaderAccount,
-                    false
+                    updateBalanceIfExists
             );
 
-            // 3) CODEF_CONNECTION 인증 이력 기록 (기존 CODEF 실연결이 있으면 connectedId 보존, F19 계좌 소유 인증 즉시 호환)
+            // 3) CODEF_CONNECTION 인증 이력 기록 (기존 CODEF 실연결이 있으면 connectedId 보존, 키 로테이션 시 재암호화)
             int keyVer = cryptoKeyService.getCurrentKeyVersion();
             CodefDto.ConnectionRecord existingConn = codefAccountMapper.findConnection(memberId, session.bank.getCodefOrgCode());
             if (existingConn == null || existingConn.getConnectedIdEnc() == null || existingConn.getConnectedIdEnc().isBlank()) {
@@ -294,6 +299,16 @@ public class MockBankQuickConnectService {
                 connRec.setCreatedAt(now);
                 connRec.setUpdatedAt(now);
                 codefAccountMapper.upsertConnection(connRec);
+            } else if (existingConn.getKeyVer() != null && existingConn.getKeyVer() != keyVer) {
+                String plainConnId = cryptoKeyService.decrypt(existingConn.getConnectedIdEnc(), existingConn.getKeyVer());
+                String reEncryptedConnId = cryptoKeyService.encrypt(plainConnId, keyVer);
+                codefAccountMapper.updateConnectedIdEncryption(
+                        memberId,
+                        session.bank.getCodefOrgCode(),
+                        reEncryptedConnId,
+                        keyVer,
+                        now
+                );
             }
             String accountEnc = cryptoKeyService.encrypt(session.accountDigits, keyVer);
             String last4 = extractLast4(session.accountDigits);
@@ -344,8 +359,13 @@ public class MockBankQuickConnectService {
             long afterBalance,
             String depositMemo,
             LocalDateTime now,
-            boolean includeOpeningBalance
+            boolean includeOpeningBalance,
+            boolean includeOneWonTx
     ) {
+        if (!includeOneWonTx || afterBalance <= 0L) {
+            return List.of();
+        }
+
         String ymd = now.toLocalDate().format(YYYYMMDD);
         String hms = now.toLocalTime().format(HHMMSS);
 

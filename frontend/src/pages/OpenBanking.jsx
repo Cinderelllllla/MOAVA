@@ -97,17 +97,25 @@ export default function OpenBanking() {
       }));
 
       const firstFin = ov?.accounts?.[0]?.fintechUseNum || '';
-      const firstLeader = ov?.leaderTargets?.[0]?.fintechUseNum || '';
       setSelectedFinNum(prev => (prev && ov?.accounts?.some(a => a.fintechUseNum === prev) ? prev : firstFin));
       setDepositForm(f => ({
         ...f,
         fintechUseNum: f.fintechUseNum && ov?.accounts?.some(a => a.fintechUseNum === f.fintechUseNum) ? f.fintechUseNum : firstFin,
       }));
-      setTransferForm(f => ({
-        ...f,
-        fromFintechUseNum: f.fromFintechUseNum && ov?.accounts?.some(a => a.fintechUseNum === f.fromFintechUseNum) ? f.fromFintechUseNum : firstFin,
-        toFintechUseNum: f.toFintechUseNum && ov?.leaderTargets?.some(t => t.fintechUseNum === f.toFintechUseNum) ? f.toFintechUseNum : firstLeader,
-      }));
+      setTransferForm(f => {
+        const nextFrom = f.fromFintechUseNum && ov?.accounts?.some(a => a.fintechUseNum === f.fromFintechUseNum)
+          ? f.fromFintechUseNum
+          : firstFin;
+        const validTo = f.toFintechUseNum
+          && f.toFintechUseNum !== nextFrom
+          && ov?.leaderTargets?.some(t => t.fintechUseNum === f.toFintechUseNum);
+        const firstLeader = ov?.leaderTargets?.find(t => t.fintechUseNum !== nextFrom)?.fintechUseNum || '';
+        return {
+          ...f,
+          fromFintechUseNum: nextFrom,
+          toFintechUseNum: validTo ? f.toFintechUseNum : firstLeader,
+        };
+      });
     } catch (e) {
       setLoadError(e?.message || '오픈뱅킹 정보를 불러오지 못했어요.');
     } finally {
@@ -654,7 +662,7 @@ export default function OpenBanking() {
                     <Input
                       label="통장 적요"
                       name="depositContent"
-                      maxLength={40}
+                      maxLength={30}
                       value={depositForm.printContent}
                       onChange={e => setDepositForm(f => ({ ...f, printContent: e.target.value }))}
                     />
@@ -876,7 +884,7 @@ export default function OpenBanking() {
               </p>
               {leaderTargets.length === 0 ? (
                 <Empty>
-                  등록된 모임장 수취 계좌가 없어요. 테스트하려면 <strong>2. 모의은행 계좌·원장</strong> 탭에서 본인 계좌를 <em>모임장 계좌로 지정</em>해 보세요.
+                  이체 가능한 다른 모임장 수취 계좌가 없어요. 본인 계좌로의 자기 이체는 차단되며, 다른 계정의 <strong>2. 가상은행 계좌 · 거래원장</strong> 탭에서 <em>모임장 계좌</em>를 지정하면 목록에 표시됩니다.
                 </Empty>
               ) : (
                 <div className="list" style={{ marginTop: 12 }}>
@@ -892,7 +900,7 @@ export default function OpenBanking() {
                           ...f,
                           toFintechUseNum: t.fintechUseNum,
                           ...(t.monthlyDuesAmt ? { amount: String(t.monthlyDuesAmt) } : {}),
-                          ...(t.groupTitle ? { wdPrintContent: `${t.groupTitle} 회비`.slice(0, 40) } : {}),
+                          ...(t.groupTitle ? { wdPrintContent: `${t.groupTitle} 회비`.slice(0, 30) } : {}),
                         }))}
                       >
                         <div className="item-head">
@@ -937,7 +945,7 @@ export default function OpenBanking() {
                   name="toFinNum"
                   options={
                     leaderTargets.length
-                      ? leaderTargets.map(t => [
+                      ? Array.from(new Map(leaderTargets.map(t => [t.fintechUseNum, t])).values()).map(t => [
                           t.fintechUseNum,
                           `${t.bankName} ${t.accountMasked} · ${t.holderNameMasked}${t.groupTitle ? ` (${t.groupTitle})` : ''}`,
                         ])
@@ -960,14 +968,14 @@ export default function OpenBanking() {
                   <Input
                     label="내 통장 표시 적요"
                     name="wdPrint"
-                    maxLength={40}
+                    maxLength={30}
                     value={transferForm.wdPrintContent}
                     onChange={e => setTransferForm(f => ({ ...f, wdPrintContent: e.target.value }))}
                   />
                   <Input
                     label="받는 분 통장 표시 적요 (선택)"
                     name="dpsPrint"
-                    maxLength={40}
+                    maxLength={30}
                     placeholder="비우면 자동 생성"
                     value={transferForm.dpsPrintContent}
                     onChange={e => setTransferForm(f => ({ ...f, dpsPrintContent: e.target.value }))}

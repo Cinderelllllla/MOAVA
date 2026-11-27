@@ -60,12 +60,17 @@ public class PayoutOrderService {
         if (cleanReason.getBytes(StandardCharsets.UTF_8).length > 500) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "신청 사유는 500바이트 이하여야 합니다.");
         }
-        // 희망 회차 범위 검증 (1 ~ 최대 인원)
-        int maxMembers = ((Number) groupInfo.get("MAX_MEMBERS")).intValue();
+        // 월 납입 증빙 승인(CONFIRMED) 여부 확인
+        if (payoutOrderMapper.countConfirmedPaymentProof(groupId, memberId) == 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "월 납입액 증빙이 승인된 회원만 수령 순서를 신청할 수 있습니다. 먼저 납입 증빙을 등록·승인받아 주세요.");
+        }
+        // 희망 회차 범위 검증 (1 ~ 실제 확정 참여 인원 수)
+        int maxOrderRound = resolveMaxOrderRound(groupInfo);
         Integer roundNo = form.getEffectiveRoundNo();
-        if (roundNo == null || roundNo < 1 || roundNo > maxMembers) {
+        if (roundNo == null || roundNo < 1 || roundNo > maxOrderRound) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "희망 회차는 1회차부터 " + maxMembers + "회차 사이로 신청해야 합니다.");
+                    "희망 회차는 1회차부터 " + maxOrderRound + "회차 사이로 신청해야 합니다.");
         }
         if (payoutOrderMapper.countConfirmedRequestByMember(groupId, memberId) > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 수령 회차가 확정된 회원은 추가 신청할 수 없습니다.");
@@ -239,6 +244,10 @@ public class PayoutOrderService {
         if (payoutOrderMapper.countActiveMember(groupId, applicantId) == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "신청 회원이 현재 모임의 활성 회원이 아닙니다.");
         }
+        if (payoutOrderMapper.countConfirmedPaymentProof(groupId, applicantId) == 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "신청 회원의 월 납입 증빙이 승인되지 않아 수령 순서를 확정할 수 없습니다.");
+        }
         Integer roundNo = ((Number) req.get("ROUND_NO")).intValue();
 
         // [검증 1] 회차 중복 확정 불가 검사
@@ -342,10 +351,23 @@ public class PayoutOrderService {
 
     private void requireOrderConfigurableGroup(Map<String, Object> groupInfo) {
         Object status = groupInfo.get("STATUS");
-        if (!"RECRUITING".equals(status) && !"ACTIVE".equals(status)) {
+        if ("RECRUITING".equals(status)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "모집 중이거나 운영 중인 모임에서만 수령 순서 절차를 처리할 수 있습니다.");
+                    "모집이 마감되어 운영이 시작된 모임에서만 수령 순서 절차를 진행할 수 있습니다.");
         }
+        if (!"ACTIVE".equals(status)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "운영 중인 모임에서만 수령 순서 절차를 처리할 수 있습니다.");
+        }
+    }
+
+    private int resolveMaxOrderRound(Map<String, Object> groupInfo) {
+        Object activeMembersObj = groupInfo.get("ACTIVE_MEMBERS");
+        if (activeMembersObj instanceof Number && ((Number) activeMembersObj).intValue() > 0) {
+            return ((Number) activeMembersObj).intValue();
+        }
+        Object maxMembersObj = groupInfo.get("MAX_MEMBERS");
+        return maxMembersObj instanceof Number ? ((Number) maxMembersObj).intValue() : 1;
     }
 
     private void requireLeader(Map<String, Object> groupInfo, Long memberId) {

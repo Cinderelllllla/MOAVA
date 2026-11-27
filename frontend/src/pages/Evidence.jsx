@@ -291,10 +291,15 @@ export default function Evidence() {
                     </div>
                   </Field>
                 </div>
+                {selectedGroup.status === 'RECRUITING' && (
+                  <p className="info mini" style={{ marginBottom: 10 }}>
+                    아직 <b>모집 중</b>인 모임이에요. 모임장이 모집을 마감(정원의 절반 이상)하거나 정원이 채워져 운영이 시작된 뒤 납입 증빙을 등록할 수 있어요.
+                  </p>
+                )}
                 <p className="muted mini">
                   약정액(매월 {selectedGroup.payDay}일 · {won(amountInManwon)})에 맞는 증빙만 등록할 수 있습니다.
                 </p>
-                <button className="btn primary" disabled={!files.length}>
+                <button className="btn primary" disabled={!files.length || selectedGroup.status === 'RECRUITING'}>
                   {redo ? '보완 증빙 재제출' : '증빙 등록'}
                 </button>
                 {redo && <button

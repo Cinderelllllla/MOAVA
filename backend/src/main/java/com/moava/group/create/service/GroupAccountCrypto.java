@@ -14,6 +14,14 @@ public interface GroupAccountCrypto {
     
     // 복호화 기능 추가
     String decrypt(String encryptedText);
+
+    // 키 버전 지정 암호화 (기본 구현은 현재 키 버전 사용)
+    default String encrypt(String plainText, int keyVersion) {
+        return encrypt(plainText);
+    }
+
+    // 키 버전 지정 복호화 (기본 구현은 기본 복호화 위임)
+    default String decrypt(String encryptedText, int keyVersion) {
+        return decrypt(encryptedText);
+    }
 }
-//팀 공통 암호화 구현이 아직 없으므로, 
-// 암호화 알고리즘이나 비밀키를 임의로 정하지 않고 인터페이스만 준비

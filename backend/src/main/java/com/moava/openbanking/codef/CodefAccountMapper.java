@@ -35,6 +35,15 @@ public interface CodefAccountMapper {
             @Param("verifiedAt") LocalDateTime verifiedAt
     );
 
+    /** 키 로테이션 시 connectedId 재암호화 반영 */
+    int updateConnectedIdEncryption(
+            @Param("memberId") Long memberId,
+            @Param("organization") String organization,
+            @Param("connectedIdEnc") String connectedIdEnc,
+            @Param("keyVer") int keyVer,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
     /** 특정 은행 연결 삭제 */
     int deleteConnection(
             @Param("memberId") Long memberId,

@@ -477,17 +477,31 @@ public class GroupJoinRequestService {
         );
 
         // 15. 가입 승인 성공 시 신청자에게 알림
+        String groupTitle = String.valueOf(group.get("TITLE"));
         notificationService.notifyMember(
                 memberId,
                 NotifType.JOIN_RESULT,
                 requestId,
                 Map.of(
-                        "group", String.valueOf(group.get("TITLE")),
+                        "group", groupTitle,
                         "result", "승인"
                 )
         );
 
-        // 16. F12 - 커밋 후 ES 공개 모임 검색 인덱스 동기화 (참여 인원 갱신)
+        // 15-2. 정원에 도달한 경우 자동으로 모집 마감 (RECRUITING -> ACTIVE, STARTED_AT 기록)
+        int nextMembers = currentMembers + 1;
+        if (nextMembers >= maxMembers) {
+            finalizeRecruitmentClose(
+                    groupId,
+                    ownerId,
+                    groupTitle,
+                    nextMembers,
+                    maxMembers,
+                    true
+            );
+        }
+
+        // 16. F12 - 커밋 후 ES 공개 모임 검색 인덱스 동기화 (참여 인원·상태 갱신)
         if (eventPublisher != null) {
             eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
         }
@@ -603,5 +617,134 @@ public class GroupJoinRequestService {
                         "result", "거절"
                 )
         );
+    }
+
+    // ==================================================
+    // 모집 마감 (모임장 수동 마감: 정원의 절반 이상 충족 시)
+    // ==================================================
+
+    @Transactional
+    public Map<String, Object> closeRecruitment(
+            Long groupId,
+            Long ownerId
+    ) {
+        if (groupId == null || groupId <= 0
+                || ownerId == null || ownerId <= 0) {
+            throw new IllegalArgumentException(
+                    "모임 또는 회원 정보가 올바르지 않습니다."
+            );
+        }
+
+        Map<String, Object> group = mapper.lockGroup(groupId);
+        if (group == null) {
+            throw new IllegalArgumentException(
+                    "존재하지 않는 모임입니다."
+            );
+        }
+
+        Long actualOwnerId =
+                ((Number) group.get("OWNER_ID")).longValue();
+        if (!actualOwnerId.equals(ownerId)) {
+            throw new SecurityException(
+                    "모임장만 모집을 마감할 수 있습니다."
+            );
+        }
+
+        String status = String.valueOf(group.get("STATUS"));
+        if (!"RECRUITING".equals(status)) {
+            throw new IllegalStateException(
+                    "모집 중인 모임만 마감할 수 있습니다."
+            );
+        }
+
+        int maxMembers =
+                ((Number) group.get("MAX_MEMBERS")).intValue();
+        int currentMembers = mapper.countCurrentMembers(groupId);
+        int minRequired = Math.max(2, (maxMembers + 1) / 2);
+
+        if (currentMembers < minRequired) {
+            throw new IllegalStateException(
+                    "모집 마감은 정원의 절반 이상(최소 " + minRequired
+                            + "명)이 모여야 가능합니다. (현재 "
+                            + currentMembers + "/" + maxMembers + "명)"
+            );
+        }
+
+        String groupTitle = String.valueOf(group.get("TITLE"));
+        int rejectedPendingCount = finalizeRecruitmentClose(
+                groupId,
+                ownerId,
+                groupTitle,
+                currentMembers,
+                maxMembers,
+                false
+        );
+
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+        }
+
+        return Map.of(
+                "groupId", groupId,
+                "status", "ACTIVE",
+                "currentMembers", currentMembers,
+                "maxMembers", maxMembers,
+                "rejectedPendingCount", rejectedPendingCount,
+                "message", "모집을 마감하고 모임 운영을 시작했습니다."
+        );
+    }
+
+    private int finalizeRecruitmentClose(
+            Long groupId,
+            Long ownerId,
+            String groupTitle,
+            int finalMembers,
+            int maxMembers,
+            boolean autoClosed
+    ) {
+        int updated = mapper.closeRecruitment(groupId);
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "모집 마감 처리에 실패했습니다."
+            );
+        }
+
+        List<Map<String, Object>> pendingRequests =
+                mapper.findPendingRequestsForClose(groupId);
+        int rejectedCount = 0;
+
+        if (pendingRequests != null && !pendingRequests.isEmpty()) {
+            mapper.rejectAllPendingRequestsOnClose(groupId, ownerId);
+            rejectedCount = pendingRequests.size();
+            for (Map<String, Object> pending : pendingRequests) {
+                Long pendingReqId =
+                        ((Number) pending.get("JOIN_REQUEST_ID")).longValue();
+                Long pendingMemberId =
+                        ((Number) pending.get("MEMBER_ID")).longValue();
+                notificationService.notifyMember(
+                        pendingMemberId,
+                        NotifType.JOIN_RESULT,
+                        pendingReqId,
+                        Map.of(
+                                "group", groupTitle,
+                                "result", "모집 마감으로 거절"
+                        )
+                );
+            }
+        }
+
+        String auditDesc = (autoClosed
+                ? "정원 도달로 모집 자동 마감 및 운영 개시 ("
+                : "모임장 모집 마감 및 운영 개시 (")
+                + finalMembers + "/" + maxMembers + "명)";
+        saveJoinAuditLog(
+                groupId,
+                ownerId,
+                null,
+                "RECRUIT_CLOSE",
+                auditDesc
+        );
+
+        return rejectedCount;
     }
 }

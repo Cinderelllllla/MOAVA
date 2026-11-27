@@ -162,10 +162,17 @@
     <delete id="deleteAllGyeMembers">DELETE FROM GYE_MEMBER</delete>
     <delete id="deleteAllGyeGroups">DELETE FROM GYE_GROUP</delete>
 
+    <delete id="deleteAllMockKftcTransactions">DELETE FROM MOCK_KFTC_TRANSACTION</delete>
+    <delete id="deleteAllMockKftcAccounts">DELETE FROM MOCK_KFTC_ACCOUNT</delete>
+    <delete id="deleteAllMockKftcOauthCodes">DELETE FROM MOCK_KFTC_OAUTH_CODE</delete>
+    <delete id="deleteAllMockKftcOauthTokens">DELETE FROM MOCK_KFTC_OAUTH_TOKEN</delete>
+    <delete id="deleteAllCodefConnections">DELETE FROM CODEF_CONNECTION</delete>
+
     <delete id="deleteAllRiskScores">DELETE FROM RISK_SCORE</delete>
     <delete id="deleteAllFinanceMonthly">DELETE FROM FINANCE_MONTHLY</delete>
     <delete id="deleteAllFinanceProfiles">DELETE FROM FINANCE_PROFILE</delete>
     <delete id="deleteAllMemberConsents">DELETE FROM MEMBER_CONSENT</delete>
+    <delete id="deleteAllMemberSocialAccounts">DELETE FROM MEMBER_SOCIAL_ACCOUNT</delete>
     <delete id="deleteAllMembers">DELETE FROM MEMBER</delete>
 
 </mapper>

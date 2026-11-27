@@ -130,4 +130,21 @@ public interface GroupJoinRequestMapper {
             @Param("eventType") String eventType,
             @Param("description") String description
     );
+
+    // ==========================================
+    // 모집 마감 (RECRUITING -> ACTIVE, STARTED_AT 설정)
+    // ==========================================
+
+    int closeRecruitment(
+            @Param("groupId") Long groupId
+    );
+
+    List<Map<String, Object>> findPendingRequestsForClose(
+            @Param("groupId") Long groupId
+    );
+
+    int rejectAllPendingRequestsOnClose(
+            @Param("groupId") Long groupId,
+            @Param("decidedBy") Long decidedBy
+    );
 }

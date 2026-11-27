@@ -8,17 +8,17 @@ import Icon, { Logo } from './Icon';
 
 export const MENU = [
   ['/dashboard', '◈', '마이 홈'], ['/journey', '✧', '맞춤 추천 시작'], ['/finance', '◉', 'AI 금융 분석'], ['/finance/monthly', '▤', '월별 금융 데이터'], ['/openbanking', '₩', '오픈뱅킹 · 계좌'],
-  ['/groups', '⌖', '지역 계모임 찾기 · 지도'], ['/simulator', '◷', '계모임 시뮬레이터'], ['/my-groups', '☁', '내 계모임'], ['/groups/new', '✦', '계모임 만들기'],
+  ['/groups', '⌖', '지역 계모임 찾기 · 지도'], ['/simulator', '◷', '계모임 시뮬레이터'], ['/my-groups', '☁', '내 계모임'], ['/groups/new', '✦', '계모임 만들기'], ['/invite', '🔒', '초대코드로 가입'],
   ['/operations', '⚙', '운영 홈'], ['/procedures', '≡', '모임 절차'], ['/chat', '☏', '모임별 채팅'], ['/evidence', '▣', '납입 증빙'], ['/support', '☏', '고객센터 · 신고'],
 ];
 export const ADMIN_MENU = [
   ['/admin', '◈', '관리자 대시보드'], ['/admin/groups', '▤', '계모임 관리 · 이력'], ['/admin/sanctions', '⚑', '신고 · 제재 관리'], ['/admin/dissolve', '◇', '해산 승인'],
   ['/admin/refs', '▣', '거래 참조번호 관리'], ['/admin/overdue', '◷', '미납 관리'], ['/admin/support', '☏', '고객센터 · 신고 처리'], ['/admin/notifications', '♧', '관리자 알림'],
 ];
-const GROUPS = [{ key: 'ai', title: 'AI', icon: '✧', pages: ['/finance', '/simulator'] }, { key: 'group', title: '계모임', icon: '☁', pages: ['/my-groups', '/groups/new', '/operations', '/procedures', '/chat', '/groups'] }];
+const GROUPS = [{ key: 'ai', title: 'AI', icon: '✧', pages: ['/finance', '/simulator'] }, { key: 'group', title: '계모임', icon: '☁', pages: ['/my-groups', '/groups/new', '/invite', '/operations', '/procedures', '/chat', '/groups'] }];
 const TITLES = Object.fromEntries([...MENU, ...ADMIN_MENU].map(([p, , t]) => [p, t]));
 /* 같은 특수문자를 쓰는 메뉴(채팅·고객센터 등)를 구분하기 위한 경로별 아이콘 */
-const ROUTE_ICON = { '/openbanking': 'wallet', '/support': 'headset', '/admin/support': 'headset', '/admin/groups': 'users', '/admin/overdue': 'bell', '/admin/notifications': 'bell', '/admin/refs': 'file' };
+const ROUTE_ICON = { '/openbanking': 'wallet', '/invite': 'lock', '/support': 'headset', '/admin/support': 'headset', '/admin/groups': 'users', '/admin/overdue': 'bell', '/admin/notifications': 'bell', '/admin/refs': 'file' };
 const NavIco = ({ p, icon }) => <span className="nav-ico"><Icon name={ROUTE_ICON[p]} g={icon} /></span>;
 const QUOTES = ['서로의 목표를 존중하며 안전하게 모아봐요.', '작은 저축이 모여 더 큰 내일을 만들어요.', '함께 정한 약속이 든든한 신뢰가 돼요.', '오늘의 꾸준함이 내일의 여유를 선물해요.', '혼자보다 함께라서 목표에 더 가까워져요.'];
 

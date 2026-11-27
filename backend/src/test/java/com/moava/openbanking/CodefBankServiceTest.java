@@ -87,6 +87,10 @@ class CodefBankServiceTest {
         assertEquals(CodefBankCode.KB, CodefBankCode.resolve("국민은행"));
         assertEquals(CodefBankCode.KB, CodefBankCode.resolve("KB국민"));
         assertEquals(CodefBankCode.SHINHAN, CodefBankCode.resolve("신한"));
+        assertEquals(CodefBankCode.KDB, CodefBankCode.resolve("KDB산업은행"));
+        assertEquals(CodefBankCode.KDB, CodefBankCode.resolve("한국산업은행"));
+        assertEquals(CodefBankCode.POST, CodefBankCode.resolve("우체국예금"));
+        assertEquals(CodefBankCode.POST, CodefBankCode.resolve("우정사업본부"));
         assertThrows(CodefException.class, () -> CodefBankCode.resolve("없는은행"));
     }
 
@@ -478,5 +482,55 @@ class CodefBankServiceTest {
         assertEquals("CODEF_QUICK_OAUTH_ONLY", txEx.getCode());
 
         verify(codefApiClient, never()).postApi(anyString(), anyMap());
+    }
+
+    @Test
+    void 연결해제시_가상은행계좌_비활성화_연동_및_실계좌인증_키회전시_connectedId_재암호화() throws Exception {
+        com.moava.openbanking.service.MockBankProvisionService provisionMock =
+                mock(com.moava.openbanking.service.MockBankProvisionService.class);
+        CodefBankService serviceWithProvision = new CodefBankService(
+                codefApiClient, properties, mapper, cryptoKeyService, new KftcSecurityGuard(), provisionMock
+        );
+
+        // 1) 연결 해제 시 가상은행 계좌 비활성화 호출
+        CodefDto.ConnectionRecord quickConn = new CodefDto.ConnectionRecord();
+        quickConn.setMemberId(10L);
+        quickConn.setOrganization("0004");
+        quickConn.setConnectedIdEnc("ENC_QUICK");
+        quickConn.setKeyVer(1);
+        when(mapper.findConnection(10L, "0004")).thenReturn(quickConn);
+        when(cryptoKeyService.decrypt("ENC_QUICK", 1)).thenReturn("QUICK_OAUTH:0004");
+        when(mapper.deleteConnection(10L, "0004")).thenReturn(1);
+
+        serviceWithProvision.disconnect(10L, "국민은행");
+        verify(provisionMock).deactivateBankAccountsForDisconnect(10L, CodefBankCode.KB);
+
+        // 2) 실계좌 인증 시 키 버전 변경(1 -> 2)이면 connectedIdEnc도 새 키로 재암호화
+        CodefDto.ConnectionRecord v1Conn = new CodefDto.ConnectionRecord();
+        v1Conn.setMemberId(10L);
+        v1Conn.setOrganization("0088");
+        v1Conn.setConnectedIdEnc("ENC_CONN_V1");
+        v1Conn.setKeyVer(1);
+
+        when(mapper.findActiveMemberName(10L)).thenReturn("홍길동");
+        when(mapper.findConnection(10L, "0088")).thenReturn(v1Conn);
+        when(cryptoKeyService.decrypt("ENC_CONN_V1", 1)).thenReturn("conn_real_v1");
+        when(cryptoKeyService.getCurrentKeyVersion()).thenReturn(2);
+        when(cryptoKeyService.encrypt("conn_real_v1", 2)).thenReturn("ENC_CONN_V2");
+        when(cryptoKeyService.encrypt("110123456789", 2)).thenReturn("ENC_ACC_V2");
+
+        JsonNode matchedData = objectMapper.readTree("""
+                {"resAccountHolder":"홍길동","resAccountBalance":"500000","resTrHistoryList":[]}
+                """);
+        when(codefApiClient.postApi(eq("/v1/kr/bank/p/account/transaction-list"), anyMap())).thenReturn(matchedData);
+
+        CodefDto.VerifyAccountRequest req = new CodefDto.VerifyAccountRequest();
+        req.setOrganization("신한은행");
+        req.setAccount("110-123-456789");
+
+        CodefDto.VerifyAccountResponse res = serviceWithProvision.verifyRealAccount(10L, req, "127.0.0.1");
+        assertTrue(res.isVerified());
+        verify(mapper).updateConnectedIdEncryption(eq(10L), eq("0088"), eq("ENC_CONN_V2"), eq(2), any());
+        verify(mapper).markAccountVerified(eq(10L), eq("0088"), eq("ENC_ACC_V2"), eq("6789"), eq("홍길동"), eq(2), any());
     }
 }

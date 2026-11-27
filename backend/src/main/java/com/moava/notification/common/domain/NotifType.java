@@ -49,7 +49,7 @@ public enum NotifType {
     /** 관리자가 계좌 소유 확인을 마침 → 모임장 */
     ACCOUNT_VERIFIED(Receiver.LEADER, "계좌 소유 확인이 끝났어요", "{group} 모임 계좌({bank} ****{last4}) 소유 확인이 완료됐어요.", "/operations?groupId={groupId}", false),
     /** 해산 신청 반려 → 모임장 */
-    DISSOLVE_REJECTED(Receiver.LEADER, "해산 신청이 반려됐어요", "{group} 해산 신청이 반려됐어요. 사유: {reason}", "/operations?groupId={groupId}", false),
+    DISSOLVE_REJECTED(Receiver.LEADER, "해산 신청이 반려됐어요", "{group} 해산 신청이 반려됐어요. 사유: {reason}", "/procedures?groupId={groupId}&tab=dissolve", false),
     /** stage: 신청 / 재확인 요청(2회째) */
     WITHDRAW_REQUEST(Receiver.LEADER, "탈퇴 신청이 왔어요", "{member}님의 {group} 탈퇴 {stage}이(가) 있어요. 정산안을 등록해 주세요.", "/procedures?groupId={groupId}", false),
 

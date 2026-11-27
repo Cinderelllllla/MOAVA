@@ -193,9 +193,6 @@ public class MemberService {
 
     @Transactional 
     public void withdraw(Long memberId, String password){
-        if(password == null || password.isBlank()){
-            throw bad("탈퇴를 위해 비밀번호를 입력해주세요.");
-        }
         MemberResponse member = memberMapper.findById(memberId);
 
         if(member == null){
@@ -204,8 +201,14 @@ public class MemberService {
         ensureCanUse(member);
         String currentHash = memberMapper.findPasswordHashById(memberId);
 
-        if(currentHash == null || !passwordEncoder.matches(password, currentHash)){
-            throw bad("비밀번호가 일치하지 않습니다.");
+        // 비밀번호가 설정된 일반(EMAIL) 회원은 비밀번호 검증 필수, 소셜 전용 회원(PASSWORD_HASH=NULL)은 검증 생략
+        if(currentHash != null && !currentHash.isBlank()){
+            if(password == null || password.isBlank()){
+                throw bad("탈퇴를 위해 비밀번호를 입력해주세요.");
+            }
+            if(!passwordEncoder.matches(password, currentHash)){
+                throw bad("비밀번호가 일치하지 않습니다.");
+            }
         }
 
         int activeMemberships = memberMapper.countActiveGroupMemberships(memberId);
@@ -236,7 +239,8 @@ public class MemberService {
     }
 
     private MemberView toView(MemberResponse member, String phone) {
-        return new MemberView(member.name(), member.email(), phone, member.regionSido(), member.regionSigungu(), member.regionDong(), member.status());
+        String signupType = (member.signupType() == null || member.signupType().isBlank()) ? "EMAIL" : member.signupType();
+        return new MemberView(member.name(), member.email(), phone, member.regionSido(), member.regionSigungu(), member.regionDong(), member.status(), signupType);
     }
 
     private ResponseStatusException bad(String message) {

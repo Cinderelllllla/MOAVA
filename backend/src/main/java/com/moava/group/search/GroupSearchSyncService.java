@@ -85,4 +85,16 @@ public class GroupSearchSyncService {
         log.info("Elasticsearch 공개 모임 일괄 색인 완료 index={} count={}", elasticsearchClient.indexName(), indexed);
         return indexed;
     }
+
+    /** 데모 데이터 초기화 시 {@code moava_group} 인덱스를 삭제 후 빈 인덱스로 재생성한다. */
+    public boolean resetIndex() {
+        if (!elasticsearchClient.isEnabled()) {
+            return false;
+        }
+        boolean deleted = elasticsearchClient.deleteIndex();
+        if (!deleted) {
+            return false;
+        }
+        return elasticsearchClient.ensureIndex();
+    }
 }

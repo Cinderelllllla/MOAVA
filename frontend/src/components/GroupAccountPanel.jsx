@@ -9,6 +9,7 @@ import {
   useRef,
   useCallback
 } from 'react';
+import { Link } from 'react-router-dom';
 
 import {
   fetchCurrentAccount,
@@ -101,7 +102,7 @@ function accountErrorMessage(error) {
       return '계좌 상태가 변경되었어요. 새로고침 후 확인해 주세요.';
 
     case 422:
-      return '계좌 소유 정보를 확인하지 못했어요.';
+      return '계좌 소유 정보를 확인하지 못했어요. 오픈뱅킹에서 동일한 은행·계좌번호로 1원 인증을 먼저 완료해 주세요.';
 
     case 429:
       return '인증 요청이 너무 많아요. 잠시 후 다시 시도해 주세요.';
@@ -547,19 +548,24 @@ function GroupAccount({ groupId }) {
         style={{ marginTop: 12 }}
       >
         {!loading && !loadError && canVerify && (
-          <button
-            type="button"
-            className="btn primary"
-            disabled={verifying}
-            onClick={handleVerify}
-          >
-            {verifying
-              ? '인증 진행 중...'
-              : account.verifyStatus ===
-                  'REVERIFY_REQUIRED'
-                ? '계좌 재인증하기'
-                : '계좌 소유 인증하기'}
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={verifying}
+              onClick={handleVerify}
+            >
+              {verifying
+                ? '인증 진행 중...'
+                : account.verifyStatus ===
+                    'REVERIFY_REQUIRED'
+                  ? '계좌 재인증하기'
+                  : '계좌 소유 인증하기'}
+            </button>
+            <Link to="/openbanking" className="btn soft">
+              오픈뱅킹 1원 인증하러 가기
+            </Link>
+          </>
         )}
 
         <button

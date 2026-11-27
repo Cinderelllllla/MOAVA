@@ -187,6 +187,28 @@ public class MockBankProvisionService {
         return result;
     }
 
+    /**
+     * 은행 연결 해제 시 해당 은행의 모의 원장 계좌를 CLOSED로 비활성화하고,
+     * 회원의 활성 모의 계좌가 더 이상 남아있지 않으면 발급된 OAuth 토큰도 일괄 철회한다.
+     * (기존 거래 원장 이력은 FK 보존을 위해 삭제하지 않으며, 추후 재연결 시 ACTIVE로 복구된다.)
+     */
+    @Transactional
+    public void deactivateBankAccountsForDisconnect(Long memberId, CodefBankCode bank) {
+        if (memberId == null || memberId <= 0 || bank == null) {
+            return;
+        }
+        String userSeqNo = deriveUserSeqNo(memberId);
+        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
+        int closed = ledgerMapper.closeAccountsByUserAndBank(userSeqNo, bank.getKftcCode(), now);
+        int remainingActive = ledgerMapper.countActiveAccountsByUserSeqNo(userSeqNo);
+        int revokedTokens = 0;
+        if (remainingActive == 0) {
+            revokedTokens = kftcMapper.revokeOAuthTokensByUserSeqNo(userSeqNo);
+        }
+        log.info("[MOCK-BANK-AUDIT] 은행 연결 해제로 모의 계좌 비활성화: memberId={}, bankCode={}, closed={}, remainingActive={}, revokedTokens={}",
+                memberId, bank.getKftcCode(), closed, remainingActive, revokedTokens);
+    }
+
     private SyncTxCounts loadCodefTransactions(
             String fintechUseNum,
             String bankName,

@@ -254,6 +254,32 @@ class KftcOpenBankingServiceTest {
         assertEquals("A&B's \"카페\"", sanitized);
     }
 
+    @Test
+    void 거래내역조회_종료일_익일자정_미만조회_및_적요_90바이트초과_차단() {
+        KftcRecordDto.AccountRecord acc = account(WD_FIN_NUM, "088", "신한은행", "110-123-456789", "홍길동", "1000000001", 900_000L, "N");
+        when(mapper.findAccountByFintechUseNum(WD_FIN_NUM)).thenReturn(acc);
+        when(mapper.findTransactions(eq(WD_FIN_NUM), isNull(), any(), any(), eq("D"), eq(100)))
+                .thenReturn(List.of());
+
+        openBankingService.inquireTransactionList(
+                WD_FIN_NUM, "A", "20261101", "20261127", "D", null, null,
+                token("inquiry", "1000000001"), "127.0.0.1"
+        );
+
+        ArgumentCaptor<LocalDateTime> fromCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<LocalDateTime> toCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(mapper).findTransactions(eq(WD_FIN_NUM), isNull(), fromCaptor.capture(), toCaptor.capture(), eq("D"), eq(100));
+        assertEquals(LocalDateTime.of(2026, 11, 1, 0, 0, 0), fromCaptor.getValue());
+        assertEquals(LocalDateTime.of(2026, 11, 28, 0, 0, 0), toCaptor.getValue());
+
+        // 한글 31자 = 93바이트(>90바이트 한도) -> INVALID_PARAMETER 차단
+        KftcTransferDto.WithdrawRequest overByteReq = withdrawReq(WD_FIN_NUM, LEADER_FIN_NUM, 10_000L, BANK_TRAN_ID);
+        overByteReq.setWdPrintContent("가".repeat(31));
+        assertEquals(KftcResponseCode.INVALID_PARAMETER,
+                assertThrows(KftcOpenBankingException.class,
+                        () -> openBankingService.withdrawTransfer(overByteReq, token("oob", null), "127.0.0.1")).getResponseCode());
+    }
+
     // ==================== 3. 출금이체 / 입금이체 원자성·락순서·예외 ====================
 
     @Test

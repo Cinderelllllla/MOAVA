@@ -158,13 +158,13 @@ class MockBankQuickConnectServiceTest {
 
         MockBankDto.ProvisionResult provisionResult = new MockBankDto.ProvisionResult();
         provisionResult.setFintechUseNum("199088000010000000000001");
-        provisionResult.setBalanceAmt(450_000L);
+        provisionResult.setBalanceAmt(450_001L);
 
-        // 1차 시도에서 일시적 DB 장애 발생 -> 세션은 소실되지 않고 2차 재시도 성공
+        // 1차 시도에서 일시적 DB 장애 발생 -> 세션은 소실되지 않고 2차 재시도 성공 (1원 입금 반영: 450,001원)
         when(provisionService.provisionFromCodef(
                 eq(10L), eq(CodefBankCode.SHINHAN), eq("110123456789"), eq("홍길동"),
-                eq(1_000_000L), argThat(list -> list.size() == 1 && list.get(0).getAfterBalanceAmt() == 450_000L),
-                isNull(), isNull(), eq(false)
+                eq(450_001L), argThat(list -> list.size() == 1 && list.get(0).getAfterBalanceAmt() == 450_001L),
+                isNull(), isNull(), eq(true)
         )).thenThrow(new RuntimeException("임시 DB 오류")).thenReturn(provisionResult);
 
         MockBankDto.QuickConnectVerifyRequest verifyReq = new MockBankDto.QuickConnectVerifyRequest();
@@ -185,7 +185,84 @@ class MockBankQuickConnectServiceTest {
         MockBankDto.QuickConnectVerifyResponse verified =
                 service.verifyAndComplete(10L, started.getSessionToken(), verifyReq, "127.0.0.1");
         assertTrue(verified.isVerified());
-        assertEquals(450_000L, verified.getMockAccount().getBalanceAmt());
+        assertEquals(450_001L, verified.getMockAccount().getBalanceAmt());
+    }
+
+    @Test
+    void 신규계좌_초기잔액_0원_시드거래미생성_및_키회전_재암호화_및_설정리다이렉트URI() {
+        OpenBankingProperties customProps = new OpenBankingProperties(
+                "http://localhost:8080",
+                "M202600001",
+                "moava-demo-client",
+                "moava-demo-secret",
+                "https://demo.moava.kr/openbanking/bank-auth"
+        );
+        MockBankQuickConnectService customService = new MockBankQuickConnectService(
+                codefAccountMapper,
+                ledgerMapper,
+                cryptoKeyService,
+                kftcOAuthService,
+                provisionService,
+                new KftcSecurityGuard(),
+                customProps
+        );
+
+        when(codefAccountMapper.findActiveMemberName(10L)).thenReturn("홍길동");
+        when(provisionService.deriveUserSeqNo(10L)).thenReturn("1000000010");
+        when(ledgerMapper.findAccountByBankAndDigits("088", "110123456789")).thenReturn(null);
+
+        MockBankDto.QuickConnectStartRequest startReq = new MockBankDto.QuickConnectStartRequest();
+        startReq.setOrganization("신한은행");
+        startReq.setAccountNo("110-123-456789");
+        startReq.setHolderName("홍길동");
+        startReq.setPhone("010-1234-5678");
+        startReq.setInitialMockBalance(0L);
+
+        MockBankDto.QuickConnectSessionResponse started = customService.startQuickConnect(10L, startReq, "127.0.0.1");
+
+        KftcOAuthDto.AuthorizeResponse authzRes = new KftcOAuthDto.AuthorizeResponse();
+        authzRes.setCode("kftc_code_zero");
+        when(kftcOAuthService.issueAuthorizationCode(
+                argThat(r -> "https://demo.moava.kr/openbanking/bank-auth".equals(r.getRedirectUri())),
+                eq("127.0.0.1")
+        )).thenReturn(authzRes);
+
+        KftcOAuthDto.TokenResponse tokenRes = new KftcOAuthDto.TokenResponse();
+        tokenRes.setScope("login inquiry transfer");
+        when(kftcOAuthService.issueToken(
+                argThat(r -> "https://demo.moava.kr/openbanking/bank-auth".equals(r.getRedirectUri())),
+                eq("127.0.0.1")
+        )).thenReturn(tokenRes);
+
+        MockBankDto.ProvisionResult provisionResult = new MockBankDto.ProvisionResult();
+        provisionResult.setFintechUseNum("199088000010000000000001");
+        provisionResult.setBalanceAmt(0L);
+        when(provisionService.provisionFromCodef(
+                eq(10L), eq(CodefBankCode.SHINHAN), eq("110123456789"), eq("홍길동"),
+                eq(0L), argThat(list -> list.isEmpty()), eq(0L), isNull(), eq(false)
+        )).thenReturn(provisionResult);
+
+        CodefDto.ConnectionRecord existingConn = new CodefDto.ConnectionRecord();
+        existingConn.setMemberId(10L);
+        existingConn.setOrganization("0088");
+        existingConn.setConnectedIdEnc("ENC_OLD_V1");
+        existingConn.setKeyVer(1);
+        when(codefAccountMapper.findConnection(10L, "0088")).thenReturn(existingConn);
+        when(cryptoKeyService.getCurrentKeyVersion()).thenReturn(2);
+        when(cryptoKeyService.decrypt("ENC_OLD_V1", 1)).thenReturn("QUICK_OAUTH:0088");
+        when(cryptoKeyService.encrypt("QUICK_OAUTH:0088", 2)).thenReturn("ENC_NEW_V2");
+        when(cryptoKeyService.encrypt("110123456789", 2)).thenReturn("ENC_ACC_V2");
+
+        MockBankDto.QuickConnectVerifyRequest verifyReq = new MockBankDto.QuickConnectVerifyRequest();
+        verifyReq.setAuthCode(started.getAuthCodeHint());
+        verifyReq.setAgreed(true);
+
+        MockBankDto.QuickConnectVerifyResponse verified =
+                customService.verifyAndComplete(10L, started.getSessionToken(), verifyReq, "127.0.0.1");
+        assertTrue(verified.isVerified());
+        assertEquals(0L, verified.getMockAccount().getBalanceAmt());
+        verify(codefAccountMapper).updateConnectedIdEncryption(eq(10L), eq("0088"), eq("ENC_NEW_V2"), eq(2), any());
+        verify(codefAccountMapper).markAccountVerified(eq(10L), eq("0088"), eq("ENC_ACC_V2"), eq("6789"), eq("홍길동"), eq(2), any());
     }
 
     @Test

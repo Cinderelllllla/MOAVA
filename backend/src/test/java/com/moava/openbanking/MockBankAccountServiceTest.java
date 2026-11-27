@@ -149,6 +149,57 @@ class MockBankAccountServiceTest {
     }
 
     @Test
+    void getOverview_SQL월별집계사용_및_모임장목록_본인제외_다중모임중복제거() {
+        when(codefAccountMapper.findActiveMemberName(10L)).thenReturn("홍길동");
+        when(provisionService.deriveUserSeqNo(10L)).thenReturn("1000000010");
+        when(provisionService.deriveUserSeqNo(99L)).thenReturn("1000000099");
+        when(codefBankService.getMyConnections(10L)).thenReturn(List.of());
+
+        KftcRecordDto.AccountRecord myLeaderAcc = account(MY_FIN_NUM, "088", "신한은행", "110123456789", "홍길동", "1000000010", 700_000L, "Y");
+        when(ledgerMapper.findAccountsByUserSeqNo("1000000010")).thenReturn(List.of(myLeaderAcc));
+        when(ledgerMapper.findRecentTransactionsByUserSeqNo("1000000010", 30)).thenReturn(List.of());
+
+        MockBankDto.MonthlyAggregate sqlMonth = new MockBankDto.MonthlyAggregate();
+        sqlMonth.setYearMonth("202610");
+        sqlMonth.setTotalDepositAmt(500_000L);
+        sqlMonth.setTotalWithdrawAmt(120_000L);
+        sqlMonth.setTxCount(40);
+        when(ledgerMapper.findMonthlySummaryByUserSeqNo("1000000010")).thenReturn(List.of(sqlMonth));
+
+        MockBankDto.MemberGroupInfo g1 = new MockBankDto.MemberGroupInfo();
+        g1.setGroupId(5L);
+        g1.setTitle("제주도 여행계");
+        g1.setOwnerId(99L);
+        g1.setAmount(50_000L);
+        MockBankDto.MemberGroupInfo g2 = new MockBankDto.MemberGroupInfo();
+        g2.setGroupId(6L);
+        g2.setTitle("부산 먹방계");
+        g2.setOwnerId(99L);
+        g2.setAmount(100_000L);
+        MockBankDto.MemberGroupInfo myOwnGroup = new MockBankDto.MemberGroupInfo();
+        myOwnGroup.setGroupId(7L);
+        myOwnGroup.setTitle("내가 만든 모임");
+        myOwnGroup.setOwnerId(10L);
+        myOwnGroup.setAmount(200_000L);
+        when(ledgerMapper.findMemberActiveGroups(10L)).thenReturn(List.of(g1, g2, myOwnGroup));
+
+        KftcRecordDto.AccountRecord otherLeaderAcc = account(LEADER_FIN_NUM, "004", "국민은행", "12340104987654", "김모임", "1000000099", 500_000L, "Y");
+        when(ledgerMapper.findActiveLeaderAccounts(50)).thenReturn(List.of(myLeaderAcc, otherLeaderAcc));
+
+        MockBankDto.OverviewResponse res = service.getOverview(10L);
+
+        assertEquals(1, res.getMonthlySummary().size());
+        assertEquals("202610", res.getMonthlySummary().get(0).getYearMonth());
+        assertEquals(380_000L, res.getMonthlySummary().get(0).getNetAmt());
+        assertEquals(40, res.getMonthlySummary().get(0).getTxCount());
+
+        // 본인 모임장 계좌는 제외되고, 2개 모임을 가진 타 모임장 계좌는 1건으로 병합
+        assertEquals(1, res.getLeaderTargets().size());
+        assertEquals(LEADER_FIN_NUM, res.getLeaderTargets().get(0).getFintechUseNum());
+        assertEquals("제주도 여행계 외 1개 모임", res.getLeaderTargets().get(0).getGroupTitle());
+    }
+
+    @Test
     void syncFromCodef_저장인증정보_재사용_실시간재조회_및_미인증_차단() {
         when(codefAccountMapper.findActiveMemberName(10L)).thenReturn("홍길동");
 

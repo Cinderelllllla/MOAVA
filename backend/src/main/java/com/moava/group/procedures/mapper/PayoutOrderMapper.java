@@ -14,6 +14,8 @@ public interface PayoutOrderMapper {
 
     int countActiveMember(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
 
+    int countConfirmedPaymentProof(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
+
     Map<String, Object> selectActiveRequestByMember(@Param("groupId") Long groupId, @Param("memberId") Long memberId);
 
     Map<String, Object> selectPayoutRequestById(@Param("groupId") Long groupId,

@@ -116,6 +116,26 @@ public class GroupElasticsearchClient {
         }
     }
 
+    /** {@code moava_group} 인덱스를 통째로 삭제한다. (이미 없는 404도 성공 처리) */
+    public boolean deleteIndex() {
+        if (!enabled) {
+            return false;
+        }
+        try {
+            restClient.delete()
+                    .uri("/{index}", indexName)
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("Elasticsearch 인덱스 삭제 완료 index={}", indexName);
+            return true;
+        } catch (HttpClientErrorException.NotFound ignored) {
+            return true;
+        } catch (RestClientException e) {
+            log.warn("Elasticsearch 인덱스 삭제 실패 index={} cause={}", indexName, e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
     /** 단건 공개 모임 문서를 색인(upsert)한다. */
     public boolean indexDocument(GroupSearchDocument doc) {
         if (!enabled || doc == null || doc.groupId() == null) {
@@ -298,8 +318,9 @@ public class GroupElasticsearchClient {
 
     static Map<String, Object> buildPublicSearchRequest(String region, String purpose, String q) {
         List<Object> filters = new ArrayList<>();
-        // 비공개 모임 0건 보장
+        // 비공개·모집 마감 모임 0건 보장 (지도/공개 목록은 모집 중 모임만 노출)
         filters.add(Map.of("term", Map.of("visibility", "PUBLIC")));
+        filters.add(Map.of("term", Map.of("status", "RECRUITING")));
 
         if (purpose != null && !purpose.isBlank()) {
             filters.add(Map.of("term", Map.of("purpose", purpose.strip())));
@@ -325,7 +346,6 @@ public class GroupElasticsearchClient {
 
         Map<String, Object> boolQuery = new LinkedHashMap<>();
         boolQuery.put("filter", filters);
-        boolQuery.put("must_not", List.of(Map.of("term", Map.of("status", "DISSOLVED"))));
 
         boolean hasQuery = q != null && !q.isBlank();
         if (hasQuery) {

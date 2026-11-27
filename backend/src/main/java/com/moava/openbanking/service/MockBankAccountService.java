@@ -92,7 +92,21 @@ public class MockBankAccountService {
             recentViews.add(toTransactionView(tx, accountByFinNum.get(tx.getFintechUseNum())));
         }
 
-        List<MockBankDto.MonthlyAggregate> monthlySummary = aggregateMonthly(recentViews);
+        List<MockBankDto.MonthlyAggregate> sqlMonthly = ledgerMapper.findMonthlySummaryByUserSeqNo(userSeqNo);
+        List<MockBankDto.MonthlyAggregate> monthlySummary;
+        if (sqlMonthly != null && !sqlMonthly.isEmpty()) {
+            monthlySummary = new ArrayList<>(sqlMonthly.size());
+            for (MockBankDto.MonthlyAggregate row : sqlMonthly) {
+                long dep = row.getTotalDepositAmt() != null ? row.getTotalDepositAmt() : 0L;
+                long wd = row.getTotalWithdrawAmt() != null ? row.getTotalWithdrawAmt() : 0L;
+                row.setTotalDepositAmt(dep);
+                row.setTotalWithdrawAmt(wd);
+                row.setNetAmt(dep - wd);
+                monthlySummary.add(row);
+            }
+        } else {
+            monthlySummary = aggregateMonthly(recentViews);
+        }
         List<MockBankDto.LeaderTargetView> leaderTargets = getLeaderTargetsInternal(memberId);
 
         MockBankDto.OverviewResponse res = new MockBankDto.OverviewResponse();
@@ -423,51 +437,71 @@ public class MockBankAccountService {
     // ==================== 내부 헬퍼 ====================
 
     private List<MockBankDto.LeaderTargetView> getLeaderTargetsInternal(Long memberId) {
+        String myUserSeqNo = provisionService.deriveUserSeqNo(memberId);
         List<MockBankDto.MemberGroupInfo> myGroups = ledgerMapper.findMemberActiveGroups(memberId);
         List<KftcRecordDto.AccountRecord> leaderAccounts = ledgerMapper.findActiveLeaderAccounts(LEADER_TARGETS_LIMIT);
 
         Map<String, List<KftcRecordDto.AccountRecord>> accountsByOwnerSeq = new LinkedHashMap<>();
         for (KftcRecordDto.AccountRecord acc : leaderAccounts) {
+            if (myUserSeqNo.equals(acc.getUserSeqNo())) {
+                continue; // 본인 계좌로의 자가 이체(SAME_ACCOUNT_TRANSFER) 방지
+            }
             accountsByOwnerSeq.computeIfAbsent(acc.getUserSeqNo(), k -> new ArrayList<>()).add(acc);
         }
 
-        List<MockBankDto.LeaderTargetView> result = new ArrayList<>();
-        Set<String> includedFintechNums = new HashSet<>();
+        Map<String, MockBankDto.LeaderTargetView> byFinNum = new LinkedHashMap<>();
+        Map<String, Integer> extraGroupCounts = new HashMap<>();
 
-        // 1) 내가 참여 중인 모임의 모임장 수취 계좌 우선 매핑
+        // 1) 내가 일반 회원으로 참여 중인 모임의 모임장 수취 계좌 우선 매핑 (핀테크번호 기준 중복 제거)
         if (myGroups != null) {
             for (MockBankDto.MemberGroupInfo g : myGroups) {
-                if (g.getOwnerId() == null) {
+                if (g.getOwnerId() == null || memberId.equals(g.getOwnerId())) {
                     continue;
                 }
                 String ownerSeq = provisionService.deriveUserSeqNo(g.getOwnerId());
+                if (myUserSeqNo.equals(ownerSeq)) {
+                    continue;
+                }
                 List<KftcRecordDto.AccountRecord> ownerAccounts = accountsByOwnerSeq.get(ownerSeq);
                 if (ownerAccounts == null || ownerAccounts.isEmpty()) {
                     continue;
                 }
+                String safeTitle = securityGuard.sanitizeOutputText(g.getTitle());
                 for (KftcRecordDto.AccountRecord acc : ownerAccounts) {
-                    MockBankDto.LeaderTargetView target = toLeaderTargetView(acc);
-                    target.setGroupId(g.getGroupId());
-                    target.setGroupTitle(securityGuard.sanitizeOutputText(g.getTitle()));
-                    target.setMonthlyDuesAmt(g.getAmount());
-                    target.setMyGroup(true);
-                    result.add(target);
-                    includedFintechNums.add(acc.getFintechUseNum());
+                    MockBankDto.LeaderTargetView existing = byFinNum.get(acc.getFintechUseNum());
+                    if (existing == null) {
+                        MockBankDto.LeaderTargetView target = toLeaderTargetView(acc);
+                        target.setGroupId(g.getGroupId());
+                        target.setGroupTitle(safeTitle);
+                        target.setMonthlyDuesAmt(g.getAmount());
+                        target.setMyGroup(true);
+                        byFinNum.put(acc.getFintechUseNum(), target);
+                    } else {
+                        int extra = extraGroupCounts.merge(acc.getFintechUseNum(), 1, Integer::sum);
+                        String baseTitle = existing.getGroupTitle();
+                        int suffixIdx = baseTitle != null ? baseTitle.indexOf(" 외 ") : -1;
+                        if (suffixIdx >= 0) {
+                            baseTitle = baseTitle.substring(0, suffixIdx);
+                        }
+                        if (baseTitle != null && !baseTitle.isBlank()) {
+                            existing.setGroupTitle(baseTitle + " 외 " + extra + "개 모임");
+                        }
+                    }
                 }
             }
         }
 
-        // 2) 그 외 활성 모임장 수취 계좌
+        // 2) 그 외 활성 모임장 수취 계좌 (본인 계좌 제외)
         for (KftcRecordDto.AccountRecord acc : leaderAccounts) {
-            if (includedFintechNums.contains(acc.getFintechUseNum())) {
+            if (myUserSeqNo.equals(acc.getUserSeqNo()) || byFinNum.containsKey(acc.getFintechUseNum())) {
                 continue;
             }
             MockBankDto.LeaderTargetView target = toLeaderTargetView(acc);
             target.setMyGroup(false);
-            result.add(target);
+            byFinNum.put(acc.getFintechUseNum(), target);
         }
 
-        return result;
+        return new ArrayList<>(byFinNum.values());
     }
 
     private MockBankDto.LeaderTargetView toLeaderTargetView(KftcRecordDto.AccountRecord acc) {

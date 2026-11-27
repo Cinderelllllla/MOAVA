@@ -23,6 +23,8 @@ public interface KftcOpenBankingMapper {
 
     int revokeOAuthToken(@Param("tokenHash") String tokenHash);
 
+    int revokeOAuthTokensByUserSeqNo(@Param("userSeqNo") String userSeqNo);
+
     // ===== 가상 원장 계좌 (MOCK_KFTC_ACCOUNT) =====
     KftcRecordDto.AccountRecord findAccountByBankAndNo(
             @Param("bankCode") String bankCode,

@@ -60,8 +60,8 @@ public class MemberController {
     //탈퇴
     @DeleteMapping("/me")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void withdraw(Authentication authentication, @RequestBody WithdrawRequest request){
-        memberService.withdraw(getMemberId(authentication), request.password());
+    public void withdraw(Authentication authentication, @RequestBody(required = false) WithdrawRequest request){
+        memberService.withdraw(getMemberId(authentication), request == null ? null : request.password());
     }
 
     private Long getMemberId(Authentication authentication){

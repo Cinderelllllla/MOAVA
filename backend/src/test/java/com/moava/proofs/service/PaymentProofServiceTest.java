@@ -152,6 +152,20 @@ class PaymentProofServiceTest {
     }
 
     @Test
+    @DisplayName("등록: 모집 중(RECRUITING) 모임은 납입 증빙 등록을 400으로 차단")
+    void register_recruitingGroup_400() {
+        group.setStatus("RECRUITING");
+        when(paymentProofMapper.findGroupForProof(GROUP_ID)).thenReturn(group);
+
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> paymentProofService.registerProof(MEMBER_ID, validRequest(), List.of()));
+
+        assertEquals(400, e.getStatusCode().value());
+        verify(paymentProofMapper).lockGroupForProofUpdate(GROUP_ID);
+        verify(paymentProofMapper, never()).insertProof(any());
+    }
+
+    @Test
     @DisplayName("심사: 해산 완료 모임에서는 잠금 후 증빙 상태를 변경하지 않음")
     void review_dissolvedGroup_409() {
         group.setStatus("DISSOLVED");

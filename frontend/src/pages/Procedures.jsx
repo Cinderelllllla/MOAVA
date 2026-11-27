@@ -296,9 +296,12 @@ function ProcTabs({ tabs, currentTab, onSelect }) {
 
 function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChanged }) {
   const { run } = useApp();
+  const nav = useNavigate();
   const mine = payouts.find(r => Number(r.memberId) === myMemberId && ['REQUESTED', 'CONSENT_PENDING'].includes(r.status));
   const myConfirmed = payouts.find(r => Number(r.memberId) === myMemberId && r.status === 'CONFIRMED');
-  const maxMembers = selectedGroup?.maxMembers || 0;
+  const isRecruiting = selectedGroup?.status === 'RECRUITING';
+  const isActiveGroup = !selectedGroup || selectedGroup.status === 'ACTIVE';
+  const maxOrderRound = selectedGroup?.currentMembers || selectedGroup?.maxMembers || 0;
 
   const [roundNo, setRoundNo] = useState(() => String(mine?.roundNo || 1));
   const [reason, setReason] = useState(() => mine?.reason || '');
@@ -327,15 +330,32 @@ function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChan
   return (
     <Card>
       <h2>수령 순서 신청 · 조정</h2>
-      <Flow steps={[['신청', '회원이 희망 회차 제출'], ['동의 요청', '모임장이 전원 동의 발송'], ['동의', '신청자 제외 전원 동의'], ['확정', '모임장 최종 확정']]} />
+      <Flow steps={[['모집 마감', '절반 이상 마감·정원 자동 마감'], ['월 납입 승인', '납입 증빙 확인 완료'], ['신청·동의', '희망 회차 제출 및 전원 동의'], ['확정', '모임장 최종 확정']]} />
 
-      {myConfirmed ? (
+      {isRecruiting ? (
+        <div className="info" style={{ marginBottom: 14 }}>
+          아직 <b>모집 중</b>인 모임이에요. 모임장이 운영 홈에서 모집을 마감(정원의 절반 이상)하거나 정원이 채워져 운영이 시작된 뒤, 월 납입 증빙이 승인되면 수령 순서를 신청·확정할 수 있어요.
+          {isOwner && (
+            <div className="actions" style={{ marginTop: 10 }}>
+              <button type="button" className="btn small soft" onClick={() => nav(`/operations?groupId=${groupId}`)}>
+                운영 홈에서 모집 마감하기 →
+              </button>
+            </div>
+          )}
+        </div>
+      ) : myConfirmed ? (
         <p className="info">
           나의 수령 순서가 <b>{myConfirmed.roundNo}회차</b>로 확정되었습니다.
         </p>
       ) : (
         <>
           <h3>{mine ? '수령 순서 신청 수정' : '수령 순서 신청'}</h3>
+          <p className="muted mini" style={{ marginBottom: 10 }}>
+            월 납입액 증빙이 <b>납입 확인(승인)</b>된 회원만 수령 순서를 신청·확정할 수 있어요.{' '}
+            <button type="button" className="btn small soft" style={{ marginLeft: 6 }} onClick={() => nav(`/evidence?groupId=${groupId}`)}>
+              납입 증빙 등록·확인 →
+            </button>
+          </p>
           {mine && (
             <p className="info">
               현재 <b>{mine.roundNo}회차</b> 신청이 <b>{mine.statusLabel || mine.status}</b> 상태입니다.
@@ -346,14 +366,14 @@ function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChan
             </p>
           )}
           <div className="form-grid">
-            {maxMembers > 0 ? (
+            {maxOrderRound > 0 ? (
               <Select
-                label="희망 수령 회차"
+                label={`희망 수령 회차 (1~${maxOrderRound}회차)`}
                 name="orderRound"
-                options={Array.from({ length: maxMembers }, (_, i) => [String(i + 1), `${i + 1}회차`])}
+                options={Array.from({ length: maxOrderRound }, (_, i) => [String(i + 1), `${i + 1}회차`])}
                 value={roundNo}
                 onChange={e => setRoundNo(e.target.value)}
-                disabled={mine?.status === 'CONSENT_PENDING'}
+                disabled={!isActiveGroup || mine?.status === 'CONSENT_PENDING'}
               />
             ) : (
               <Input
@@ -363,7 +383,7 @@ function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChan
                 min={1}
                 value={roundNo}
                 onChange={e => setRoundNo(e.target.value)}
-                disabled={mine?.status === 'CONSENT_PENDING'}
+                disabled={!isActiveGroup || mine?.status === 'CONSENT_PENDING'}
               />
             )}
             <Input
@@ -372,13 +392,13 @@ function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChan
               placeholder="희망 회차 신청 사유를 입력해 주세요"
               value={reason}
               onChange={e => setReason(e.target.value)}
-              disabled={mine?.status === 'CONSENT_PENDING'}
+              disabled={!isActiveGroup || mine?.status === 'CONSENT_PENDING'}
             />
           </div>
           <div className="actions">
             <button
               className="btn primary"
-              disabled={mine?.status === 'CONSENT_PENDING'}
+              disabled={!isActiveGroup || mine?.status === 'CONSENT_PENDING'}
               onClick={submit}
             >
               {mine ? '신청 내용 수정' : '수령 순서 신청'}

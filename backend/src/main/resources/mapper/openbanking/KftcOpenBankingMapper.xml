@@ -66,6 +66,13 @@
           AND REVOKED_YN = 'N'
     </update>
 
+    <update id="revokeOAuthTokensByUserSeqNo">
+        UPDATE MOCK_KFTC_OAUTH_TOKEN
+        SET REVOKED_YN = 'Y'
+        WHERE USER_SEQ_NO = #{userSeqNo}
+          AND REVOKED_YN = 'N'
+    </update>
+
     <!-- ==================== 가상 원장 계좌 (MOCK_KFTC_ACCOUNT) ==================== -->
 
     <sql id="accountColumns">
@@ -161,7 +168,7 @@
               AND TRAN_AT &gt;= #{from, jdbcType=TIMESTAMP}
           </if>
           <if test="to != null">
-              AND TRAN_AT &lt;= #{to, jdbcType=TIMESTAMP}
+              AND TRAN_AT &lt; #{to, jdbcType=TIMESTAMP}
           </if>
         <choose>
             <when test="sortOrder == 'A'">

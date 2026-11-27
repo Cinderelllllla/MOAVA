@@ -57,18 +57,43 @@ function AuthCard({ children, invite }) {
 // 인증 성공 후 이동
 // ========================================
 
+function resolveInviteReturn(searchParams) {
+  const t = (searchParams.get('t') || '').trim();
+  const groupId = (searchParams.get('groupId') || '').trim();
+  const next = (searchParams.get('next') || '').trim();
+  const forward = new URLSearchParams();
+  const inviteParams = new URLSearchParams();
+
+  if (t) {
+    forward.set('t', t);
+    inviteParams.set('t', t);
+  }
+  if (/^[1-9]\d*$/.test(groupId)) {
+    forward.set('groupId', groupId);
+    inviteParams.set('groupId', groupId);
+  }
+
+  const hasInviteTarget = inviteParams.toString().length > 0 || next === '/invite';
+  if (!inviteParams.toString() && next === '/invite') {
+    forward.set('next', '/invite');
+  }
+
+  const query = forward.toString() ? `?${forward.toString()}` : '';
+  const returnPath = hasInviteTarget
+    ? `/invite${inviteParams.toString() ? `?${inviteParams.toString()}` : ''}`
+    : null;
+
+  return { hasInviteTarget, query, returnPath };
+}
+
 function useAfterAuth() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-
-  const inviteToken = searchParams.get('t');
+  const { returnPath } = resolveInviteReturn(searchParams);
 
   return session => {
-    if (inviteToken && session.type === 'MEMBER') {
-      navigate(
-        `/invite?t=${encodeURIComponent(inviteToken)}`,
-        { replace: true }
-      );
+    if (returnPath && session.type === 'MEMBER') {
+      navigate(returnPath, { replace: true });
       return;
     }
 
@@ -97,11 +122,7 @@ export function Login() {
 
   const [submitting, setSubmitting] = useState(false);
 
-  const inviteToken = searchParams.get('t');
-
-  const q = inviteToken
-    ? `?t=${encodeURIComponent(inviteToken)}`
-    : '';
+  const { hasInviteTarget, query: q, returnPath } = resolveInviteReturn(searchParams);
 
   const submit = async e => {
     e.preventDefault();
@@ -128,8 +149,8 @@ export function Login() {
     return (
       <Navigate
         to={
-          inviteToken && !isAdmin
-            ? `/invite?t=${encodeURIComponent(inviteToken)}`
+          returnPath && !isAdmin
+            ? returnPath
             : isAdmin
               ? '/admin'
               : '/dashboard'
@@ -140,7 +161,7 @@ export function Login() {
   }
 
   return (
-    <AuthCard invite={!!inviteToken}>
+    <AuthCard invite={hasInviteTarget}>
       <h1>다시 만나 반가워요</h1>
 
       <p className="muted">
@@ -280,11 +301,7 @@ export function Signup() {
 
   const [submitting, setSubmitting] = useState(false);
 
-  const inviteToken = searchParams.get('t');
-
-  const q = inviteToken
-    ? `?t=${encodeURIComponent(inviteToken)}`
-    : '';
+  const { hasInviteTarget, query: q, returnPath } = resolveInviteReturn(searchParams);
 
   const on = key => e => {
     setF(prev => ({
@@ -322,8 +339,8 @@ export function Signup() {
     return (
       <Navigate
         to={
-          inviteToken && !isAdmin
-            ? `/invite?t=${encodeURIComponent(inviteToken)}`
+          returnPath && !isAdmin
+            ? returnPath
             : isAdmin
               ? '/admin'
               : '/dashboard'
@@ -334,7 +351,7 @@ export function Signup() {
   }
 
   return (
-    <AuthCard invite={!!inviteToken}>
+    <AuthCard invite={hasInviteTarget}>
       <h1>함께 시작해 볼까요?</h1>
 
       <p className="muted">

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
-import { finance, groups, joined, leader, memberName, activeJoined, db } from '../api';
+import { finance, groups, joined, leader, activeJoined, db } from '../api';
 import { won, krw, signed } from '../common/format';
 import { Empty } from './ui';
 import Icon from './Icon';
@@ -65,7 +65,6 @@ export function GroupInfo({ g, onSim }) {
   const { current, max } = groupMemberCounts(g);
   const targetId = g.groupId ?? g.id;
   const isServerGroup = g.source === 'SERVER' || g.role != null;
-  const ownerDisplay = g.ownerName || memberName(g.ownerId);
   const rulesText = g.rules ?? g.rulesBody ?? '';
   const canJoin = isServerGroup
     ? g.statusCode === 'RECRUITING' && (max <= 0 || current < max)
@@ -91,8 +90,6 @@ export function GroupInfo({ g, onSim }) {
     ['납입일', `매월 ${g.payDay}일`],
     ['운영 기간', `${g.months}개월`],
     ['참여 인원', `${current} / ${max}명`],
-    ['모임장', ownerDisplay],
-    ['수령 순서', g.orderConfirmed ? '확정' : '협의 중'],
     ['가정 이율', `연 ${Number(g.rate || 0)}%`],
     ...(g.healthScore != null ? [['모임 건강도', `${g.healthScore}점`]] : []),
   ];

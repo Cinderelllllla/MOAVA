@@ -267,7 +267,17 @@ public class CodefBankService {
 
         CodefBankCode bank = CodefBankCode.resolve(req.getOrganization());
         String accountDigits = normalizeAccountDigits(req.getAccount());
-        String connectedId = resolveDecryptedConnectedId(memberId, bank);
+        CodefDto.ConnectionRecord conn = mapper.findConnection(memberId, bank.getCodefOrgCode());
+        if (conn == null || !isNotBlank(conn.getConnectedIdEnc())) {
+            throw CodefException.notFound(
+                    "CODEF_NOT_CONNECTED",
+                    bank.getBankName() + " 계정이 연결되어 있지 않습니다. 먼저 공동인증서 또는 은행 로그인으로 연결해 주세요."
+            );
+        }
+        String connectedId = requireExternalConnectedId(
+                cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer()),
+                bank
+        );
 
         LocalDate today = LocalDate.now();
         LocalDate start = isNotBlank(req.getStartDate()) ? parseDate(req.getStartDate(), "startDate") : today.minusMonths(1);
@@ -304,6 +314,10 @@ public class CodefBankService {
         String last4 = accountDigits.substring(accountDigits.length() - 4);
         LocalDateTime verifiedAt = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
 
+        if (conn.getKeyVer() != null && conn.getKeyVer() != keyVer) {
+            String reEncryptedConnectedId = cryptoKeyService.encrypt(connectedId, keyVer);
+            mapper.updateConnectedIdEncryption(memberId, bank.getCodefOrgCode(), reEncryptedConnectedId, keyVer, verifiedAt);
+        }
         mapper.markAccountVerified(memberId, bank.getCodefOrgCode(), accountEnc, last4, holderName, keyVer, verifiedAt);
 
         MockBankDto.ProvisionResult mockAccount = null;
@@ -491,6 +505,9 @@ public class CodefBankService {
         int deleted = mapper.deleteConnection(memberId, bank.getCodefOrgCode());
         if (deleted == 0) {
             throw CodefException.notFound("CODEF_NOT_CONNECTED", "연결된 은행 계정이 없습니다.");
+        }
+        if (mockBankProvisionService != null) {
+            mockBankProvisionService.deactivateBankAccountsForDisconnect(memberId, bank);
         }
         log.info("[CODEF-AUDIT] 은행 연결 해제: memberId={}, org={}", memberId, bank.getCodefOrgCode());
     }

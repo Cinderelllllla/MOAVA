@@ -68,11 +68,11 @@ export default function Invite() {
   const t = sp.get('t') || '';
   const groupIdParam = sp.get('groupId') || '';
 
-  const returnQuery = t
-    ? `?t=${encodeURIComponent(t)}`
-    : groupIdParam
-      ? `?groupId=${encodeURIComponent(groupIdParam)}`
-      : '';
+  const returnParams = new URLSearchParams();
+  if (t) returnParams.set('t', t);
+  if (groupIdParam) returnParams.set('groupId', groupIdParam);
+  if (!t && !groupIdParam) returnParams.set('next', '/invite');
+  const returnQuery = `?${returnParams.toString()}`;
 
   /* =========================================
      토큰 방식 상태

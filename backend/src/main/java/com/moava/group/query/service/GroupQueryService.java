@@ -105,7 +105,7 @@ public class GroupQueryService {
                 }
                 return orderedIds.stream()
                         .map(rowById::get)
-                        .filter(Objects::nonNull)
+                        .filter(GroupQueryService::isOpenForRecruitment)
                         .map(row -> toPublicGroupResponse(row, memberId))
                         .toList();
             }
@@ -120,8 +120,18 @@ public class GroupQueryService {
         );
 
         return rows.stream()
+                .filter(GroupQueryService::isOpenForRecruitment)
                 .map(row -> toPublicGroupResponse(row, memberId))
                 .toList();
+    }
+
+    private static boolean isOpenForRecruitment(PublicGroupRow row) {
+        if (row == null || !"RECRUITING".equals(row.status())) {
+            return false;
+        }
+        int max = row.maxMembers() == null ? 0 : row.maxMembers();
+        int current = row.currentMembers() == null ? 0 : row.currentMembers();
+        return max <= 0 || current < max;
     }
 
     /**

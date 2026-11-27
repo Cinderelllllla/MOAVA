@@ -79,6 +79,15 @@
           AND ORGANIZATION = #{organization}
     </update>
 
+    <update id="updateConnectedIdEncryption">
+        UPDATE CODEF_CONNECTION
+        SET CONNECTED_ID_ENC = #{connectedIdEnc},
+            KEY_VER          = #{keyVer},
+            UPDATED_AT       = #{updatedAt, jdbcType=TIMESTAMP}
+        WHERE MEMBER_ID = #{memberId}
+          AND ORGANIZATION = #{organization}
+    </update>
+
     <delete id="deleteConnection">
         DELETE FROM CODEF_CONNECTION
         WHERE MEMBER_ID = #{memberId}
