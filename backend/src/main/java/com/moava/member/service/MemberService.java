@@ -71,7 +71,7 @@ public class MemberService {
 
     @Transactional
     public Long signupSocial(SocialSignupRequest request, String provider){
-        MemberProfile profile = prepareProfile(request.name(), request.email(), request.phone(), request.regionSido(), request.regionSigungu());
+        MemberProfile profile = prepareProfile(request.name(), request.email(), request.phone(), request.regionSido(), request.regionSigungu(), request.regionDong());
 
         if(memberMapper.existsByEmail(profile.email()) > 0){
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 가입된 이메일입니다. 기존 계정으로 로그인해주세요.");
