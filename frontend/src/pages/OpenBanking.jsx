@@ -665,7 +665,10 @@ export default function OpenBanking() {
                         key={amt}
                         type="button"
                         className="btn small soft"
-                        onClick={() => setDepositForm(f => ({ ...f, amount: String(amt) }))}
+                        onClick={() => setDepositForm(f => ({
+                          ...f,
+                          amount: String(Math.min(100000000, Math.max(0, Number(f.amount) || 0) + amt)),
+                        }))}
                       >
                         +{amt / 10000}만 원
                       </button>

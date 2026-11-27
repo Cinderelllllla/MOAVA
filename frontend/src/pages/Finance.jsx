@@ -1,6 +1,6 @@
 /* S04 AI 금융 분석 /finance · S05 월별 데이터 /finance/monthly · F06 F08 F09 F10 */
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
 import useMlFinanceAssessment from '../common/useMlFinanceAssessment';
 import { finance } from '../api';
@@ -13,7 +13,20 @@ export function Finance() {
   const nav = useNavigate(); const f = finance.getFinance(), a = finance.affordability();
   const hasProfile = finance.hasFinanceProfile(f);
   const show = v => (hasProfile ? won(v) : '-');
-  return <><PageHead kicker="AI FINANCIAL ANALYSIS" title="금융 분석 · AI 추천" sub="현재 금융정보를 확인하고 월별 입력 데이터를 관리해 보세요."><button className="btn primary" onClick={() => nav('/finance/monthly')}>월별 데이터 저장 →</button></PageHead>
+  const goMonthly = () => {
+    if (!hasProfile) return nav('/finance/monthly');
+    const expense = Number((Number(f.fixed) + Number(f.variable)).toFixed(4));
+    nav('/finance/monthly', {
+      state: {
+        prefill: {
+          month: finance.currentMonthLabel(),
+          income: String(Number(f.income)),
+          expense: String(expense),
+        },
+      },
+    });
+  };
+  return <><PageHead kicker="AI FINANCIAL ANALYSIS" title="금융 분석 · AI 추천" sub="현재 금융정보를 확인하고 월별 입력 데이터를 관리해 보세요."><button className="btn primary" onClick={goMonthly}>월별 데이터 저장 →</button></PageHead>
     <FinanceAssessmentStatus {...mlAssessment} />
     <div className="grid cols3">{[['월수입', show(f.income)], ['월지출', hasProfile ? won(Number(f.fixed) + Number(f.variable)) : '-'], ['추천 납입액', a ? (a.rec > 0 ? won(a.rec) : '추천 없음') : '-']].map(([t, v]) => <Card key={t}><small>{t}</small><div className="metric">{v}</div></Card>)}</div>
     <div className="section"><Card><RiskPanel /></Card></div>
@@ -26,7 +39,13 @@ export function Finance() {
 
 export function FinanceMonthly() {
   const { run, ui, setUi } = useApp();
-  const [v, setV] = useState({ month: ui.financeMonth || finance.currentMonthLabel(), income: '', expense: '' });
+  const { state } = useLocation();
+  const prefill = state?.prefill;
+  const [v, setV] = useState({
+    month: prefill?.month || ui.financeMonth || finance.currentMonthLabel(),
+    income: prefill?.income ?? '',
+    expense: prefill?.expense ?? '',
+  });
   // 화면에 들어올 때 서버의 최신 월별 기록을 받아 온다(실패하면 오류 안내 + 다시 시도)
   useEffect(() => { finance.refreshMonthly().catch(() => {}); }, []);
   const monthly = finance.getMonthlyState();
