@@ -312,7 +312,7 @@ class GroupQueryServiceTest {
     }
 
     @Test
-    @DisplayName("F11: 동일 시/군/구에서 비공개·마감 모임을 제외하고 추천액 차이 작은 순 → 건강도 높은 순으로 최대 3개를 추천한다")
+    @DisplayName("F11: 동일 시/군/구에서 비공개·마감·내 모임을 제외하고 추천액 차이 작은 순 → 건강도 높은 순으로 최대 3개를 추천한다")
     void recommendsTop3ByAmountDiffThenHealthScoreExcludingClosedOrPrivate() {
         com.moava.group.search.GroupElasticsearchClient esClient =
                 mock(com.moava.group.search.GroupElasticsearchClient.class);
@@ -328,16 +328,18 @@ class GroupQueryServiceTest {
         when(mapper.findPublicGroupsByIds(10L, List.of(1L, 2L, 3L, 4L, 5L, 6L)))
                 .thenReturn(List.of(
                         recruitingRow(1L, 200_000L, 6, 2, "RECRUITING", "PUBLIC", "NONE"),    // diff 0, health 75
-                        recruitingRow(2L, 200_000L, 6, 2, "RECRUITING", "PUBLIC", "MEMBER"),  // diff 0, health 95 -> 1위
+                        recruitingRow(2L, 200_000L, 6, 2, "RECRUITING", "PUBLIC", "MEMBER"),  // 이미 가입한 모임 -> 제외 (MOA-100)
                         recruitingRow(3L, 250_000L, 6, 2, "RECRUITING", "PUBLIC", "NONE"),    // diff 5만, health 90 -> 3위
-                        recruitingRow(4L, 300_000L, 6, 2, "RECRUITING", "PUBLIC", "NONE"),    // diff 10만 -> 4위(제외)
+                        recruitingRow(4L, 300_000L, 6, 2, "RECRUITING", "PUBLIC", "NONE"),    // diff 10만 -> 3위
                         recruitingRow(5L, 200_000L, 6, 6, "RECRUITING", "PUBLIC", "NONE"),    // 정원 마감 -> 제외
                         recruitingRow(6L, 200_000L, 6, 2, "RECRUITING", "PRIVATE", "NONE")    // 비공개 -> 제외
                 ));
-        when(mapper.findGroupHealthScoresByIds(List.of(1L, 2L, 3L, 4L)))
+        // 내가 모임장·회원·가입 신청 중인 모임 번호는 DB 에서 받아 뺀다 (MOA-100)
+        when(mapper.findGroupIdsExcludedFromRecommendation(10L, List.of(1L, 2L, 3L, 4L, 5L, 6L)))
+                .thenReturn(List.of(2L));
+        when(mapper.findGroupHealthScoresByIds(List.of(1L, 3L, 4L)))
                 .thenReturn(List.of(
                         new com.moava.group.query.dto.GroupHealthRow(1L, 75),
-                        new com.moava.group.query.dto.GroupHealthRow(2L, 95),
                         new com.moava.group.query.dto.GroupHealthRow(3L, 90),
                         new com.moava.group.query.dto.GroupHealthRow(4L, 99)
                 ));
@@ -350,11 +352,11 @@ class GroupQueryServiceTest {
         assertEquals("SIGUNGU", res.matchedScope());
         assertFalse(res.expandedToSido());
         assertEquals(3, res.items().size());
-        assertEquals(2L, res.items().get(0).groupId());
-        assertEquals(95, res.items().get(0).healthScore());
-        assertEquals("MEMBER", res.items().get(0).role());
-        assertEquals(1L, res.items().get(1).groupId());
-        assertEquals(3L, res.items().get(2).groupId());
+        assertEquals(1L, res.items().get(0).groupId());
+        assertEquals(75, res.items().get(0).healthScore());
+        assertEquals(3L, res.items().get(1).groupId());
+        assertEquals(4L, res.items().get(2).groupId());
+        assertTrue(res.items().stream().noneMatch(g -> g.groupId() == 2L));
     }
 
     @Test

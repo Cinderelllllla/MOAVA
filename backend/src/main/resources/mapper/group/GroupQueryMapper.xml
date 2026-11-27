@@ -255,6 +255,25 @@
                     AND GM.MEMBER_ID != G.OWNER_ID
               ) + 1
           ) &lt; G.MAX_MEMBERS
+        <if test="memberId != null">
+          <!-- MOA-100: 내가 만든 모임 · 이미 회원인 모임(강제 탈퇴 포함) · 가입 신청 중인 모임은 추천하지 않는다.
+               스스로 탈퇴(WITHDRAWN)한 모임은 다시 추천할 수 있다 -->
+          AND G.OWNER_ID != #{memberId}
+          AND NOT EXISTS (
+              SELECT 1
+                FROM GYE_MEMBER MY
+               WHERE MY.GROUP_ID = G.GROUP_ID
+                 AND MY.MEMBER_ID = #{memberId}
+                 AND MY.STATUS IN ('ACTIVE', 'EXPELLED')
+          )
+          AND NOT EXISTS (
+              SELECT 1
+                FROM JOIN_REQUEST JR
+               WHERE JR.GROUP_ID = G.GROUP_ID
+                 AND JR.MEMBER_ID = #{memberId}
+                 AND JR.STATUS = 'PENDING'
+          )
+        </if>
         <if test="regionSido != null and regionSido != ''">
           AND G.REGION_SIDO LIKE '%' || #{regionSido} || '%' ESCAPE '\'
         </if>
@@ -263,6 +282,34 @@
         </if>
         ORDER BY G.GROUP_ID DESC
 
+    </select>
+
+    <!-- F11 MOA-100: Elasticsearch 추천 후보 중 추천에서 뺄 모임 번호.
+         findRecruitingGroupsForRecommendation 의 "내 모임 제외" 조건과 같다 (내가 모임장 · 회원 ACTIVE·EXPELLED · 가입 신청 PENDING) -->
+    <select id="findGroupIdsExcludedFromRecommendation" resultType="long">
+        SELECT G.GROUP_ID
+        FROM GYE_GROUP G
+        WHERE G.GROUP_ID IN
+          <foreach collection="groupIds" item="id" open="(" separator="," close=")">
+              #{id}
+          </foreach>
+          AND (
+              G.OWNER_ID = #{memberId}
+              OR EXISTS (
+                  SELECT 1
+                    FROM GYE_MEMBER MY
+                   WHERE MY.GROUP_ID = G.GROUP_ID
+                     AND MY.MEMBER_ID = #{memberId}
+                     AND MY.STATUS IN ('ACTIVE', 'EXPELLED')
+              )
+              OR EXISTS (
+                  SELECT 1
+                    FROM JOIN_REQUEST JR
+                   WHERE JR.GROUP_ID = G.GROUP_ID
+                     AND JR.MEMBER_ID = #{memberId}
+                     AND JR.STATUS = 'PENDING'
+              )
+          )
     </select>
 
     <!-- F11: 모임별 건강도 점수 조회 (GYE_MEMBER ACTIVE 회원 최신 RISK_SCORE.PROB 평균 기반 0~100점)

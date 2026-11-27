@@ -38,6 +38,8 @@ import { encodeRegionForServer } from '../common/regions';
 // 1. Spring Boot 인증 API 공통 함수
 // ========================================
 
+const PASSWORD_LOGIN_PATHS = new Set(['login', 'admin/login']);
+
 async function requestAuth(path, body) {
   let response;
   try {
@@ -55,6 +57,13 @@ async function requestAuth(path, body) {
   const result = await response.json().catch(() => null);
 
   if (!response.ok) {
+    // 이메일·비밀번호 로그인(회원·관리자)은 토큰 없이 보내므로 401 은 "로그인 만료"가 아니라
+    // 이메일·비밀번호 불일치(또는 로그인할 수 없는 계정)다. 서버가 한국어 문구를 주면 그대로 쓰고,
+    // 없으면(스프링 기본 오류 응답) 이 문구로 안내한다. 간편 로그인 등 다른 경로는 기존 안내를 그대로 쓴다.
+    const serverMessage = result?.error?.message ?? result?.message;
+    if (response.status === 401 && PASSWORD_LOGIN_PATHS.has(path) && !/[가-힣]/.test(serverMessage || '')) {
+      throw new Error('이메일 또는 비밀번호가 일치하지 않아요.');
+    }
     throw new Error(friendlyError(response.status, result));
   }
 

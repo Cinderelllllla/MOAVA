@@ -76,6 +76,8 @@
 .btn.small{min-height:34px}
 .list{gap:14px}
 .list-item{position:relative;padding:17px;min-height:0;overflow-wrap:anywhere}
+/* MOA-100: Tailwind 유틸리티 .list-item{display:list-item} 과 이름이 겹쳐 생기는 글머리 점(•)만 없앤다. display 는 그대로 */
+.list-item{list-style:none}
 .list-item+.list-item{margin-top:0}
 .list-item .item-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:9px}
 .list-item .item-head>b,.list-item .item-head>strong{min-width:0;flex:1 1 150px}
