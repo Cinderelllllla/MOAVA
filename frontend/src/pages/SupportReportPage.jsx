@@ -178,6 +178,9 @@ export default function SupportReportPage() {
           <p className="muted mini">
             신고 상세 내용은 AES-256-GCM으로 암호화되어 저장되며, 신고자 본인과 플랫폼 관리자만 열람할 수 있습니다. 타인의 신고는 열람할 수 없습니다.
           </p>
+          <p className="muted mini">
+            신고를 처리하는 동안 관리자가 대상 모임의 채팅 내용을 열람할 수 있어요. 열람 기록은 남아요.
+          </p>
 
           <form onSubmit={handleSubmit}>
             <div className="form-grid">
