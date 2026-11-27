@@ -3,6 +3,7 @@ package com.moava.chat.mapper;
 import com.moava.chat.dto.ChatAccess;
 import com.moava.chat.dto.ChatMessageRow;
 import com.moava.chat.dto.ChatParticipant;
+import com.moava.chat.dto.ChatReportRef;
 import com.moava.chat.dto.ChatRoomRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -42,4 +43,16 @@ public interface ChatMapper {
 
     /** 채팅방 참여자(모임의 ACTIVE 회원). 모임장 먼저, 그다음 가입 순. */
     List<ChatParticipant> selectParticipants(@Param("groupId") long groupId);
+
+    // ---- MOA-96 관리자 신고 건 채팅 열람 (읽기 전용) ----
+
+    /** 활성(ACTIVE) 관리자면 1, 아니면 0 */
+    int countActiveAdmin(@Param("adminId") long adminId);
+
+    /** 신고의 대상 모임·상태만 (신고 상세 DETAIL_ENC 는 읽지 않음). 신고가 없으면 null */
+    ChatReportRef selectReportForChat(@Param("reportId") long reportId);
+
+    /** AUDIT_LOG 에 CHAT_VIEW 한 줄 (EVENT_TYPE 은 XML 에 고정). description 에 채팅 본문·이름을 넣지 않는다 */
+    int insertChatViewAudit(@Param("groupId") long groupId, @Param("adminId") long adminId,
+                            @Param("description") String description);
 }

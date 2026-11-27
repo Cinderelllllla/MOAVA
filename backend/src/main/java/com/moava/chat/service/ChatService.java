@@ -2,6 +2,7 @@ package com.moava.chat.service;
 
 import com.moava.chat.dto.*;
 import com.moava.chat.mapper.ChatMapper;
+import com.moava.common.util.NameMasker;
 import com.moava.crypto.service.CryptoKeyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 /**
  * F34 모임별 채팅 규칙.
@@ -24,6 +26,7 @@ import java.util.List;
  *   <li>본문: 빈 메시지 거부, 500자 이하, 암호화 후 BODY_ENC(2800) 에 들어가는 길이.</li>
  *   <li>저장 후 방송: DB 에 저장된 메시지만 방송한다 (메시지 번호 포함).</li>
  *   <li>시스템 메시지(postSystem): 운영 규칙 변경 등 서버가 남기는 안내. 보낸 사람 없음(MEMBER_ID NULL).</li>
+ *   <li>관리자 열람(adminHistory, MOA-96): 처리 중인 신고의 대상 모임만 읽기 전용. 열람마다 AUDIT_LOG CHAT_VIEW.</li>
  * </ul>
  * 채팅 본문은 로그·AUDIT_LOG 에 남기지 않는다 (C 등급 개인정보).
  */
@@ -41,6 +44,8 @@ public class ChatService {
     static final int MAX_BODY_BYTES = BODY_ENC_COLUMN / 4 * 3 - 12 - 16;
     static final int DEFAULT_PAGE = 30;
     static final int MAX_PAGE = 100;
+    /** 관리자가 대상 모임 채팅을 열람할 수 있는 신고 상태 (처리 중) */
+    public static final Set<String> REPORT_VIEWABLE_STATUSES = Set.of("RECEIVED", "REVIEWING", "MORE_INFO");
 
     private final ChatMapper mapper;
     private final CryptoKeyService crypto;
@@ -79,10 +84,59 @@ public class ChatService {
     /** 이전 메시지 (오래된 것 → 최신 순) */
     public ChatHistoryResponse history(long memberId, long groupId, Long beforeId, Integer size) {
         ChatAccess access = requireReadable(memberId, groupId);
+        int limit = pageSize(size);
+        Page page = readPage(groupId, beforeId, limit);
+        return new ChatHistoryResponse(page.items(), page.hasMore(), canSend(access));
+    }
+
+    /**
+     * 관리자 신고 처리용 대상 모임 채팅 열람 (MOA-96, 읽기 전용, 오래된 것 → 최신 순).
+     * 검사 순서: 활성 관리자 → 신고 있음 → 대상 모임 있음 → 처리 중 상태 → size.
+     * 열람 기록(AUDIT_LOG CHAT_VIEW)이 실패하면 같은 트랜잭션에서 예외가 올라가 채팅도 보여 주지 않는다.
+     * 관리자는 모임 회원이 아니므로 회원 검사(requireReadable)는 하지 않는다. 보낸 사람 이름은 가린다.
+     */
+    @Transactional
+    public ChatHistoryResponse adminHistory(long adminId, long reportId, Long beforeId, Integer size) {
+        if (mapper.countActiveAdmin(adminId) < 1) {
+            throw new ChatException(HttpStatus.FORBIDDEN, "ADMIN_ONLY", "관리자만 이용할 수 있어요.");
+        }
+        ChatReportRef report = mapper.selectReportForChat(reportId);
+        if (report == null) {
+            throw new ChatException(HttpStatus.NOT_FOUND, "REPORT_NOT_FOUND", "신고를 찾을 수 없어요.");
+        }
+        if (report.groupId() == null) {
+            throw new ChatException(HttpStatus.BAD_REQUEST, "NO_TARGET_GROUP", "대상 모임이 없는 신고라 채팅을 볼 수 없어요.");
+        }
+        if (!REPORT_VIEWABLE_STATUSES.contains(report.status())) {
+            throw new ChatException(HttpStatus.FORBIDDEN, "REPORT_NOT_OPEN", "처리가 끝난 신고는 채팅을 볼 수 없어요.");
+        }
+        int limit = pageSize(size);
+        long groupId = report.groupId();
+
+        // 열람 기록: 본문·이름은 넣지 않는다. 실패하면 예외가 그대로 올라가 채팅을 보여 주지 않는다
+        String description = "REPORT #" + reportId + (beforeId == null ? " · 채팅 열람" : " · 채팅 이전 메시지 열람");
+        mapper.insertChatViewAudit(groupId, adminId, description);
+        log.info("관리자 채팅 열람 reportId={} adminId={} groupId={}", reportId, adminId, groupId);
+
+        Page page = readPage(groupId, beforeId, limit);
+        List<ChatMessageResponse> masked = page.items().stream().map(ChatService::maskSender).toList();
+        return new ChatHistoryResponse(masked, page.hasMore(), false);
+    }
+
+    private record Page(List<ChatMessageResponse> items, boolean hasMore) {
+    }
+
+    /** size 검사: 기본 30, 1~100 */
+    private static int pageSize(Integer size) {
         int limit = size == null ? DEFAULT_PAGE : size;
         if (limit < 1 || limit > MAX_PAGE) {
             throw new ChatException(HttpStatus.BAD_REQUEST, "INVALID_SIZE", "한 번에 1~" + MAX_PAGE + "개까지 불러올 수 있어요.");
         }
+        return limit;
+    }
+
+    /** beforeId 이전 메시지 limit 개를 복호화해 오래된 것 → 최신 순으로 */
+    private Page readPage(long groupId, Long beforeId, int limit) {
         // 하나 더 읽어서 "더 오래된 메시지가 있는지" 판단
         List<ChatMessageRow> rows = mapper.selectMessages(groupId, beforeId, limit + 1);
         boolean hasMore = rows.size() > limit;
@@ -91,7 +145,16 @@ public class ChatService {
             items.add(toResponse(row));
         }
         Collections.reverse(items);
-        return new ChatHistoryResponse(items, hasMore, canSend(access));
+        return new Page(items, hasMore);
+    }
+
+    /** 관리자 화면용: 보낸 사람 이름 마스킹. 시스템 메시지는 이름 없음(null) 그대로 */
+    private static ChatMessageResponse maskSender(ChatMessageResponse m) {
+        if (m.system()) {
+            return m;
+        }
+        return new ChatMessageResponse(m.messageId(), m.groupId(), m.memberId(), NameMasker.mask(m.senderName()),
+                m.body(), m.sentAt(), false);
     }
 
     /** 메시지 보내기: 검사 → 암호화 → 저장 → (호출한 쪽이) 방송 */
