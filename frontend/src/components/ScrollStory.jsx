@@ -48,7 +48,7 @@ function Page({ page }) {
   if (page === 'journey') return <>
     <Head k="맞춤 추천 시작" t="금융 정보를 알려주세요" />
     <div className="w-steps">{['1. 금융 정보 입력', '2. 소비 분석', '3. 납입액 추천', '4. 모임 추천'].map((s, i) => <span key={s} className={i === 0 ? 'on' : ''}>{s}</span>)}</div>
-    <div className="w-card"><div className="w-form">{[['월수입', '320'], ['고정지출', '140'], ['변동지출', '70'], ['기존 저축액', '30'], ['비상예비금', '200'], ['희망 월 납입액', '20']].map(([l, v]) =>
+    <div className="w-card"><div className="w-form">{[['월수입', '320'], ['고정지출', '140'], ['변동지출', '70'], ['월 저축액', '30'], ['비상예비금', '200'], ['희망 월 납입액', '20']].map(([l, v]) =>
       <div key={l}><small>{l} (만 원)</small><span className="w-input">{v}</span></div>)}</div>
       <div className="w-check"><i /> 금융정보 분석 및 추천 목적의 데이터 이용에 동의합니다.</div>
       <span className="w-btn">다음 단계 →</span></div>
