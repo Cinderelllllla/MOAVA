@@ -4,16 +4,18 @@
    - 계모임 해산: /api/v1/groups/{groupId}/dissolution
    - 운영 규칙(F31): /api/v1/groups/{groupId}/rules (조회: 모임 회원 / 수정: 모임장)
    - 회원 경고·강제 탈퇴(F30): /api/v1/groups/{groupId}/members/{memberId}/warnings · /expulsion (모임장)
-   - 모임장 승계: 준비 중
+   - 모임장 승계(F21): /api/v1/groups/{groupId}/leader-transfers
    알림 링크 /procedures?groupId=…&tab=rules 로 들어오면 규칙 탭을 연다. */
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../common/store';
 import useMyGroups from '../common/useMyGroups';
 import { procedures as P, groups as G } from '../api';
+import { fetchPayoutReceipts } from '../api/groupOperations';
 import { PageHead, Card, Flow, Select, Input, Empty } from '../components/ui';
 import { LoadState } from '../components/shared';
 import { formatKrw } from '../common/format';
+import LeaderTransferPanel from '../components/LeaderTransferPanel';
 
 const REASON_LABELS = {
   ECONOMIC: '경제적 사정',
@@ -90,6 +92,7 @@ export default function Procedures() {
     payouts: [],
     withdrawals: [],
     dissolution: null,
+    myPayoutReceived: false,
   });
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey(k => k + 1), []);
@@ -97,7 +100,14 @@ export default function Procedures() {
   useEffect(() => {
     const gid = Number(activeGroupId);
     if (!Number.isSafeInteger(gid) || gid <= 0) {
-      setDataState({ status: 'idle', error: '', payouts: [], withdrawals: [], dissolution: null });
+      setDataState({
+        status: 'idle',
+        error: '',
+        payouts: [],
+        withdrawals: [],
+        dissolution: null,
+        myPayoutReceived: false,
+      });
       return undefined;
     }
     let alive = true;
@@ -106,10 +116,18 @@ export default function Procedures() {
       P.fetchPayoutRequests(gid),
       P.fetchWithdrawals(gid),
       P.fetchGroupDissolution(gid),
+      fetchPayoutReceipts(gid).catch(() => null),
     ])
-      .then(([payouts, withdrawals, dissolution]) => {
+      .then(([payouts, withdrawals, dissolution, payoutReceipt]) => {
         if (!alive) return;
-        setDataState({ status: 'ready', error: '', payouts, withdrawals, dissolution });
+        setDataState({
+          status: 'ready',
+          error: '',
+          payouts,
+          withdrawals,
+          dissolution,
+          myPayoutReceived: Boolean(payoutReceipt?.myPayoutReceived),
+        });
       })
       .catch(e => {
         if (!alive) return;
@@ -119,12 +137,13 @@ export default function Procedures() {
           payouts: [],
           withdrawals: [],
           dissolution: null,
+          myPayoutReceived: false,
         });
       });
     return () => { alive = false; };
   }, [activeGroupId, reloadKey]);
 
-  const { payouts, withdrawals, dissolution } = dataState;
+  const { payouts, withdrawals, dissolution, myPayoutReceived } = dataState;
 
   const orderCount = isOwner
     ? payouts.filter(r => r.status === 'REQUESTED' || r.status === 'CONSENT_PENDING').length
@@ -264,6 +283,7 @@ export default function Procedures() {
             groupId={Number(activeGroupId)}
             isOwner={isOwner}
             myMemberId={myMemberId}
+            myPayoutReceived={myPayoutReceived}
             withdrawals={withdrawals}
             onChanged={reload}
           />
@@ -498,7 +518,7 @@ function OrderTab({ groupId, selectedGroup, isOwner, myMemberId, payouts, onChan
   );
 }
 
-function WithdrawTab({ groupId, isOwner, myMemberId, withdrawals, onChanged }) {
+function WithdrawTab({ groupId, isOwner, myMemberId, myPayoutReceived = false, withdrawals, onChanged }) {
   const { run } = useApp();
   const [reasonType, setReasonType] = useState('PERSONAL');
   const [detail, setDetail] = useState('');
@@ -506,6 +526,8 @@ function WithdrawTab({ groupId, isOwner, myMemberId, withdrawals, onChanged }) {
 
   // 동의 대상자 패널 상태: { [withdrawalId]: { open, status, items, error } }
   const [targetsMap, setTargetsMap] = useState({});
+
+  const normalWithdrawBlocked = Boolean(myPayoutReceived) && !specialYn;
 
   const myActive = withdrawals.find(
     w => Number(w.memberId) === myMemberId && ['SETTLEMENT_PENDING', 'CONSENT_PENDING'].includes(w.status)
@@ -530,7 +552,7 @@ function WithdrawTab({ groupId, isOwner, myMemberId, withdrawals, onChanged }) {
   };
 
   const applyWithdrawal = async () => {
-    if (!detail.trim()) return;
+    if (!detail.trim() || normalWithdrawBlocked) return;
     if (!confirm('탈퇴 신청 내용을 다시 확인해 주세요. 신청하시겠습니까?')) return;
     const r = await run(
       () => P.requestWithdrawal(groupId, {
@@ -574,6 +596,11 @@ function WithdrawTab({ groupId, isOwner, myMemberId, withdrawals, onChanged }) {
           <p className="muted mini">
             곗돈 수령 완료자는 일반 탈퇴가 제한되며 특별 정산 예외 요청만 가능합니다.
           </p>
+          {myPayoutReceived && (
+            <p className="policy-lock" style={{ marginTop: 8, marginBottom: 12 }}>
+              곗돈 수령 완료로 표시된 회원입니다. 일반 탈퇴 버튼은 비활성화되며, 아래 <b>특별 정산 예외 요청</b>을 선택해야 신청할 수 있어요.
+            </p>
+          )}
           {myActive ? (
             <div className="info">
               신청 상태: <b>{myActive.statusLabel || myActive.status}</b>
@@ -626,10 +653,14 @@ function WithdrawTab({ groupId, isOwner, myMemberId, withdrawals, onChanged }) {
               <div className="actions">
                 <button
                   className="btn primary"
-                  disabled={!detail.trim()}
+                  disabled={!detail.trim() || normalWithdrawBlocked}
                   onClick={applyWithdrawal}
                 >
-                  중도 탈퇴 신청
+                  {normalWithdrawBlocked
+                    ? '일반 탈퇴 불가 (수령 완료)'
+                    : specialYn
+                      ? '특별 정산 예외 탈퇴 신청'
+                      : '중도 탈퇴 신청'}
                 </button>
               </div>
             </>
@@ -969,10 +1000,7 @@ function RulesTab({ groupId }) {
 
     {rules && <WarningCard groupId={groupId} leader={!!rules.leader} dissolved={dissolved} />}
 
-    <Card>
-      <h2>모임장 승계</h2>
-      <Empty>모임장 승계 기능은 서버 API 연결 준비 중이에요.</Empty>
-    </Card>
+    <LeaderTransferPanel groupId={groupId} />
 
   </>;
 

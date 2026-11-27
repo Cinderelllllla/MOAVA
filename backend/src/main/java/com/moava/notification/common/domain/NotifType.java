@@ -39,6 +39,8 @@ public enum NotifType {
     RISK_UP(Receiver.MEMBER, "납입 부담 신호가 높아졌어요", "최근 금융 정보 기준으로 납입 부담이 커졌어요. 추천 납입액을 다시 확인해 보세요.", "/finance", true),
     /** F31 모임장이 운영 규칙 수정 → 모임장 제외 ACTIVE 회원. title: 새 규칙 제목. tab=rules 로 규칙 탭을 바로 연다 */
     RULE_UPDATED(Receiver.MEMBER, "운영 규칙이 바뀌었어요", "{group} 운영 규칙이 '{title}'(으)로 업데이트됐어요.", "/procedures?groupId={groupId}&tab=rules", false),
+    /** F28 모임장이 곗돈 수령 완료 표시 → 대상 회원. round: 회차 안내 문구 (없으면 "") */
+    PAYOUT_RECEIVED(Receiver.MEMBER, "곗돈 수령 완료가 기록됐어요", "{group}{round} 곗돈 수령 완료로 기록됐어요. 실제 송금은 발생하지 않는 기록용 표시이며, 이후 일반 탈퇴는 제한돼요.", "/operations?groupId={groupId}", false),
 
     // ── 유저(모임장) ──────────────────────────────────────────
     JOIN_REQUEST(Receiver.LEADER, "새 가입 신청이 있어요", "{member}님이 {group} 가입을 신청했어요. 7일 안에 처리하지 않으면 자동 만료돼요.", "/operations?groupId={groupId}&tab=joinRequests", false),

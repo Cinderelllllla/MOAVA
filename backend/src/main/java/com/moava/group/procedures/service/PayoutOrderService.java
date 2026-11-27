@@ -203,6 +203,10 @@ public class PayoutOrderService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 동의 응답을 완료했거나 동의 진행 중이 아닙니다.");
         }
 
+        // AUDIT_LOG 기록 (ORDER_CONSENT)
+        payoutOrderMapper.insertAuditLog(groupId, memberId, "ORDER_CONSENT",
+                "수령 순서 변경 동의 응답: " + yn + " (신청번호: " + payoutRequestId + ")");
+
         // [예외 3] 1명 거부 -> REJECTED, 재조정 안내
         if ("N".equals(yn)) {
             if (payoutOrderMapper.updatePayoutRequestStatus(

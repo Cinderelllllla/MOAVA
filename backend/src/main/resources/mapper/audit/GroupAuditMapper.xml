@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- F33 회원용 모임 운영 기록(AUDIT_LOG) 조회 전용 매퍼. UPDATE/DELETE 금지. -->
+<mapper namespace="com.moava.group.audit.mapper.GroupAuditMapper">
+
+    <resultMap id="accessMap" type="com.moava.group.audit.dto.GroupAuditAccessRow">
+        <constructor>
+            <arg column="GROUP_ID"      javaType="_long"/>
+            <arg column="GROUP_TITLE"   javaType="java.lang.String"/>
+            <arg column="OWNER_ID"      javaType="_long"/>
+            <arg column="MEMBER_STATUS" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="auditRowMap" type="com.moava.group.audit.dto.GroupAuditLogRow">
+        <constructor>
+            <arg column="AUDIT_LOG_ID"       javaType="_long"/>
+            <arg column="GROUP_ID"           javaType="_long"/>
+            <arg column="EVENT_TYPE"         javaType="java.lang.String"/>
+            <arg column="ACTOR_MEMBER_ID"    javaType="java.lang.Long"/>
+            <arg column="ACTOR_MEMBER_NAME"  javaType="java.lang.String"/>
+            <arg column="ACTOR_ADMIN_ID"     javaType="java.lang.Long"/>
+            <arg column="TARGET_MEMBER_ID"   javaType="java.lang.Long"/>
+            <arg column="TARGET_MEMBER_NAME" javaType="java.lang.String"/>
+            <arg column="DESCRIPTION"        javaType="java.lang.String"/>
+            <arg column="CREATED_AT"         javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectAccess" resultMap="accessMap">
+        SELECT g.GROUP_ID,
+               g.TITLE   AS GROUP_TITLE,
+               g.OWNER_ID,
+               gm.STATUS AS MEMBER_STATUS
+        FROM GYE_GROUP g
+        LEFT JOIN GYE_MEMBER gm
+               ON gm.GROUP_ID = g.GROUP_ID
+              AND gm.MEMBER_ID = #{memberId}
+        WHERE g.GROUP_ID = #{groupId}
+    </select>
+
+    <!--
+        회원 공개 범위 조건:
+        - 해당 모임(GROUP_ID) 기록만 조회
+        - 신고 처리 메모·신고자 식별·관리자 채팅 열람 등 관리자/신고자 전용 비공개 이벤트(REPORT_STATUS, CHAT_VIEW)는 제외
+    -->
+    <sql id="memberVisibleAuditWhere">
+        WHERE l.GROUP_ID = #{groupId}
+          AND l.EVENT_TYPE NOT IN ('REPORT_STATUS', 'CHAT_VIEW')
+        <if test="eventType != null and eventType != ''">
+          AND l.EVENT_TYPE = #{eventType}
+        </if>
+    </sql>
+
+    <select id="countGroupAuditLogs" resultType="long">
+        SELECT COUNT(*)
+        FROM AUDIT_LOG l
+        <include refid="memberVisibleAuditWhere"/>
+    </select>
+
+    <select id="selectGroupAuditLogs" resultMap="auditRowMap">
+        SELECT l.AUDIT_LOG_ID,
+               l.GROUP_ID,
+               l.EVENT_TYPE,
+               l.ACTOR_MEMBER_ID,
+               am.NAME                                     AS ACTOR_MEMBER_NAME,
+               l.ACTOR_ADMIN_ID,
+               l.TARGET_MEMBER_ID,
+               tm.NAME                                     AS TARGET_MEMBER_NAME,
+               l.DESCRIPTION,
+               TO_CHAR(l.CREATED_AT, 'YYYY-MM-DD HH24:MI') AS CREATED_AT
+        FROM AUDIT_LOG l
+        LEFT JOIN MEMBER am ON am.MEMBER_ID = l.ACTOR_MEMBER_ID
+        LEFT JOIN MEMBER tm ON tm.MEMBER_ID = l.TARGET_MEMBER_ID
+        <include refid="memberVisibleAuditWhere"/>
+        ORDER BY l.CREATED_AT DESC, l.AUDIT_LOG_ID DESC
+        OFFSET #{offset} ROWS FETCH NEXT #{size} ROWS ONLY
+    </select>
+
+    <select id="selectDistinctGroupEventTypes" resultType="string">
+        SELECT DISTINCT l.EVENT_TYPE
+        FROM AUDIT_LOG l
+        WHERE l.GROUP_ID = #{groupId}
+          AND l.EVENT_TYPE NOT IN ('REPORT_STATUS', 'CHAT_VIEW')
+        ORDER BY l.EVENT_TYPE ASC
+    </select>
+
+</mapper>

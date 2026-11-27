@@ -122,6 +122,41 @@ class AiFinanceControllerTest {
     }
 
     @Test
+    void 본인_응답에는_위험_등급_요인_factors_가_그대로_나온다() throws Exception {
+        when(ml.contribution(anyMap())).thenReturn(Map.of(
+                "recommended_amount", 150000, "available_amount", 520000,
+                "risk", Map.of("default_probability", 0.191, "risk_level", "CAUTION", "risk_label", "주의",
+                        "safety_factor", 0.35, "source", "self_report",
+                        "factors", List.of(
+                                Map.of("key", "late_count_12m", "question", "최근 1년간 30일 이상 연체한 횟수",
+                                        "answer_label", "1회", "impact", 0.071),
+                                Map.of("key", "card_usage", "question", "신용카드 한도 중 쓰고 있는 비율",
+                                        "answer_label", "70~90%", "impact", 0.0367)))));
+
+        mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
+                        .contentType(MediaType.APPLICATION_JSON).content(BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.risk.factors.length()").value(2))
+                .andExpect(jsonPath("$.data.risk.factors[0].key").value("late_count_12m"))
+                .andExpect(jsonPath("$.data.risk.factors[0].answer_label").value("1회"))
+                .andExpect(jsonPath("$.data.risk.factors[1].impact").value(0.0367))
+                .andExpect(jsonPath("$.data.risk.default_probability").doesNotExist());
+    }
+
+    @Test
+    void 요인이_없으면_빈_목록_그대로() throws Exception {
+        when(ml.contribution(anyMap())).thenReturn(Map.of(
+                "recommended_amount", 150000, "available_amount", 520000,
+                "risk", Map.of("risk_level", "STABLE", "risk_label", "안정", "safety_factor", 0.5, "factors", List.of())));
+
+        mvc.perform(post("/api/v1/finance/ai/contribution").principal(member(7))
+                        .contentType(MediaType.APPLICATION_JSON).content(BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.risk.factors").isArray())
+                .andExpect(jsonPath("$.data.risk.factors.length()").value(0));
+    }
+
+    @Test
     void 관리자_토큰은_403() throws Exception {
         mvc.perform(post("/api/v1/finance/ai/contribution").principal(auth("7", "ROLE_ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
@@ -152,7 +187,8 @@ class AiFinanceControllerTest {
                 .andExpect(jsonPath("$.data.fallback_source").value("DEFAULT"))
                 .andExpect(jsonPath("$.data.recommended_amount").value(150000))
                 .andExpect(jsonPath("$.data.risk.risk_level").value("CAUTION"))
-                .andExpect(jsonPath("$.data.risk.default_probability").doesNotExist());
+                .andExpect(jsonPath("$.data.risk.default_probability").doesNotExist())
+                .andExpect(jsonPath("$.data.risk.factors").doesNotExist());   // 대체값은 요인을 알 수 없음
     }
 
     // ---- 정책 값 ----
@@ -195,7 +231,8 @@ class AiFinanceControllerTest {
                 "rule", "r",
                 "order", List.of(
                         Map.of("order", 1, "member_id", 8, "risk", Map.of("default_probability", 0.41,
-                                "risk_level", "RISK", "risk_label", "위험", "safety_factor", 0.2, "source", "persona")),
+                                "risk_level", "RISK", "risk_label", "위험", "safety_factor", 0.2, "source", "persona",
+                                "factors", List.of(Map.of("key", "late_count_12m", "answer_label", "3회 이상")))),
                         Map.of("order", 2, "member_id", 7, "risk", Map.of("default_probability", 0.05,
                                 "risk_level", "STABLE", "risk_label", "안정", "safety_factor", 0.5, "source", "persona")))));
 
@@ -209,6 +246,7 @@ class AiFinanceControllerTest {
                 .andExpect(jsonPath("$.data.order[0].risk.default_probability").doesNotExist())
                 .andExpect(jsonPath("$.data.order[0].risk.safety_factor").doesNotExist())
                 .andExpect(jsonPath("$.data.order[0].risk.source").doesNotExist())
+                .andExpect(jsonPath("$.data.order[0].risk.factors").doesNotExist())   // 다른 회원의 요인은 보여 주지 않는다
                 .andExpect(jsonPath("$.data.order[1].member_id").value(7))
                 .andExpect(jsonPath("$.data.order[1].risk.default_probability").doesNotExist());
     }
