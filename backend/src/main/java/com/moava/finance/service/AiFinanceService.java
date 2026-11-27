@@ -12,9 +12,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * AI 금융 분석 중계 (MOA-34). 회원 번호는 항상 로그인 토큰에서 온 값만 ML 에 넘긴다.
+ * AI 금융 분석 중계 (MOA-34). 회원 번호는 항상 로그인 토큰에서 온 값만 쓴다.
  * <ul>
- *   <li>추천 납입액: 본인 것만</li>
+ *   <li>추천 납입액: 본인 것만. 위험 등급은 자가 응답 4문항으로 ML 이 계산 (MOA-98)</li>
  *   <li>정책 값: 모델 내부 정보(지표 목록 등)는 빼고 화면에 필요한 값만</li>
  *   <li>수령 순서: 모임장만, 회원 목록은 DB 에서 직접 조회</li>
  * </ul>
@@ -54,8 +54,12 @@ public class AiFinanceService {
         if (req == null) {
             throw invalidAmount();
         }
+        // 자가 응답은 민감한 신용 정보 — 값은 ML 에만 넘기고 DB·로그에 남기지 않는다
+        if (req.selfReport() == null || !req.selfReport().isValid()) {
+            throw new FinanceException(HttpStatus.BAD_REQUEST, "INVALID_SELF_REPORT", "신용 관련 질문 4개에 모두 답해 주세요.");
+        }
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("member_id", memberId);
+        body.put("self_report", req.selfReport().toMl());
         body.put("monthly_income", required(req.monthlyIncome()));
         body.put("monthly_expense", required(req.monthlyExpense()));
         body.put("monthly_saving", optional(req.monthlySaving()));
