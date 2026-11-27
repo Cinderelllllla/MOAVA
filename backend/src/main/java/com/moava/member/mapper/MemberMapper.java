@@ -49,4 +49,8 @@ public interface MemberMapper {
     int rejectPendingJoinRequests(@Param("memberId") Long memberId);
 
     int revokeOptionalConsents(@Param("memberId") Long memberId);
+
+    int insertSocialUser(@Param("name") String name, @Param("email") String email, @Param("phoneEnc") String phoneEnc, @Param("keyVer") int keyVer, @Param("regionSido") String regionSido, @Param("regionSigungu") String regionSigungu, @Param("signupType") String signupType);
+
+    Long lockMember(@Param("memberId") Long memberId);
 }

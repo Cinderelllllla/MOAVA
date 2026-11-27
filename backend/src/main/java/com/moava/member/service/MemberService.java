@@ -17,6 +17,7 @@ import com.moava.member.dto.MemberUpdateRequest;
 import com.moava.member.dto.MemberView;
 import com.moava.member.dto.PasswordChangeRequest;
 import com.moava.member.dto.SignupRequest;
+import com.moava.member.dto.SocialSignupRequest;
 import com.moava.member.mapper.MemberMapper;
 
 @Service 
@@ -68,12 +69,49 @@ public class MemberService {
         return response(member);
     }
 
+    @Transactional
+    public Long signupSocial(SocialSignupRequest request, String provider){
+        MemberProfile profile = prepareProfile(request.name(), request.email(), request.phone(), request.regionSido(), request.regionSigungu(), request.regionDong());
+
+        if(memberMapper.existsByEmail(profile.email()) > 0){
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 가입된 이메일입니다. 기존 계정으로 로그인해주세요.");
+        }
+
+        int ketVer = phoneCryptoService.currentKeyVersion();
+
+        String phoneEnc = phoneCryptoService.encrypt(profile.phone(), ketVer);
+
+        int result = memberMapper.insertSocialUser(profile.name(), profile.email(), phoneEnc, ketVer, profile.regionSido(), profile.regionSigungu(), provider);
+
+        if(result != 1){
+            throw new IllegalStateException("소셜 회원가입에 실패했습니다.");
+        }
+
+        MemberResponse member = memberMapper.findByEmail(profile.email());
+
+        if(member == null){
+            throw new IllegalStateException("회원 정보 조회에 실패했습니다.");
+        }
+        return member.id();
+    }
+
     public AuthResponse login(LoginRequest request) {
         if(request == null || request.email() == null || request.email().isBlank() || request.password() == null || request.password().isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"이메일과 비밀번호를 입력해주세요.");
         String email = request.email().trim().toLowerCase(Locale.ROOT);
         String hash = memberMapper.findPasswordHashByEmail(email);
         MemberResponse member = memberMapper.findByEmail(email);
         if(hash == null || member == null || !passwordEncoder.matches(request.password(), hash) || !"ACTIVE".equals(member.status()) || !"N".equals(member.bannedYn())) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 일치하지 않습니다.");      
+        return response(member);
+    }
+
+    @Transactional
+    public AuthResponse loginSocialMember(Long memberId){
+        memberMapper.lockMember(memberId);
+
+        MemberResponse member = memberMapper.findById(memberId);
+        if(member == null || !"ACTIVE".equals(member.status()) || !"N".equals(member.bannedYn())){
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인할 수 없는 회원입니다.");
+        }
         return response(member);
     }
 
@@ -175,7 +213,7 @@ public class MemberService {
         if(activeMemberships > 0 || ownedGroups > 0){
             throw bad("참여 중인 모임을 먼저 정리해 주세요.");
         }
-        
+
         memberMapper.revokeOptionalConsents(memberId);
 
         int result = memberMapper.withdraw(memberId);
