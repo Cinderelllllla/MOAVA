@@ -152,11 +152,26 @@ export function RiskPanel({ compact }) {
   const assessment = finance.getMlAssessment(), a = finance.affordability();
   const cap = Math.round(finance.getPolicy().incomeCapRatio * 100);   // 상한 적용 안내용(%) — ML 서버 값 기준
   return <div className="policy-panel" style={{ marginTop: 0 }}><h3>연체 위험 등급 {assessment && <span className="policy-tag">AI 분석</span>}</h3>
-    {assessment ? <p className="muted mini">위험 등급 <b>{assessment.risk.risk_label}</b>{assessment.risk.safety_factor != null && <> · 안전계수 {assessment.risk.safety_factor}</>}</p>
+    {assessment ? <p className="muted mini">위험 등급 <RiskBadge risk={assessment.risk} />{assessment.risk.safety_factor != null && <> · 안전계수 {assessment.risk.safety_factor}</>}</p>
       : <><p className="muted mini">아직 분석 결과가 없어요. 맞춤 추천에서 금융정보를 입력하고 이용에 동의하면 AI가 위험 등급과 추천 납입액을 계산해 드려요.</p><div className="actions"><button type="button" className="btn small soft" onClick={() => nav('/journey')}>맞춤 추천 시작 →</button></div></>}
     {!compact && assessment && a && <p className="info mini" style={{ marginTop: 12 }}>추천 월 납입액 <b>{a.rec > 0 ? won(a.rec) : '추천 없음'}</b>{a.rec <= 0 ? ` · ${finance.noRecommendReason(a)}` : ''}{a.capped && a.rec > 0 ? ` · 월수입 ${cap}% 상한 적용` : ''}</p>}</div>;
 }
-export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return assessment ? <>위험 등급 <b>{assessment.risk.risk_label}</b></> : <>아직 위험 등급 분석 전이에요.</>; };
+/* F09 위험 등급 배지 — 등급 코드(STABLE/CAUTION/RISK) 기준으로 색을 정한다. 라벨 글자로 비교하지 않는다.
+   코드가 오는 곳: ML 실시간 응답 risk.risk_level / 저장된 결과(GET /finance/profile) assessment.riskLevel(= RISK_SCORE.TIER)
+   → finance.js 가 둘 다 risk.risk_level 로 맞춰 저장한다. 혹시 다른 이름(riskLevel·tier)으로 와도 읽는다.
+   색약 사용자를 위해 색과 함께 글자(안정/주의/위험)를 항상 보여 준다. */
+const RISK_TIERS = { STABLE: { label: '안정', cls: 'stable' }, CAUTION: { label: '주의', cls: 'caution' }, RISK: { label: '위험', cls: 'risk' } };
+/** risk 객체 → { code, label, cls }. 알 수 없는 코드면 cls 'unknown'(회색) + 받은 라벨 그대로 */
+export function riskTierOf(risk) {
+  const code = String(risk?.risk_level ?? risk?.riskLevel ?? risk?.tier ?? '').trim().toUpperCase();
+  const known = RISK_TIERS[code];
+  return known ? { code, ...known } : { code, label: risk?.risk_label ?? risk?.riskLabel ?? '알 수 없음', cls: 'unknown' };
+}
+export function RiskBadge({ risk }) {
+  const t = riskTierOf(risk);
+  return <span className={`risk-badge ${t.cls}`}>{t.label}</span>;
+}
+export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return assessment ? <>위험 등급 <RiskBadge risk={assessment.risk} /></> : <>아직 위험 등급 분석 전이에요.</>; };
 
 export function FinanceAssessmentStatus({ status, error, retry }) {
   const text = status === 'loading' ? 'AI가 금융정보를 분석하고 있어요.'

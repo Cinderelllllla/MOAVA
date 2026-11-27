@@ -19,6 +19,7 @@ import Evidence from './pages/Evidence';
 import { Notifications, Account } from './pages/Misc';
 import SupportReportPage from './pages/SupportReportPage';
 import { AdminDashboard, AdminGroups, AdminSanctions, AdminDissolve, AdminRefs, AdminOverdue } from './pages/admin/AdminPages';
+import SocialCallback from './pages/SocialCallback';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminSupportReportsPage from './pages/admin/AdminSupportReportsPage';
 
@@ -28,6 +29,16 @@ export default function App() {
     <Route path="/" element={<Landing />} />
     <Route path="/login" element={<Login />} />
     <Route path="/signup" element={<Signup />} />
+
+    <Route
+    path="/oauth/callback"
+    element={<SocialCallback />}
+    />
+
+    <Route
+        path="/signup/social"
+        element={<SocialCallback />}
+    />
     <Route path="/invite" element={<InviteRoute />} />
     <Route path="/admin/login" element={<AdminLoginPage />} />
     {/* 회원 (S02~S15) */}

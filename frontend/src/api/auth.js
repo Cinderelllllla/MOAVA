@@ -194,6 +194,17 @@ export async function logout() {
 }
 
 // ========================================
+// 간편 로그인
+// ========================================
+ export async function finishSocial(path, body) {
+    const result = await requestAuth(path, body);
+
+    return connectServerSession(result);
+ }
+
+
+// ========================================
+// 7. 회원정보 수정 (서버 API 없음 → 화면에서 "준비 중")
 // 7. 회원정보 수정
 // ========================================
 
