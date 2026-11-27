@@ -17,6 +17,7 @@ import { useApp } from '../common/store';
 import { groups } from '../api';
 import { PageHead, Card } from '../components/ui';
 import { LoadState } from '../components/shared';
+import { formatRegionFromServer } from '../common/regions';
 
 /* =========================================
    공통 함수
@@ -877,9 +878,7 @@ export default function Invite() {
               <h2>{g.title}</h2>
 
               <p>
-                {[g.regionSido, g.regionSigungu]
-                  .filter(Boolean)
-                  .join(' ')}
+                {formatRegionFromServer(g)}
                 {' · '}
                 {groups.purposeLabel(g.purpose)}
               </p>

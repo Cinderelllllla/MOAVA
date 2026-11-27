@@ -18,7 +18,7 @@ const THEME_KEY = 'moava-ui-theme';   // 테마는 sessionStorage 에 둔다 →
 try { localStorage.removeItem(THEME_KEY); } catch { }   // 예전 버전이 영구 저장해 둔 테마 값 정리
 const UI_KEY = 'moava-ui';
 // selected·focus(선택 모임)는 처음엔 없음, financeMonth 는 비워 두면 화면이 이번 달을 쓴다
-const UI_DEFAULT = { selected: null, focus: null, search: '', region: '전체', purpose: '전체', sim: { amount: 20, members: 6, round: 3, rate: 3 }, procTab: 'order', financeMonth: '', inlineSimGroup: null, reportFilter: 'all' };
+const UI_DEFAULT = { selected: null, focus: null, search: '', region: '전체', regionSido: '전체', regionSigungu: '전체', regionDong: '전체', purpose: '전체', sim: { amount: 20, members: 6, round: 3, rate: 3 }, procTab: 'order', financeMonth: '', inlineSimGroup: null, reportFilter: 'all' };
 const load = (key, fallback) => { try { return { ...fallback, ...JSON.parse(sessionStorage.getItem(key) || '{}') }; } catch { return fallback; } };
 
 let toastTimer;

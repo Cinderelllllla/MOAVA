@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.moava.finance.mapper.SavingProductMapper">
+
+    <resultMap id="savingProductMap" type="com.moava.finance.dto.SavingProductRow">
+        <constructor>
+            <arg column="PRODUCT_ID"   javaType="java.lang.Long"/>
+            <arg column="FIN_CO_NO"    javaType="java.lang.String"/>
+            <arg column="BANK_NAME"    javaType="java.lang.String"/>
+            <arg column="PRODUCT_NAME" javaType="java.lang.String"/>
+            <arg column="TERM_MONTHS"  javaType="_int"/>
+            <arg column="RATE_BASIC"   javaType="java.math.BigDecimal"/>
+            <arg column="RATE_MAX"     javaType="java.math.BigDecimal"/>
+            <arg column="FETCHED_AT"   javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectAll" resultMap="savingProductMap">
+        SELECT
+            PRODUCT_ID,
+            FIN_CO_NO,
+            BANK_NAME,
+            PRODUCT_NAME,
+            TERM_MONTHS,
+            RATE_BASIC,
+            RATE_MAX,
+            TO_CHAR(FETCHED_AT, 'YYYY-MM-DD') AS FETCHED_AT
+        FROM PRODUCTS_SAVING
+        ORDER BY NVL(RATE_MAX, RATE_BASIC) DESC, RATE_BASIC DESC, PRODUCT_ID ASC
+    </select>
+
+</mapper>

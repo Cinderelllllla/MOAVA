@@ -8,6 +8,7 @@ public record GroupCreateRequest(
     String purpose,
     String regionSido,
     String regionSigungu,
+    String regionDong,
     Long amount,
     Integer maxMembers,
     Integer months,

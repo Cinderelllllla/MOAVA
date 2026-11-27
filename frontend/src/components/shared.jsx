@@ -1,5 +1,5 @@
 /* 여러 화면이 함께 쓰는 컴포넌트: BarChart · GroupCard · GroupInfo · InlineSimulator · RiskPanel · ProofAttachment · GroupSelect */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
 import { finance, groups, joined, leader, memberName, activeJoined, db } from '../api';
@@ -30,35 +30,120 @@ export function MonthlyChart({ limit }) {
   </LoadState>;
 }
 
+function groupParticipation(g) {
+  if (g?.role === 'OWNER') return { isJoined: true, isLeader: true };
+  if (g?.role === 'MEMBER') return { isJoined: true, isLeader: false };
+  if (g?.role === 'NONE') return { isJoined: false, isLeader: false };
+  return { isJoined: joined(g), isLeader: leader(g) };
+}
+
+function groupMemberCounts(g) {
+  const current = Number.isFinite(Number(g?.currentMembers))
+    ? Number(g.currentMembers)
+    : (g?.members?.length ?? 0);
+  const max = Number(g?.max ?? g?.maxMembers ?? 0);
+  return { current, max };
+}
+
 export function GroupCard({ g, selected, onSelect, onSim }) {
   const nav = useNavigate(); const { setUi } = useApp();
+  const { isJoined, isLeader } = groupParticipation(g);
+  const { current, max } = groupMemberCounts(g);
+  const targetId = g.groupId ?? g.id;
   return <div className={`list-item group-choice ${selected ? 'selected' : ''}`} role="button" tabIndex={0} aria-pressed={!!selected} onClick={() => onSelect(g.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(g.id); } }}>
-    <div className="item-head"><b>{g.title}</b><span className={`pill ${joined(g) ? 'mine' : ''}`}>{joined(g) ? (leader(g) ? '내 모임 · 모임장' : '참여 중') : g.status}</span></div>
-    <p className="muted mini">{g.region} · {g.purpose} · 월 {won(g.amount)} · 매월 {g.payDay}일 · {g.members.length}/{g.max}명</p>
-    <div className="group-card-actions"><button type="button" className="btn small primary" onClick={e => { e.stopPropagation(); onSelect(g.id); }}>상세 보기</button>{joined(g) && <button type="button" className="btn small soft" onClick={e => { e.stopPropagation(); setUi({ selected: g.id }); nav('/operations'); }}>운영 홈</button>}</div>
+    <div className="item-head"><b>{g.title}</b><span className={`pill ${isJoined ? 'mine' : ''}`}>{isJoined ? (isLeader ? '내 모임 · 모임장' : '참여 중') : g.status}</span></div>
+    <p className="muted mini">{g.region} · {g.purpose} · 월 {won(g.amount)} · 매월 {g.payDay}일 · {current}/{max}명{g.healthScore != null ? ` · 건강도 ${g.healthScore}점` : ''}</p>
+    <div className="group-card-actions"><button type="button" className="btn small primary" onClick={e => { e.stopPropagation(); onSelect(g.id); }}>상세 보기</button>{isJoined && <button type="button" className="btn small soft" onClick={e => { e.stopPropagation(); setUi({ selected: targetId }); nav(`/operations?groupId=${encodeURIComponent(targetId)}`); }}>운영 홈</button>}</div>
   </div>;
 }
 
 export function GroupInfo({ g, onSim }) {
   const nav = useNavigate(); const { setUi, run } = useApp();
+  const [joining, setJoining] = useState(false);
   if (!g) return <div className="group-info-empty"><h3>모임을 선택해 주세요</h3><p>목록 카드 또는 지도 핀을 누르면 이곳에 모임 정보가 나타나요.</p></div>;
-  const rows = [['지역', g.region], ['목적', g.purpose], ['월 납입액', won(g.amount)], ['납입일', `매월 ${g.payDay}일`], ['운영 기간', `${g.months}개월`], ['참여 인원', `${g.members.length} / ${g.max}명`], ['모임장', memberName(g.ownerId)], ['수령 순서', g.orderConfirmed ? '확정' : '협의 중'], ['가정 이율', `연 ${Number(g.rate || 0)}%`]];
-  return <div className="group-info-full"><span className={`pill ${joined(g) ? 'mine' : ''}`}>{joined(g) ? (leader(g) ? '내 모임 · 모임장' : '참여 중 · ' + g.status) : g.status}</span><h2>{g.title}</h2><p>{g.description || '모임 소개가 등록되지 않았습니다.'}</p>
+  const { isJoined, isLeader } = groupParticipation(g);
+  const { current, max } = groupMemberCounts(g);
+  const targetId = g.groupId ?? g.id;
+  const isServerGroup = g.source === 'SERVER' || g.role != null;
+  const ownerDisplay = g.ownerName || memberName(g.ownerId);
+  const rulesText = g.rules ?? g.rulesBody ?? '';
+  const canJoin = isServerGroup
+    ? g.statusCode === 'RECRUITING' && (max <= 0 || current < max)
+    : true;
+
+  const handleJoin = async () => {
+    if (joining) return;
+    setJoining(true);
+    try {
+      await run(
+        () => (isServerGroup ? groups.requestJoinGroup(targetId, 'SEARCH') : groups.joinRequest(targetId)),
+        '모임장에게 가입 신청을 전송했어요.'
+      );
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const rows = [
+    ['지역', g.region],
+    ['목적', g.purpose],
+    ['월 납입액', won(g.amount)],
+    ['납입일', `매월 ${g.payDay}일`],
+    ['운영 기간', `${g.months}개월`],
+    ['참여 인원', `${current} / ${max}명`],
+    ['모임장', ownerDisplay],
+    ['수령 순서', g.orderConfirmed ? '확정' : '협의 중'],
+    ['가정 이율', `연 ${Number(g.rate || 0)}%`],
+    ...(g.healthScore != null ? [['모임 건강도', `${g.healthScore}점`]] : []),
+  ];
+  return <div className="group-info-full"><span className={`pill ${isJoined ? 'mine' : ''}`}>{isJoined ? (isLeader ? '내 모임 · 모임장' : '참여 중 · ' + g.status) : g.status}</span><h2>{g.title}</h2><p>{g.description || '모임 소개가 등록되지 않았습니다.'}</p>
     <div className="group-info-rows">{rows.map(([k, v]) => <div key={k}><span>{k}</span><strong>{v}</strong></div>)}</div>
-    <div className="info" style={{ marginTop: 14 }}><b>운영 규칙 · {g.rulesTitle || '운영 규칙'}</b><p>{g.rules || '등록된 규칙이 없습니다.'}</p></div>
-    <div className="actions" style={{ marginTop: 16 }}>{joined(g) ? <button className="btn primary" onClick={() => { setUi({ selected: g.id }); nav('/operations'); }}>운영 홈 · 상세</button> : <button className="btn primary" onClick={() => run(() => groups.joinRequest(g.id), '모임장에게 가입 신청을 전송했어요.')}>가입 신청</button>}<button className="btn soft" onClick={() => onSim(g)}>시뮬레이션</button></div></div>;
+    <div className="info" style={{ marginTop: 14 }}><b>운영 규칙 · {g.rulesTitle || '운영 규칙'}</b><p>{rulesText || '등록된 규칙이 없습니다.'}</p></div>
+    <div className="actions" style={{ marginTop: 16 }}>{isJoined
+      ? <button type="button" className="btn primary" onClick={() => { setUi({ selected: targetId }); nav(`/operations?groupId=${encodeURIComponent(targetId)}`); }}>운영 홈</button>
+      : <button type="button" className="btn primary" disabled={joining || !canJoin} onClick={handleJoin}>{!canJoin ? '모집 마감' : joining ? '신청 중…' : '가입 신청'}</button>
+    }<button type="button" className="btn soft" onClick={() => onSim(g)}>시뮬레이션</button></div></div>;
 }
 
 export function InlineSimulator({ g, onClose }) {
   const [v, setV] = useState({ amount: g.amount, members: g.max, round: Math.max(1, Math.min(g.max, Math.ceil(g.max / 2))), rate: g.rate });
+  const [saving, setSaving] = useState(null);
   const a = Number(v.amount), n = Number(v.members), r = Number(v.round), rate = Number(v.rate);
-  const valid = Number.isFinite(a) && a > 0 && Number.isInteger(n) && n >= 2 && n <= 30 && Number.isInteger(r) && r >= 1 && r <= n && Number.isFinite(rate) && rate >= 0 && rate <= 20;
+  const hasRate = String(v.rate ?? '').trim() !== '';
+  const valid =
+    Number.isInteger(a) && a >= 5 && a % 5 === 0 &&
+    Number.isInteger(n) && n >= 2 && n <= 30 &&
+    Number.isInteger(r) && r >= 1 && r <= n &&
+    hasRate && Number.isFinite(rate) && rate >= 0 && rate <= 20;
+
+  useEffect(() => {
+    if (!Number.isInteger(n) || n < 2 || n > 30) {
+      setSaving(null);
+      return undefined;
+    }
+    let alive = true;
+    finance.getSavingComparison(n)
+      .then((res) => { if (alive) setSaving(res); })
+      .catch(() => { if (alive) setSaving(null); });
+    return () => { alive = false; };
+  }, [n]);
+
   const total = a * n, shift = finance.payoutShift(a, n, r, rate);
+  const bankTop = saving?.available && saving.topMaxRate != null
+    ? finance.savingMaturity(a, n, saving.topMaxRate)
+    : null;
   const F = (label, key, props) => <div className="field"><label>{label}</label><input type="number" value={v[key]} onChange={e => setV({ ...v, [key]: e.target.value })} {...props} /></div>;
   return <div className="inline-sim"><p className="muted mini">{g.title} · 추천 단계와 금융 정보는 그대로 유지돼요.</p>
     <div className="inline-sim-fields">{F('월 납입액 (만 원)', 'amount', { min: 5, step: 5 })}{F('참여 인원', 'members', { min: 2, max: 30 })}{F('수령 회차', 'round', { min: 1, max: n })}{F('가정 연이율 (%)', 'rate', { min: 0, max: 20, step: 0.5 })}</div>
-    {valid ? <div className="quick-results"><div><small>기본 수령액</small><strong>{krw(total)}</strong></div><div><small>{shift < 0 ? '차감액' : '가산액'}</small><strong>{signed(shift, krw)}</strong></div><div className="quick-total"><small>가정 수령액 · {r}회차</small><strong>{krw(total + shift)}</strong></div></div> : <p className="warning mini">금액, 인원(2~30명), 수령 회차, 이율(0~20%)을 확인해 주세요.</p>}
-    <p className="muted mini">수령 순서에 따른 가상 보정 계산이며 실제 이자나 지급액이 아닙니다.</p><div className="actions"><button className="btn soft" onClick={onClose}>← 모임 상세로 돌아가기</button></div></div>;
+    {valid ? <>
+      <div className="quick-results"><div><small>기본 수령액</small><strong>{krw(total)}</strong></div><div><small>{shift < 0 ? '차감액' : '가산액'}</small><strong>{signed(shift, krw)}</strong></div><div className="quick-total"><small>가정 수령액 · {r}회차</small><strong>{krw(total + shift)}</strong></div></div>
+      {bankTop && (
+        <p className="info mini" style={{ marginTop: 10 }}>
+          시중 {saving.matchedTermMonths ?? n}개월 적금 비교: 평균 기본 <b>{saving.avgBasicRate?.toFixed(2)}%</b> · 최고 우대 <b>{saving.topMaxRate?.toFixed(2)}%</b> (동일 납입 만기 예상 <b>{krw(bankTop.maturity)}</b>, 세전)
+        </p>
+      )}
+    </> : <p className="warning mini">월 납입액은 5만 원 단위, 인원 2~30명, 회차는 인원 이내, 이율 0~20%로 입력하세요.</p>}
+    <p className="muted mini">수령 순서에 따른 가상 보정 계산이며 실제 이자나 지급액이 아닙니다.</p><div className="actions"><button type="button" className="btn soft" onClick={onClose}>← 모임 상세로 돌아가기</button></div></div>;
 }
 
 /** 연체 위험 등급 패널. AI 분석 결과가 있을 때만 등급·추천액을 보여 주고, 없으면 분석 안내만 한다(가정 등급을 쓰지 않음). */

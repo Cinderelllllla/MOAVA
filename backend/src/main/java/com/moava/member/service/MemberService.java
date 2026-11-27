@@ -40,7 +40,7 @@ public class MemberService {
     public AuthResponse signup(SignupRequest request) {
         if(request == null) throw bad("회원가입 정보를 입력해주세요.");
 
-        MemberProfile profile = prepareProfile(request.name(), request.email(), request.phone(), request.regionSido(), request.regionSigungu());
+        MemberProfile profile = prepareProfile(request.name(), request.email(), request.phone(), request.regionSido(), request.regionSigungu(), request.regionDong());
 
         validatePassword((request.password()));
         if(memberMapper.existsByEmail(profile.email()) > 0){
@@ -58,7 +58,7 @@ public class MemberService {
         int keyVer = phoneCryptoService.currentKeyVersion();
         String phoneEnc = phoneCryptoService.encrypt(profile.phone(), keyVer);
 
-        int inserted = memberMapper.insertUser(profile.name(), profile.email(), passwordHash, phoneEnc, keyVer, profile.regionSido(), profile.regionSigungu());
+        int inserted = memberMapper.insertUser(profile.name(), profile.email(), passwordHash, phoneEnc, keyVer, profile.regionSido(), profile.regionSigungu(), profile.regionDong());
         if(inserted != 1){
             throw new IllegalStateException("회원가입 처리에 실패했습니다.");
         }
@@ -107,7 +107,7 @@ public class MemberService {
         }
         ensureCanUse(member);
 
-        MemberProfile profile = prepareProfile(request.name(), request.email(), request.phone(), request.regionSido(), request.regionSigungu());
+        MemberProfile profile = prepareProfile(request.name(), request.email(), request.phone(), request.regionSido(), request.regionSigungu(), request.regionDong());
 
         if(memberMapper.existsByEmailExceptMember(profile.email(), memberId) > 0){
             throw bad("이미 사용중인 이메일 입니다.");
@@ -117,7 +117,7 @@ public class MemberService {
 
         String phoneEnc = phoneCryptoService.encrypt(profile.phone(), keyVer);
 
-        int update = memberMapper.updateProfile(memberId, profile.name(), profile.email(), phoneEnc, keyVer, profile.regionSido(), profile.regionSigungu());
+        int update = memberMapper.updateProfile(memberId, profile.name(), profile.email(), phoneEnc, keyVer, profile.regionSido(), profile.regionSigungu(), profile.regionDong());
         if(update != 1){
             throw new IllegalStateException("회원 정보 수정에 실패했습니다.");
         }
@@ -198,7 +198,7 @@ public class MemberService {
     }
 
     private MemberView toView(MemberResponse member, String phone) {
-        return new MemberView(member.name(), member.email(), phone, member.regionSido(), member.regionSigungu(), member.status());
+        return new MemberView(member.name(), member.email(), phone, member.regionSido(), member.regionSigungu(), member.regionDong(), member.status());
     }
 
     private ResponseStatusException bad(String message) {
@@ -215,15 +215,17 @@ public class MemberService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "이용 정지된 회원입니다.");
     }
 
-    private record MemberProfile(String name, String email, String phone, String regionSido, String regionSigungu) {
+    private record MemberProfile(String name, String email, String phone, String regionSido, String regionSigungu, String regionDong) {
     }
 
-    private MemberProfile prepareProfile(String name, String email, String phone, String regionSido, String regionSigungu){
+    private MemberProfile prepareProfile(String name, String email, String phone, String regionSido, String regionSigungu, String regionDong){
         name = clean(name);
         email = clean(email).toLowerCase(Locale.ROOT);
         phone = clean(phone).replace("-", "");
         regionSido = clean(regionSido);
         regionSigungu = clean(regionSigungu);
+        String cleanedDong = clean(regionDong);
+        regionDong = cleanedDong.isBlank() ? null : cleanedDong;
         
         if (name.length() < 2 || name.length() > 50) {
             throw bad("이름은 2~50자 사이여야 합니다.");
@@ -237,7 +239,10 @@ public class MemberService {
         if (regionSido.isBlank() || regionSido.length() > 30 || regionSigungu.isBlank() || regionSigungu.length() > 30) {
             throw bad("활동 지역을 올바르게 입력해주세요.");
         }
-        return new MemberProfile(name, email, phone, regionSido, regionSigungu);
+        if (regionDong != null && regionDong.getBytes(StandardCharsets.UTF_8).length > 40) {
+            throw bad("활동 지역(읍/면/동)을 올바르게 입력해주세요.");
+        }
+        return new MemberProfile(name, email, phone, regionSido, regionSigungu, regionDong);
     }
 
     private void validatePassword(String password){

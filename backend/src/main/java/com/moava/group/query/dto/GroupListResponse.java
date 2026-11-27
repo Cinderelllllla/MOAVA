@@ -10,6 +10,7 @@ public record GroupListResponse(
         String purpose,
         String regionSido,
         String regionSigungu,
+        String regionDong,
         Long amount,
         Integer maxMembers,
         Integer currentMembers,

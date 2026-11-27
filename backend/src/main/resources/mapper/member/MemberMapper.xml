@@ -3,7 +3,7 @@
 <mapper namespace="com.moava.member.mapper.MemberMapper">
 
     <select id="findByEmail" resultType="com.moava.member.dto.MemberResponse">
-        SELECT MEMBER_ID AS ID, NAME, EMAIL, PHONE_ENC AS PHONE_ENC, REGION_SIDO AS REGION_SIDO, REGION_SIGUNGU AS REGION_SIGUNGU, STATUS, BANNED_YN AS BANNED_YN, KEY_VER AS KEY_VER
+        SELECT MEMBER_ID AS ID, NAME, EMAIL, PHONE_ENC AS PHONE_ENC, REGION_SIDO AS REGION_SIDO, REGION_SIGUNGU AS REGION_SIGUNGU, REGION_DONG AS REGION_DONG, STATUS, BANNED_YN AS BANNED_YN, KEY_VER AS KEY_VER
           FROM MEMBER
          WHERE LOWER(EMAIL) = LOWER(#{email})
     </select>
@@ -33,6 +33,7 @@
             PHONE_ENC AS PHONE_ENC,
             REGION_SIDO AS REGION_SIDO,
             REGION_SIGUNGU AS REGION_SIGUNGU,
+            REGION_DONG AS REGION_DONG,
             STATUS,
             BANNED_YN,
             KEY_VER
@@ -45,10 +46,10 @@
     <insert id="insertUser">
         INSERT INTO MEMBER
             (MEMBER_ID, NAME, EMAIL, PASSWORD_HASH, PHONE_ENC, REGION_SIDO,
-             REGION_SIGUNGU, STATUS, BANNED_YN, KEY_VER)
+             REGION_SIGUNGU, REGION_DONG, STATUS, BANNED_YN, KEY_VER)
         VALUES
             (SEQ_MEMBER.NEXTVAL, #{name}, #{email}, #{passwordHash}, #{phoneEnc}, #{regionSido},
-             #{regionSigungu}, 'ACTIVE', 'N', #{keyVer})
+             #{regionSigungu}, #{regionDong, jdbcType=VARCHAR}, 'ACTIVE', 'N', #{keyVer})
     </insert>
 
     <select id="findPasswordHashById" resultType="string">
@@ -75,6 +76,7 @@
             KEY_VER = #{keyVer},
             REGION_SIDO = #{regionSido},
             REGION_SIGUNGU = #{regionSigungu},
+            REGION_DONG = #{regionDong, jdbcType=VARCHAR},
             UPDATED_AT = SYSDATE
         WHERE MEMBER_ID = #{memberId}
             AND STATUS = 'ACTIVE'

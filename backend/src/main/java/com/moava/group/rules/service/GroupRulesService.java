@@ -7,8 +7,11 @@ import com.moava.group.rules.dto.GroupRulesResponse;
 import com.moava.group.rules.dto.GroupRulesRow;
 import com.moava.group.rules.dto.GroupRulesUpdateRequest;
 import com.moava.group.rules.mapper.GroupRulesMapper;
+import com.moava.group.search.event.GroupSearchSyncEvent;
 import com.moava.notification.common.domain.NotifType;
 import com.moava.notification.common.service.NotificationService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,13 +43,22 @@ public class GroupRulesService {
     private final NotificationService notifications;
     private final ChatService chat;
     private final ChatBroadcaster broadcaster;
+    private final ApplicationEventPublisher eventPublisher;
 
+    @Autowired
     public GroupRulesService(GroupRulesMapper mapper, NotificationService notifications,
-                             ChatService chat, ChatBroadcaster broadcaster) {
+                             ChatService chat, ChatBroadcaster broadcaster,
+                             ApplicationEventPublisher eventPublisher) {
         this.mapper = mapper;
         this.notifications = notifications;
         this.chat = chat;
         this.broadcaster = broadcaster;
+        this.eventPublisher = eventPublisher;
+    }
+
+    public GroupRulesService(GroupRulesMapper mapper, NotificationService notifications,
+                             ChatService chat, ChatBroadcaster broadcaster) {
+        this(mapper, notifications, chat, broadcaster, null);
     }
 
     /** GET: 최신 규칙 */
@@ -86,6 +98,9 @@ public class GroupRulesService {
                 List.of(memberId));   // 모임장 본인 제외
         ChatMessageResponse notice = chat.postSystem(groupId, systemMessage(title));
         broadcaster.broadcastAfterCommit(notice);   // 커밋 뒤에만 실제 전송
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+        }
 
         return new GroupRulesResponse(groupId, title, body, true, row.groupStatus());
     }
