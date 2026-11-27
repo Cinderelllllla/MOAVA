@@ -139,3 +139,35 @@ export async function transferToLeader(payload) {
 export async function fetchLeaderTargets() {
   return apiFetch(`${ACCOUNTS_BASE}/leader-targets`, { method: 'GET', cache: 'no-store' });
 }
+
+// ==================== 3. 간편 은행 연결 · 가상은행 1원 인증(4자리) API ====================
+
+export async function startQuickConnect(payload) {
+  return apiFetch(`${ACCOUNTS_BASE}/quick-connect/start`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+}
+
+export async function fetchQuickConnectSession(sessionToken) {
+  return apiFetch(`${ACCOUNTS_BASE}/quick-connect/${encodeURIComponent(sessionToken)}`, {
+    method: 'GET',
+    cache: 'no-store',
+  });
+}
+
+export async function resendQuickConnectCode(sessionToken) {
+  return apiFetch(`${ACCOUNTS_BASE}/quick-connect/${encodeURIComponent(sessionToken)}/resend`, {
+    method: 'POST',
+    cache: 'no-store',
+  });
+}
+
+export async function verifyQuickConnect(sessionToken, payload) {
+  return apiFetch(`${ACCOUNTS_BASE}/quick-connect/${encodeURIComponent(sessionToken)}/verify`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+}

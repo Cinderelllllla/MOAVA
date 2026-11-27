@@ -498,7 +498,7 @@ public class CodefBankService {
     ) {
         try {
             String connectedId = cryptoKeyService.decrypt(conn.getConnectedIdEnc(), conn.getKeyVer());
-            if (!isNotBlank(connectedId)) {
+            if (!isNotBlank(connectedId) || connectedId.startsWith("QUICK_OAUTH:")) {
                 return;
             }
             if (tryDeleteRemoteAccount(orgCode, connectedId, "0")) {

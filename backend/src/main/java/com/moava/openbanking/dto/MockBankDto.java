@@ -201,4 +201,51 @@ public class MockBankDto {
         private String printContent;
         private String message;
     }
+
+    /** 간편 은행 연결 시작 요청 (은행명·계좌번호·소유주·전화번호 -> 가상은행 인증 화면 이동) */
+    @Getter @Setter
+    public static class QuickConnectStartRequest {
+        private String organization;        // 4자리 기관코드, 3자리 KFTC 코드, 또는 은행명
+        private String accountNo;           // 계좌번호 (숫자 또는 하이픈 포함)
+        private String holderName;          // 계좌 소유주(예금주) 실명
+        private String phone;               // 본인 휴대폰 번호
+        private Long initialMockBalance;    // 선택: 초기 모의 잔액 (미지정 시 1,000,000원)
+        private Boolean leaderAccount;      // 선택: 모임장 수취 계좌 여부 (미지정 시 자동 판별)
+    }
+
+    /** 가상은행 1원 인증 세션 정보 (은행별 로그인/인증 화면 표시용) */
+    @Getter @Setter
+    public static class QuickConnectSessionResponse {
+        private String sessionToken;
+        private String organization;
+        private String kftcCode;
+        private String bankName;
+        private String accountMasked;
+        private String holderName;
+        private String phoneMasked;
+        private String depositMemo;         // 1원 입금자명 (예: "모아바4829")
+        private String authCodeHint;        // 가상은행 1원 입금 알림 표시용 4자리 코드
+        private long expiresInSeconds;
+        private String bankAuthUrl;         // 프론트 자동 이동 경로 (/openbanking/bank-auth?session=...)
+    }
+
+    /** 가상은행 1원 인증번호 4자리 검증 및 오픈뱅킹 동의 완료 요청 */
+    @Getter @Setter
+    public static class QuickConnectVerifyRequest {
+        private String authCode;            // 4자리 숫자 인증번호
+        private Boolean agreed;             // 오픈뱅킹 계좌조회·출금이체 정보제공 동의 여부
+    }
+
+    /** 간편 은행 연결 완료 응답 */
+    @Getter @Setter
+    public static class QuickConnectVerifyResponse {
+        private boolean verified;
+        private String organization;
+        private String bankName;
+        private String accountMasked;
+        private String holderName;
+        private String oauthScope;
+        private ProvisionResult mockAccount;
+        private String message;
+    }
 }

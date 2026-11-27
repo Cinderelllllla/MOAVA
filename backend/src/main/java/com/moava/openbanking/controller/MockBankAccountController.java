@@ -3,6 +3,7 @@ package com.moava.openbanking.controller;
 import com.moava.openbanking.codef.CodefException;
 import com.moava.openbanking.dto.MockBankDto;
 import com.moava.openbanking.service.MockBankAccountService;
+import com.moava.openbanking.service.MockBankQuickConnectService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
@@ -23,6 +24,46 @@ import java.util.List;
 public class MockBankAccountController {
 
     private final MockBankAccountService mockBankAccountService;
+    private final MockBankQuickConnectService quickConnectService;
+
+    // 0-1. 간편 은행 연결 시작 (은행명·계좌번호·소유주·전화번호 -> 가상은행 1원 인증 세션 발급)
+    @PostMapping("/quick-connect/start")
+    public ResponseEntity<MockBankDto.QuickConnectSessionResponse> quickConnectStart(
+            Authentication authentication,
+            HttpServletRequest request,
+            @RequestBody(required = false) MockBankDto.QuickConnectStartRequest body) {
+        return secureOk(quickConnectService.startQuickConnect(
+                resolveMemberId(authentication), body, resolveClientIp(request)));
+    }
+
+    // 0-2. 가상은행 인증 화면 세션 조회
+    @GetMapping("/quick-connect/{sessionToken}")
+    public ResponseEntity<MockBankDto.QuickConnectSessionResponse> quickConnectSession(
+            Authentication authentication,
+            @PathVariable("sessionToken") String sessionToken) {
+        return secureOk(quickConnectService.getSession(resolveMemberId(authentication), sessionToken));
+    }
+
+    // 0-3. 가상은행 1원 인증번호 4자리 재발송
+    @PostMapping("/quick-connect/{sessionToken}/resend")
+    public ResponseEntity<MockBankDto.QuickConnectSessionResponse> quickConnectResend(
+            Authentication authentication,
+            HttpServletRequest request,
+            @PathVariable("sessionToken") String sessionToken) {
+        return secureOk(quickConnectService.resendAuthCode(
+                resolveMemberId(authentication), sessionToken, resolveClientIp(request)));
+    }
+
+    // 0-4. 가상은행 1원 인증번호 4자리 검증 + 오픈뱅킹 동의 완료
+    @PostMapping("/quick-connect/{sessionToken}/verify")
+    public ResponseEntity<MockBankDto.QuickConnectVerifyResponse> quickConnectVerify(
+            Authentication authentication,
+            HttpServletRequest request,
+            @PathVariable("sessionToken") String sessionToken,
+            @RequestBody(required = false) MockBankDto.QuickConnectVerifyRequest body) {
+        return secureOk(quickConnectService.verifyAndComplete(
+                resolveMemberId(authentication), sessionToken, body, resolveClientIp(request)));
+    }
 
     // 1. 프론트 오픈뱅킹 화면 통합 초기 로딩 (CODEF 인증 현황 + 모의 계좌 + 최근 거래 + 월별 집계 + 모임장 수취 계좌)
     @GetMapping("/overview")

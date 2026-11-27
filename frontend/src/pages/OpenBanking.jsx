@@ -1,5 +1,6 @@
-/* 오픈뱅킹 · CODEF 실계좌인증 + 가상은행(KFTC 모의 원장) 통합 화면 (/openbanking) */
+/* 오픈뱅킹 · 간편 은행 연결(1원 4자리 인증) + 가상은행(KFTC 모의 원장) + CODEF 실계좌인증 통합 화면 (/openbanking) */
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../common/store';
 import { openbanking } from '../api';
 import { formatKrw } from '../common/format';
@@ -24,16 +25,32 @@ function fmtYm(ym) {
 }
 
 export default function OpenBanking() {
-  const { run, toast } = useApp();
+  const { user, run, toast } = useApp();
+  const nav = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [tab, setTab] = useState('codef'); // 'codef' | 'ledger' | 'transfer'
+  const initialTab = ['quick', 'ledger', 'transfer', 'codef'].includes(searchParams.get('tab'))
+    ? searchParams.get('tab')
+    : 'quick';
+  const [tab, setTab] = useState(initialTab);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [banks, setBanks] = useState([]);
   const [overview, setOverview] = useState(null);
   const [busyKey, setBusyKey] = useState('');
 
-  // Tab 1: CODEF 연결 폼
+  // Tab 1 (기본): 간편 은행 연결 폼 (은행명·계좌번호·소유주·전화번호 -> 해당 은행 인증 화면 이동)
+  const [quickForm, setQuickForm] = useState({
+    organization: '0004',
+    accountNo: '',
+    holderName: user?.name || '',
+    phone: '',
+    initialMockBalance: '',
+    leaderAccount: 'auto',
+  });
+  const [showQuickAdvanced, setShowQuickAdvanced] = useState(false);
+
+  // Tab 4 (고급): CODEF 연결 폼
   const [connectForm, setConnectForm] = useState({
     organization: '0004',
     loginType: '0',
@@ -44,7 +61,7 @@ export default function OpenBanking() {
   });
   const [certFiles, setCertFiles] = useState({ der: null, key: null, pfx: null });
 
-  // Tab 1: CODEF 보유 계좌 조회 + 실계좌 인증 폼
+  // Tab 4: CODEF 보유 계좌 조회 + 실계좌 인증 폼
   const [codefAccountsRes, setCodefAccountsRes] = useState(null);
   const [verifyForm, setVerifyForm] = useState({
     organization: '0004',
@@ -59,7 +76,7 @@ export default function OpenBanking() {
   });
   const [verifyResult, setVerifyResult] = useState(null);
 
-  // Tab 1: CODEF 실거래 직접 조회
+  // Tab 4: CODEF 실거래 직접 조회
   const [codefTxForm, setCodefTxForm] = useState({
     organization: '0004',
     account: '',
@@ -91,6 +108,11 @@ export default function OpenBanking() {
   });
   const [transferReceipt, setTransferReceipt] = useState(null);
 
+  const changeTab = nextTab => {
+    setTab(nextTab);
+    setSearchParams(nextTab === 'quick' ? {} : { tab: nextTab }, { replace: true });
+  };
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setLoadError('');
@@ -102,6 +124,10 @@ export default function OpenBanking() {
       const safeBanks = Array.isArray(bankList) ? bankList : [];
       setBanks(safeBanks);
       setOverview(ov);
+
+      if (ov?.memberName) {
+        setQuickForm(f => (f.holderName ? f : { ...f, holderName: ov.memberName }));
+      }
 
       const firstConnOrg = ov?.connections?.[0]?.organization || safeBanks[0]?.organization || '0004';
       const verifiedConnOrg = ov?.connections?.find(c => c.verified)?.organization || firstConnOrg;
@@ -374,6 +400,33 @@ export default function OpenBanking() {
     }
   };
 
+  // ==================== Tab 1 (간편 연결) 핸들러 ====================
+
+  const handleQuickStart = async e => {
+    e.preventDefault();
+    if (!quickForm.accountNo.trim() || !quickForm.holderName.trim() || !quickForm.phone.trim()) {
+      toast('은행명, 계좌번호, 소유주, 전화번호를 모두 입력해 주세요.');
+      return;
+    }
+    setBusyKey('quick-start');
+    const payload = {
+      organization: quickForm.organization,
+      accountNo: quickForm.accountNo.trim(),
+      holderName: quickForm.holderName.trim(),
+      phone: quickForm.phone.trim(),
+      ...(quickForm.initialMockBalance !== '' ? { initialMockBalance: Number(quickForm.initialMockBalance) } : {}),
+      ...(quickForm.leaderAccount !== 'auto' ? { leaderAccount: quickForm.leaderAccount === 'true' } : {}),
+    };
+    const r = await run(
+      () => openbanking.startQuickConnect(payload),
+      res => `${res.bankName} 1원 인증 화면으로 이동합니다.`,
+    );
+    setBusyKey('');
+    if (r.ok && r.value?.bankAuthUrl) {
+      nav(r.value.bankAuthUrl);
+    }
+  };
+
   const bankOptions = banks.map(b => [b.organization, `${b.bankName} (${b.organization})`]);
   const connections = overview?.connections || [];
   const accounts = overview?.accounts || [];
@@ -383,9 +436,9 @@ export default function OpenBanking() {
   return (
     <>
       <PageHead
-        kicker="OPEN BANKING · CODEF"
-        title="오픈뱅킹 · 가상은행 & CODEF 실계좌인증"
-        sub="CODEF 개인 수시입출 실계좌인증 결과를 KFTC v2.0 모의 오픈뱅킹 원장에 연동하고, 잔액·거래내역·모임 회비 이체를 테스트할 수 있어요."
+        kicker="OPEN BANKING · QUICK AUTH"
+        title="오픈뱅킹 · 내 계좌 연결 & 가상은행"
+        sub="은행명·계좌번호·소유주·전화번호만 입력하면 선택한 은행의 1원 인증 화면으로 바로 이동해 4자리 인증번호 확인 후 계좌를 연결할 수 있어요."
       >
         <button type="button" className="btn soft" onClick={loadAll} disabled={loading}>
           {loading ? '불러오는 중…' : '새로고침'}
@@ -404,7 +457,7 @@ export default function OpenBanking() {
       {/* 상단 KPI 요약 */}
       <div className="grid cols4">
         <Card className="stat">
-          <small>CODEF 연결 / 실계좌 인증</small>
+          <small>연결 / 인증 완료 은행</small>
           <div className="value">
             {connections.length}개 / {overview?.codefVerifiedCount ?? 0}건
           </div>
@@ -436,18 +489,18 @@ export default function OpenBanking() {
           <button
             type="button"
             role="tab"
-            aria-selected={tab === 'codef'}
-            className={`tab ${tab === 'codef' ? 'active' : ''}`}
-            onClick={() => setTab('codef')}
+            aria-selected={tab === 'quick'}
+            className={`tab ${tab === 'quick' ? 'active' : ''}`}
+            onClick={() => changeTab('quick')}
           >
-            1. CODEF 실계좌 연결 · 인증
+            1. 간편 은행 계좌 연결
           </button>
           <button
             type="button"
             role="tab"
             aria-selected={tab === 'ledger'}
             className={`tab ${tab === 'ledger' ? 'active' : ''}`}
-            onClick={() => setTab('ledger')}
+            onClick={() => changeTab('ledger')}
           >
             2. 모의은행 계좌 · 거래원장 ({accounts.length})
           </button>
@@ -456,13 +509,201 @@ export default function OpenBanking() {
             role="tab"
             aria-selected={tab === 'transfer'}
             className={`tab ${tab === 'transfer' ? 'active' : ''}`}
-            onClick={() => setTab('transfer')}
+            onClick={() => changeTab('transfer')}
           >
             3. 모임장 회비 이체 ({leaderTargets.length})
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'codef'}
+            className={`tab ${tab === 'codef' ? 'active' : ''}`}
+            onClick={() => changeTab('codef')}
+          >
+            4. CODEF 실계좌 연동 (고급)
+          </button>
         </div>
 
-        {/* ==================== TAB 1: CODEF ==================== */}
+        {/* ==================== TAB 1: 간편 은행 계좌 연결 (4필드 -> 은행 1원 4자리 인증) ==================== */}
+        {tab === 'quick' && (
+          <div className="grid cols2">
+            <Card>
+              <h2>은행 계좌 간편 연결</h2>
+              <p className="info mini">
+                아래 4가지 정보를 입력하고 버튼을 누르면 <strong>선택하신 은행의 본인인증(1원 입금 4자리 확인) 화면</strong>으로 자동 이동합니다. 인증 완료 즉시 모의은행 계좌와 F19 모임 계좌 인증이 활성화됩니다.
+              </p>
+
+              <form className="list" onSubmit={handleQuickStart} style={{ marginTop: 16 }}>
+                <Select
+                  label="은행명"
+                  name="quickBank"
+                  options={bankOptions.length ? bankOptions : [['0004', '국민은행 (0004)']]}
+                  value={quickForm.organization}
+                  onChange={e => setQuickForm(f => ({ ...f, organization: e.target.value }))}
+                />
+                <Input
+                  label="계좌번호"
+                  name="quickAccountNo"
+                  placeholder="예: 110-123-456789 (하이픈 포함/미포함 모두 가능)"
+                  required
+                  value={quickForm.accountNo}
+                  onChange={e => setQuickForm(f => ({ ...f, accountNo: e.target.value }))}
+                />
+                <div className="form-grid">
+                  <Input
+                    label="소유주 (예금주 실명)"
+                    name="quickHolderName"
+                    placeholder="로그인 회원 실명과 동일"
+                    required
+                    value={quickForm.holderName}
+                    onChange={e => setQuickForm(f => ({ ...f, holderName: e.target.value }))}
+                  />
+                  <Input
+                    label="전화번호"
+                    name="quickPhone"
+                    type="tel"
+                    placeholder="예: 010-1234-5678"
+                    required
+                    value={quickForm.phone}
+                    onChange={e => setQuickForm(f => ({ ...f, phone: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    className="toggle mini"
+                    onClick={() => setShowQuickAdvanced(v => !v)}
+                  >
+                    {showQuickAdvanced ? '▾ 시연 옵션 접기' : '▸ 시연 옵션 (초기 잔액 · 모임장 수취 계좌 설정)'}
+                  </button>
+                </div>
+
+                {showQuickAdvanced && (
+                  <div className="form-grid">
+                    <Input
+                      label="초기 모의 잔액 (원 · 미입력 시 100만 원)"
+                      name="quickInitialBalance"
+                      type="number"
+                      min={0}
+                      placeholder="1000000"
+                      value={quickForm.initialMockBalance}
+                      onChange={e => setQuickForm(f => ({ ...f, initialMockBalance: e.target.value }))}
+                    />
+                    <Select
+                      label="모임장 수취 계좌 여부"
+                      name="quickLeader"
+                      options={[
+                        ['auto', '자동 판별 (내 개설 모임 기준)'],
+                        ['true', '모임장 수취 계좌로 등록 (Y)'],
+                        ['false', '일반 출금 계좌로 등록 (N)'],
+                      ]}
+                      value={quickForm.leaderAccount}
+                      onChange={e => setQuickForm(f => ({ ...f, leaderAccount: e.target.value }))}
+                    />
+                  </div>
+                )}
+
+                <div className="actions" style={{ marginTop: 4 }}>
+                  <button type="submit" className="btn primary" disabled={busyKey === 'quick-start'}>
+                    {busyKey === 'quick-start'
+                      ? '은행 인증 화면 준비 중…'
+                      : '선택한 은행 로그인 · 1원 인증으로 이동 →'}
+                  </button>
+                </div>
+              </form>
+            </Card>
+
+            <Card>
+              <div className="section-title">
+                <h2>연결된 내 은행 계좌</h2>
+                <Pill>{accounts.length}개 연결됨</Pill>
+              </div>
+              {accounts.length === 0 ? (
+                <Empty>
+                  아직 연결된 계좌가 없어요.
+                  <br />
+                  좌측에서 <strong>은행명 · 계좌번호 · 소유주 · 전화번호</strong>를 입력해 1원 인증을 진행해 보세요!
+                </Empty>
+              ) : (
+                <div className="list">
+                  {accounts.map(acc => (
+                    <div key={acc.fintechUseNum} className="list-item">
+                      <div className="item-head">
+                        <div>
+                          <b>{acc.bankName} {acc.accountMasked}</b>{' '}
+                          <small>({acc.holderName})</small>{' '}
+                          {acc.leaderAccount && <Pill>모임장 계좌</Pill>}
+                        </div>
+                        <strong style={{ color: '#1f74b8', fontSize: 16 }}>
+                          {formatKrw(acc.balanceAmt)}
+                        </strong>
+                      </div>
+                      <div className="actions" style={{ marginTop: 10 }}>
+                        <button
+                          type="button"
+                          className="btn small soft"
+                          onClick={() => {
+                            setSelectedFinNum(acc.fintechUseNum);
+                            changeTab('ledger');
+                          }}
+                        >
+                          거래내역 · 충전
+                        </button>
+                        <button
+                          type="button"
+                          className="btn small"
+                          onClick={() => {
+                            setTransferForm(f => ({ ...f, fromFintechUseNum: acc.fintechUseNum }));
+                            changeTab('transfer');
+                          }}
+                        >
+                          회비 이체
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {connections.length > 0 && (
+                <>
+                  <div className="divider" />
+                  <div className="section-title" style={{ marginBottom: 8 }}>
+                    <h3 style={{ margin: 0 }}>인증 완료된 은행 연결</h3>
+                    <small>{connections.length}건</small>
+                  </div>
+                  <div className="list">
+                    {connections.map(c => (
+                      <div key={c.organization} className="list-item" style={{ padding: '11px 14px' }}>
+                        <div className="item-head">
+                          <div>
+                            <b>{c.bankName}</b>{' '}
+                            {c.verified ? (
+                              <Pill>{c.verifiedAccountMasked} 인증됨</Pill>
+                            ) : (
+                              <Pill kind="warn">인증 대기</Pill>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            className="btn small danger"
+                            disabled={busyKey === `disc:${c.organization}`}
+                            onClick={() => handleDisconnect(c)}
+                          >
+                            {busyKey === `disc:${c.organization}` ? '해제 중…' : '연결 해제'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* ==================== TAB 4: CODEF 실계좌 연동 (고급 / 백업) ==================== */}
         {tab === 'codef' && (
           <>
             <Card>
@@ -891,7 +1132,7 @@ export default function OpenBanking() {
               </div>
               {accounts.length === 0 ? (
                 <Empty>
-                  아직 적재된 모의은행 계좌가 없어요. <strong>1. CODEF 실계좌 연결·인증</strong>에서 실계좌 인증을 완료하면 자동으로 생성됩니다.
+                  아직 적재된 모의은행 계좌가 없어요. <strong>1. 간편 은행 계좌 연결</strong>에서 은행명·계좌번호·소유주·전화번호로 1원 인증을 완료하면 자동으로 생성됩니다.
                 </Empty>
               ) : (
                 <div className="list">
