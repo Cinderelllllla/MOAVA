@@ -230,19 +230,34 @@ export function getMonthlyState() {
 }
 /** 월별 기록 [{ month:'11월', income, expense }] (만 원). 불러오는 중·실패면 빈 배열 */
 export const getMonthly = () => getMonthlyState().items;
-/** F07 지출 기본값 제안. income 은 화면 단위(만 원).
- *  로그인 상태이고 서버가 available=true 를 줄 때만 { decile, consumption, nonconsumption(만 원), baseYm }, 아니면 null. */
-export async function getSpendingDefaults(income) {
+/** F07 지출 기본값 제안 · F06 평균 지출 비교(MOA-94). income 은 화면 단위(만 원).
+ *  로그인 상태이고 서버가 available=true 를 줄 때만
+ *  { decile, consumption, nonconsumption, total(가계지출 = 소비 + 비소비, 만 원), baseYm }, 아니면 null.
+ *  같은 로그인·같은 월수입은 한 번만 조회한다(1단계 ↔ 2단계를 오가도 다시 부르지 않음). 실패한 조회는 기억하지 않는다. */
+const spendingCache = new Map();   // `${token}:${income(원)}` → Promise
+export function getSpendingDefaults(income) {
   const v = Number(income);
-  if (!getToken() || !Number.isFinite(v) || v <= 0) return null;
-  const d = await apiFetch(`/api/v1/finance/spending-defaults?income=${Math.round(v * 10000)}`);
-  if (!d?.available) return null;
-  return {
-    decile: d.decile,
-    consumption: Math.round(Number(d.avgConsumption) / 10000),
-    nonconsumption: Math.round(Number(d.avgNonconsumption) / 10000),
-    baseYm: d.baseYm,
-  };
+  const token = getToken();
+  if (!token || !Number.isFinite(v) || v <= 0) return Promise.resolve(null);
+  const won = Math.round(v * 10000);
+  const key = `${token}:${won}`;
+  if (!spendingCache.has(key)) {
+    const req = apiFetch(`/api/v1/finance/spending-defaults?income=${won}`)
+      .then(d => {
+        if (!d?.available) return null;
+        const c = Number(d.avgConsumption), n = Number(d.avgNonconsumption);
+        return {
+          decile: d.decile,
+          consumption: Math.round(c / 10000),
+          nonconsumption: Math.round(n / 10000),
+          total: Math.round((c + n) / 10000),   // 따로 반올림해 더하면 1만 원 어긋날 수 있어 원 단위 합에서 한 번만 반올림
+          baseYm: d.baseYm,
+        };
+      })
+      .catch(e => { spendingCache.delete(key); throw e; });
+    spendingCache.set(key, req);
+  }
+  return spendingCache.get(key);
 }
 const PROFILE_API = '/api/v1/finance/profile';
 let profileInFlight = { token: null, promise: null };
