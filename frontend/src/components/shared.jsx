@@ -187,6 +187,28 @@ export function RiskBadge({ risk }) {
   const t = riskTierOf(risk);
   return <span className={`risk-badge ${t.cls}`}>{t.label}</span>;
 }
+/* MOA-101 위험 등급 분석 근거. 문항 key → 짧은 문구 (질문 + 고른 답) */
+const FACTOR_PHRASE = {
+  late_count_12m: a => `최근 1년 30일 이상 연체 ${a}`,
+  max_late_period: a => `최근 6개월 최장 연체 ${a}`,
+  loan_count: a => `상환 중인 대출 ${a}`,
+  card_usage: a => `카드 한도 사용 ${a}`,
+};
+const factorPhrase = f => (FACTOR_PHRASE[f?.key] ? FACTOR_PHRASE[f.key](f.answer_label) : `${f?.question || ''} ${f?.answer_label || ''}`.trim());
+/** 위험 등급이 왜 나왔는지 한 문장. 요인 정보가 없으면(대체값·예전 결과·저장된 결과) 그리지 않는다 */
+export function RiskExplanation() {
+  const assessment = finance.getMlAssessment();
+  const factors = assessment?.risk?.factors;
+  if (!assessment || assessment.fallback || !Array.isArray(factors)) return null;
+  const label = riskTierOf(assessment.risk).label;
+  const text = factors.length
+    ? `${factors.map(f => `'${factorPhrase(f)}'`).join(', ')} 요인으로 위험 등급이 '${label}'(으)로 분석되었어요.`
+    : `연체·대출·카드 사용 응답에서 위험을 크게 높이는 요인이 없어 '${label}'(으)로 분석되었어요.`;
+  return <>
+    <span style={{ display: 'block', marginTop: 6 }}>{text}</span>
+    <small style={{ display: 'block', marginTop: 4, opacity: 0.85 }}>AI 모델이 신용 질문 응답을 바탕으로 계산한 참고 설명이에요. 실제 신용평가와 다를 수 있어요.</small>
+  </>;
+}
 export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return assessment ? <>위험 등급 <RiskBadge risk={assessment.risk} /></> : <>아직 위험 등급 분석 전이에요.</>; };
 
 const FALLBACK_TEXT = {

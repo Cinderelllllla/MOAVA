@@ -298,6 +298,7 @@ function applyServerProfile(data, token, { preserveAssessment = true } = {}) {
         risk_level: data.assessment.riskLevel,
         risk_label: data.assessment.riskLabel,
         safety_factor: Number(data.assessment.safetyFactor),
+        factors: null,   // 요인(MOA-101)은 저장하지 않으므로 복원한 결과에는 없다
       },
       assessedAt: data.assessment.scoredAt || nowText(),
     };
@@ -406,7 +407,8 @@ export async function assessWithMl(memberId) {
     availableAmount: Number(result.available_amount) / 10000,
     recommendedAmount: Number(result.recommended_amount) / 10000,
     capped: Boolean(result.capped),
-    risk: result.risk,
+    // MOA-101 위험 등급 요인: 자가 응답 분석일 때만 배열([] = 요인 없음), 대체값·그 밖에는 null
+    risk: { ...result.risk, factors: Array.isArray(result.risk.factors) ? result.risk.factors : null },
     // MOA-95 ML 장애 대체값: 서버가 직전 등급(PREVIOUS) 또는 기본 '주의'(DEFAULT)로 계산했는지
     fallback: result.fallback === true,
     fallbackSource: result.fallback === true ? (result.fallback_source || 'DEFAULT') : null,

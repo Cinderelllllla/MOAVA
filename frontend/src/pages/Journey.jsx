@@ -12,6 +12,7 @@ import {
   GroupInfo,
   InlineSimulator,
   LoadState,
+  RiskExplanation,
   RiskLabel,
   RiskPanel,
 } from '../components/shared';
@@ -152,8 +153,8 @@ export default function Journey() {
     <div className="actions"><button className="btn primary" disabled={!valid}>다음 단계 →</button></div></form>;
   if (step === 2) content = <><h2>입력 데이터 분석</h2><FinanceAssessmentStatus {...mlAssessment} /><div className="grid cols3">{[['월수입', hasProfile ? won(f0.income) : '-'], ['월지출', hasProfile ? won(Number(f0.fixed) + Number(f0.variable)) : '-'], ['매달 남는 돈', a ? finance.freeText(a.free) : '분석 전', '수입 − 지출 − 저축 − 비상금']].map(([t, v, hint]) => <Card key={t}><small>{t}</small><div className="metric">{v}</div>{hint && <small className="muted">{hint}</small>}</Card>)}</div>{hasProfile && <SpendingCompare hint={stepHint} myExpense={Number(f0.fixed) + Number(f0.variable)} />}{a && a.free < 0 && <p className="warning mini" style={{ marginTop: 10 }}>{finance.noRecommendReason(a)} 지출이나 저축·비상금 금액을 줄이면 납입 여유가 생겨요.</p>}<p className="info journey-analysis-note">금액은 입력값에 따른 참고 분석이며 실제 금융 건전성을 보장하지 않습니다.</p><div className="actions"><button className="btn soft" onClick={() => goStep(1)}>← 이전</button><button className="btn primary" onClick={() => goStep(3)}>분석 확인 · 다음 →</button></div></>;
   if (step === 3) content = <><FallbackNotice />{a ? (a.rec > 0
-    ? <div className="hero"><h2>추천 월 납입액은 {won(a.rec)}입니다.</h2><p><RiskLabel /></p></div>
-    : <div className="hero"><h2>지금은 계모임 납입을 추천하기 어려워요.</h2><p>{finance.noRecommendReason(a)}<br />지출이나 저축·비상금 금액을 조정한 뒤 다시 분석해 보세요.</p><p><RiskLabel /></p></div>) : <div className="empty">아직 AI 분석 결과가 없어 추천 납입액을 계산하지 못했어요. 아래에서 분석 상태를 확인해 주세요.</div>}<div style={{ marginTop: 14 }}><FinanceAssessmentStatus {...mlAssessment} /></div><div className="section"><Card><RiskPanel /></Card></div><div className="actions" style={{ marginTop: 20 }}><button className="btn soft" onClick={() => goStep(2)}>← 이전</button><button className="btn primary" onClick={() => goStep(4)}>모임 추천 보기 →</button></div></>;
+    ? <div className="hero"><h2>추천 월 납입액은 {won(a.rec)}입니다.</h2><p><RiskLabel /><RiskExplanation /></p></div>
+    : <div className="hero"><h2>지금은 계모임 납입을 추천하기 어려워요.</h2><p>{finance.noRecommendReason(a)}<br />지출이나 저축·비상금 금액을 조정한 뒤 다시 분석해 보세요.</p><p><RiskLabel /><RiskExplanation /></p></div>) : <div className="empty">아직 AI 분석 결과가 없어 추천 납입액을 계산하지 못했어요. 아래에서 분석 상태를 확인해 주세요.</div>}<div style={{ marginTop: 14 }}><FinanceAssessmentStatus {...mlAssessment} /></div><div className="section"><Card><RiskPanel /></Card></div><div className="actions" style={{ marginTop: 20 }}><button className="btn soft" onClick={() => goStep(2)}>← 이전</button><button className="btn primary" onClick={() => goStep(4)}>모임 추천 보기 →</button></div></>;
   if (step === 4) {
     const recMeta = recState.data;
     const regionSummary = recMeta?.regionLabel || '활동 지역 미설정';
