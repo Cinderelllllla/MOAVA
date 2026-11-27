@@ -392,10 +392,18 @@ export async function assessWithMl(memberId) {
     recommendedAmount: Number(result.recommended_amount) / 10000,
     capped: Boolean(result.capped),
     risk: result.risk,
+    // MOA-95 ML 장애 대체값: 서버가 직전 등급(PREVIOUS) 또는 기본 '주의'(DEFAULT)로 계산했는지
+    fallback: result.fallback === true,
+    fallbackSource: result.fallback === true ? (result.fallback_source || 'DEFAULT') : null,
     assessedAt: nowText(),
   };
   save();
   return db.finance.mlAssessment;
+}
+/** 지금 분석 결과를 비워 AI 분석을 다시 하게 한다(대체값 안내의 '다시 분석'). 신용 질문 답이 없으면 1단계에서 다시 답해야 한다 */
+export function clearMlAssessment() {
+  db.finance.mlAssessment = null;
+  save();
 }
 export async function setJourneyStep(n) {
   if (n > db.journey.step + 1) fail('앞 단계를 먼저 완료해 주세요.');

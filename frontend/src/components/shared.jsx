@@ -153,7 +153,7 @@ export function RiskPanel({ compact }) {
   const cap = Math.round(finance.getPolicy().incomeCapRatio * 100);   // 상한 적용 안내용(%) — ML 서버 값 기준
   return <div className="policy-panel" style={{ marginTop: 0 }}><h3>연체 위험 등급 {assessment && <span className="policy-tag">AI 분석</span>}</h3>
     {assessment ? <><p className="muted mini">위험 등급 <RiskBadge risk={assessment.risk} />{assessment.risk.safety_factor != null && <> · 안전계수 {assessment.risk.safety_factor}</>}</p>
-      <p className="muted mini">입력하신 신용 답변 기준 · 교육용 모델 (실제 신용평가가 아니에요)</p></>
+      {!assessment.fallback && <p className="muted mini">입력하신 신용 답변 기준 · 교육용 모델 (실제 신용평가가 아니에요)</p>}</>
       : <><p className="muted mini">아직 분석 결과가 없어요. 맞춤 추천에서 금융정보를 입력하고 이용에 동의하면 AI가 위험 등급과 추천 납입액을 계산해 드려요.</p><div className="actions"><button type="button" className="btn small soft" onClick={() => nav('/journey')}>맞춤 추천 시작 →</button></div></>}
     {!compact && assessment && a && <p className="info mini" style={{ marginTop: 12 }}>추천 월 납입액 <b>{a.rec > 0 ? won(a.rec) : '추천 없음'}</b>{a.rec <= 0 ? ` · ${finance.noRecommendReason(a)}` : ''}{a.capped && a.rec > 0 ? ` · 월수입 ${cap}% 상한 적용` : ''}</p>}
     {!compact && assessment && a && a.free > 0 && <RecommendCalc free={a.free} k={assessment.risk.safety_factor} rec={a.rec} />}</div>;
@@ -188,6 +188,27 @@ export function RiskBadge({ risk }) {
   return <span className={`risk-badge ${t.cls}`}>{t.label}</span>;
 }
 export const RiskLabel = () => { const assessment = finance.getMlAssessment(); return assessment ? <>위험 등급 <RiskBadge risk={assessment.risk} /></> : <>아직 위험 등급 분석 전이에요.</>; };
+
+const FALLBACK_TEXT = {
+  PREVIOUS: 'AI 분석 서버에 연결하지 못해 최근 위험 등급으로 계산했어요. 잠시 후 다시 분석하면 최신 결과로 바뀌어요.',
+  DEFAULT: "AI 분석 서버에 연결하지 못해 기본 '주의' 등급으로 계산했어요. 잠시 후 다시 분석하면 최신 결과로 바뀌어요.",
+};
+/** MOA-95 ML 장애 대체값 안내 (오류가 아니라 안내 색). 대체값이 아니면 아무것도 그리지 않는다 */
+export function FallbackNotice() {
+  const nav = useNavigate();
+  const assessment = finance.getMlAssessment();
+  if (!assessment?.fallback) return null;
+  const hasAnswers = Boolean(finance.getSelfReport());
+  // 신용 질문 답이 이 탭에 남아 있으면 바로 다시 분석, 없으면(새로고침 등) 1단계에서 다시 답하게 한다
+  const reanalyze = () => {
+    if (hasAnswers) { finance.clearMlAssessment(); return; }
+    finance.setJourneyStep(1).then(() => nav('/journey')).catch(() => nav('/journey'));
+  };
+  return <p className="info mini" role="status" style={{ marginBottom: 12 }}>
+    {FALLBACK_TEXT[assessment.fallbackSource] || FALLBACK_TEXT.DEFAULT}{' '}
+    <button type="button" className="btn small soft" onClick={reanalyze}>{hasAnswers ? '다시 분석' : '1단계에서 다시 분석'}</button>
+  </p>;
+}
 
 export function FinanceAssessmentStatus({ status, error, retry }) {
   const text = status === 'loading' ? 'AI가 금융정보를 분석하고 있어요.'
