@@ -9,6 +9,7 @@
         FROM MEMBER
         WHERE MEMBER_ID = #{memberId}
           AND STATUS = 'ACTIVE'
+          AND BANNED_YN = 'N'
     </select>
 
     <sql id="connectionColumns">

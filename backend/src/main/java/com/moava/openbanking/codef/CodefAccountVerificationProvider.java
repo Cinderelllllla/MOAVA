@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Set;
 
 /**
@@ -97,6 +99,7 @@ public class CodefAccountVerificationProvider implements AccountVerificationProv
             if (accountDigits.equals(verifiedDigits)) {
                 log.info("[CODEF-F19] 기존 계좌 인증 이력 일치로 소유 확인 완료: memberId={}, org={}, account=****{}",
                         memberId, bank.getCodefOrgCode(), extractLast4(accountDigits));
+                promoteGroupReceivingAccount(memberId, bank, accountDigits, null);
                 return true;
             }
         }
@@ -111,6 +114,7 @@ public class CodefAccountVerificationProvider implements AccountVerificationProv
                     && userSeqNo.equals(mockAcc.getUserSeqNo())) {
                 log.info("[CODEF-F19] 가상은행 1원 인증 계좌 일치로 소유 확인 완료: memberId={}, org={}, account=****{}",
                         memberId, bank.getCodefOrgCode(), extractLast4(accountDigits));
+                promoteGroupReceivingAccount(memberId, bank, accountDigits, mockAcc);
                 return true;
             }
         }
@@ -140,7 +144,11 @@ public class CodefAccountVerificationProvider implements AccountVerificationProv
 
         try {
             CodefDto.VerifyAccountResponse res = codefBankService.verifyRealAccount(memberId, req, "internal-f19");
-            return res != null && res.isVerified();
+            boolean verified = res != null && res.isVerified();
+            if (verified) {
+                promoteGroupReceivingAccount(memberId, bank, accountDigits, null);
+            }
+            return verified;
         } catch (CodefException e) {
             if (VERIFICATION_FAIL_CODES.contains(e.getCode())) {
                 log.warn("[CODEF-F19] 계좌 소유 확인 실패: memberId={}, org={}, code={}",
@@ -148,6 +156,43 @@ public class CodefAccountVerificationProvider implements AccountVerificationProv
                 return false;
             }
             throw e;
+        }
+    }
+
+    /**
+     * 모임 계좌 소유 확인(F19/F20)이 통과된 계좌가 가상은행 원장에 본인 소유 활성 계좌로 존재하면
+     * 모임 수취 계좌(LEADER_YN='Y')로 자동 승격한다. (모임 생성 이전 연결한 계좌 보정)
+     */
+    private void promoteGroupReceivingAccount(
+            Long memberId,
+            CodefBankCode bank,
+            String accountDigits,
+            KftcRecordDto.AccountRecord preloadedAcc
+    ) {
+        if (ledgerMapper == null || provisionService == null) {
+            return;
+        }
+        try {
+            String userSeqNo = provisionService.deriveUserSeqNo(memberId);
+            KftcRecordDto.AccountRecord mockAcc = preloadedAcc != null
+                    ? preloadedAcc
+                    : ledgerMapper.findAccountByBankAndDigits(bank.getKftcCode(), accountDigits);
+            if (mockAcc == null
+                    || isBlank(mockAcc.getFintechUseNum())
+                    || !"ACTIVE".equalsIgnoreCase(mockAcc.getStatus())
+                    || !userSeqNo.equals(mockAcc.getUserSeqNo())
+                    || "Y".equalsIgnoreCase(mockAcc.getLeaderYn())) {
+                return;
+            }
+            LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
+            int updated = ledgerMapper.updateAccountLeaderYn(mockAcc.getFintechUseNum(), userSeqNo, "Y", now);
+            if (updated == 1) {
+                log.info("[CODEF-F19] 모임 계좌 소유 확인에 따라 모의 수취계좌(LEADER_YN=Y) 자동 승격: memberId={}, org={}, account=****{}",
+                        memberId, bank.getCodefOrgCode(), extractLast4(accountDigits));
+            }
+        } catch (RuntimeException e) {
+            log.warn("[CODEF-F19] 모의 수취계좌 자동 승격 중 오류(소유 확인 결과는 유지): memberId={}, org={}",
+                    memberId, bank.getCodefOrgCode(), e);
         }
     }
 

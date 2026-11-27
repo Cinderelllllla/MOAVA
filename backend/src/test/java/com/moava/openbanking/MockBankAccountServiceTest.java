@@ -1,6 +1,7 @@
 package com.moava.openbanking;
 
 import com.moava.crypto.service.CryptoKeyService;
+import com.moava.group.create.service.GroupAccountCrypto;
 import com.moava.openbanking.client.OpenBankingProperties;
 import com.moava.openbanking.codef.CodefAccountMapper;
 import com.moava.openbanking.codef.CodefBankCode;
@@ -38,6 +39,9 @@ class MockBankAccountServiceTest {
     private static final String MY_FIN_NUM = "199088000010000000000001";
     private static final String LEADER_FIN_NUM = "199004000099000000000099";
     private static final String OTHER_LEADER_FIN_NUM = "199020000088000000000088";
+    private static final String HASH_LEADER_KB = "hash_leader_kb_12340104987654";
+    private static final String HASH_OTHER_SAME_LAST4 = "hash_other_99990000007654";
+    private static final String HASH_MY_SHINHAN = "hash_my_shinhan_110123456789";
 
     @Mock
     private MockBankLedgerMapper ledgerMapper;
@@ -53,6 +57,8 @@ class MockBankAccountServiceTest {
     private CodefBankService codefBankService;
     @Mock
     private MockBankProvisionService provisionService;
+    @Mock
+    private GroupAccountCrypto groupAccountCrypto;
 
     private MockBankAccountService service;
 
@@ -73,15 +79,15 @@ class MockBankAccountServiceTest {
                 codefBankService,
                 provisionService,
                 new KftcSecurityGuard(),
-                props
+                props,
+                groupAccountCrypto
         );
     }
 
     @Test
-    void getOverview_계좌합산_월별집계_및_내모임_모임장계좌_우선정렬() {
+    void getOverview_계좌합산_월별집계_및_내모임_현재계좌_HMAC매칭() {
         when(codefAccountMapper.findActiveMemberName(10L)).thenReturn("홍길동");
         when(provisionService.deriveUserSeqNo(10L)).thenReturn("1000000010");
-        when(provisionService.deriveUserSeqNo(99L)).thenReturn("1000000099");
 
         CodefDto.ConnectionSummary verifiedConn = new CodefDto.ConnectionSummary();
         verifiedConn.setOrganization("0088");
@@ -121,11 +127,19 @@ class MockBankAccountServiceTest {
         myGroup.setTitle("제주도 여행계");
         myGroup.setOwnerId(99L);
         myGroup.setAmount(50_000L);
+        myGroup.setAccountBankName("국민은행");
+        myGroup.setAccountLast4("7654");
+        myGroup.setAccountNoHash(HASH_LEADER_KB);
+        myGroup.setAccountVerifyStatus("VERIFIED");
         when(ledgerMapper.findMemberActiveGroups(10L)).thenReturn(List.of(myGroup));
 
-        KftcRecordDto.AccountRecord otherLeader = account(OTHER_LEADER_FIN_NUM, "020", "우리은행", "100211112222", "박총무", "1000000088", 100_000L, "Y");
+        // 뒤 4자리가 같은 타 계좌(해시 불일치)는 제외되고 현재 모임 계좌만 매칭
+        KftcRecordDto.AccountRecord sameLast4Other = account(OTHER_LEADER_FIN_NUM, "004", "국민은행", "99990000007654", "박총무", "1000000088", 100_000L, "Y");
         KftcRecordDto.AccountRecord myGroupLeader = account(LEADER_FIN_NUM, "004", "국민은행", "12340104987654", "김모임", "1000000099", 500_000L, "Y");
-        when(ledgerMapper.findActiveLeaderAccounts(50)).thenReturn(List.of(otherLeader, myGroupLeader));
+        when(ledgerMapper.findActiveLeaderAccountsByBankAndLast4("004", "7654"))
+                .thenReturn(List.of(sameLast4Other, myGroupLeader));
+        when(groupAccountCrypto.hashAccountNumber("99990000007654")).thenReturn(HASH_OTHER_SAME_LAST4);
+        when(groupAccountCrypto.hashAccountNumber("12340104987654")).thenReturn(HASH_LEADER_KB);
 
         MockBankDto.OverviewResponse res = service.getOverview(10L);
 
@@ -141,18 +155,18 @@ class MockBankAccountServiceTest {
         assertEquals(50_000L, res.getMonthlySummary().get(0).getTotalWithdrawAmt());
         assertEquals(150_000L, res.getMonthlySummary().get(0).getNetAmt());
 
-        assertEquals(2, res.getLeaderTargets().size());
+        assertEquals(1, res.getLeaderTargets().size());
         assertTrue(res.getLeaderTargets().get(0).isMyGroup());
         assertEquals(LEADER_FIN_NUM, res.getLeaderTargets().get(0).getFintechUseNum());
         assertEquals(5L, res.getLeaderTargets().get(0).getGroupId());
-        assertFalse(res.getLeaderTargets().get(1).isMyGroup());
+        assertEquals("VERIFIED", res.getLeaderTargets().get(0).getAccountVerifyStatus());
+        assertTrue(res.getLeaderTargets().get(0).isAccountVerified());
     }
 
     @Test
     void getOverview_SQL월별집계사용_및_모임장목록_본인제외_다중모임중복제거() {
         when(codefAccountMapper.findActiveMemberName(10L)).thenReturn("홍길동");
         when(provisionService.deriveUserSeqNo(10L)).thenReturn("1000000010");
-        when(provisionService.deriveUserSeqNo(99L)).thenReturn("1000000099");
         when(codefBankService.getMyConnections(10L)).thenReturn(List.of());
 
         KftcRecordDto.AccountRecord myLeaderAcc = account(MY_FIN_NUM, "088", "신한은행", "110123456789", "홍길동", "1000000010", 700_000L, "Y");
@@ -171,20 +185,35 @@ class MockBankAccountServiceTest {
         g1.setTitle("제주도 여행계");
         g1.setOwnerId(99L);
         g1.setAmount(50_000L);
+        g1.setAccountBankName("국민은행");
+        g1.setAccountLast4("7654");
+        g1.setAccountNoHash(HASH_LEADER_KB);
+        g1.setAccountVerifyStatus("REVERIFY_REQUIRED");
         MockBankDto.MemberGroupInfo g2 = new MockBankDto.MemberGroupInfo();
         g2.setGroupId(6L);
         g2.setTitle("부산 먹방계");
         g2.setOwnerId(99L);
         g2.setAmount(100_000L);
+        g2.setAccountBankName("국민은행");
+        g2.setAccountLast4("7654");
+        g2.setAccountNoHash(HASH_LEADER_KB);
+        g2.setAccountVerifyStatus("VERIFIED");
         MockBankDto.MemberGroupInfo myOwnGroup = new MockBankDto.MemberGroupInfo();
         myOwnGroup.setGroupId(7L);
         myOwnGroup.setTitle("내가 만든 모임");
         myOwnGroup.setOwnerId(10L);
         myOwnGroup.setAmount(200_000L);
+        myOwnGroup.setAccountBankName("신한은행");
+        myOwnGroup.setAccountLast4("6789");
+        myOwnGroup.setAccountNoHash(HASH_MY_SHINHAN);
+        myOwnGroup.setAccountVerifyStatus("VERIFIED");
         when(ledgerMapper.findMemberActiveGroups(10L)).thenReturn(List.of(g1, g2, myOwnGroup));
 
         KftcRecordDto.AccountRecord otherLeaderAcc = account(LEADER_FIN_NUM, "004", "국민은행", "12340104987654", "김모임", "1000000099", 500_000L, "Y");
-        when(ledgerMapper.findActiveLeaderAccounts(50)).thenReturn(List.of(myLeaderAcc, otherLeaderAcc));
+        when(ledgerMapper.findActiveLeaderAccountsByBankAndLast4("004", "7654")).thenReturn(List.of(otherLeaderAcc));
+        when(ledgerMapper.findActiveLeaderAccountsByBankAndLast4("088", "6789")).thenReturn(List.of(myLeaderAcc));
+        when(groupAccountCrypto.hashAccountNumber("12340104987654")).thenReturn(HASH_LEADER_KB);
+        when(groupAccountCrypto.hashAccountNumber("110123456789")).thenReturn(HASH_MY_SHINHAN);
 
         MockBankDto.OverviewResponse res = service.getOverview(10L);
 
@@ -197,6 +226,7 @@ class MockBankAccountServiceTest {
         assertEquals(1, res.getLeaderTargets().size());
         assertEquals(LEADER_FIN_NUM, res.getLeaderTargets().get(0).getFintechUseNum());
         assertEquals("제주도 여행계 외 1개 모임", res.getLeaderTargets().get(0).getGroupTitle());
+        assertTrue(res.getLeaderTargets().get(0).isAccountVerified());
     }
 
     @Test
@@ -312,6 +342,21 @@ class MockBankAccountServiceTest {
         when(codefAccountMapper.findActiveMemberName(10L)).thenReturn("홍길동");
         when(provisionService.deriveUserSeqNo(10L)).thenReturn("1000000010");
 
+        MockBankDto.MemberGroupInfo myGroup = new MockBankDto.MemberGroupInfo();
+        myGroup.setGroupId(5L);
+        myGroup.setTitle("제주도 여행계");
+        myGroup.setOwnerId(99L);
+        myGroup.setAmount(50_000L);
+        myGroup.setAccountBankName("국민은행");
+        myGroup.setAccountLast4("7654");
+        myGroup.setAccountNoHash(HASH_LEADER_KB);
+        myGroup.setAccountVerifyStatus("VERIFIED");
+        when(ledgerMapper.findMemberActiveGroups(10L)).thenReturn(List.of(myGroup));
+
+        KftcRecordDto.AccountRecord myGroupLeader = account(LEADER_FIN_NUM, "004", "국민은행", "12340104987654", "김모임", "1000000099", 500_000L, "Y");
+        when(ledgerMapper.findActiveLeaderAccountsByBankAndLast4("004", "7654")).thenReturn(List.of(myGroupLeader));
+        when(groupAccountCrypto.hashAccountNumber("12340104987654")).thenReturn(HASH_LEADER_KB);
+
         KftcTransferDto.TransferResponse kftcRes = new KftcTransferDto.TransferResponse();
         kftcRes.setBankTranId("M202600001U123456789");
         kftcRes.setBankTranDate("20261126");
@@ -344,6 +389,26 @@ class MockBankAccountServiceTest {
         verify(kftcOpenBankingService).withdrawTransfer(any(), tokCaptor.capture(), eq("127.0.0.1"));
         assertEquals("1000000010", tokCaptor.getValue().getUserSeqNo());
         assertEquals("transfer", tokCaptor.getValue().getScope());
+    }
+
+    @Test
+    void transferToLeader_미참여모임_계좌이체_차단() {
+        when(codefAccountMapper.findActiveMemberName(10L)).thenReturn("홍길동");
+        when(provisionService.deriveUserSeqNo(10L)).thenReturn("1000000010");
+        when(ledgerMapper.findMemberActiveGroups(10L)).thenReturn(List.of());
+
+        MockBankDto.MemberTransferRequest req = new MockBankDto.MemberTransferRequest();
+        req.setFromFintechUseNum(MY_FIN_NUM);
+        req.setToFintechUseNum(OTHER_LEADER_FIN_NUM);
+        req.setAmount(50_000L);
+
+        CodefException ex = assertThrows(
+                CodefException.class,
+                () -> service.transferToLeader(10L, req, "127.0.0.1")
+        );
+        assertEquals("MOCK_BANK_TARGET_NOT_ALLOWED", ex.getCode());
+        assertEquals(403, ex.getHttpStatus().value());
+        verify(kftcOpenBankingService, never()).withdrawTransfer(any(), any(), any());
     }
 
     private static KftcRecordDto.AccountRecord account(

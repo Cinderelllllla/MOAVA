@@ -318,7 +318,15 @@ public class CodefBankService {
             String reEncryptedConnectedId = cryptoKeyService.encrypt(connectedId, keyVer);
             mapper.updateConnectedIdEncryption(memberId, bank.getCodefOrgCode(), reEncryptedConnectedId, keyVer, verifiedAt);
         }
-        mapper.markAccountVerified(memberId, bank.getCodefOrgCode(), accountEnc, last4, holderName, keyVer, verifiedAt);
+        mapper.markAccountVerified(
+                memberId,
+                bank.getCodefOrgCode(),
+                accountEnc,
+                last4,
+                MockBankProvisionService.sanitizePlainText(holderName, 45, "회원"),
+                keyVer,
+                verifiedAt
+        );
 
         MockBankDto.ProvisionResult mockAccount = null;
         if (mockBankProvisionService != null && !Boolean.FALSE.equals(req.getSyncToMockBank())) {

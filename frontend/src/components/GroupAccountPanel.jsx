@@ -562,7 +562,10 @@ function GroupAccount({ groupId }) {
                   ? '계좌 재인증하기'
                   : '계좌 소유 인증하기'}
             </button>
-            <Link to="/openbanking" className="btn soft">
+            <Link
+              to={`/openbanking?returnTo=${encodeURIComponent(`/operations?groupId=${groupId}`)}${account?.bankName ? `&bank=${encodeURIComponent(account.bankName)}` : ''}`}
+              className="btn soft"
+            >
               오픈뱅킹 1원 인증하러 가기
             </Link>
           </>

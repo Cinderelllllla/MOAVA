@@ -317,7 +317,7 @@ public class MockBankQuickConnectService {
                     session.bank.getCodefOrgCode(),
                     accountEnc,
                     last4,
-                    session.holderName,
+                    MockBankProvisionService.sanitizePlainText(session.holderName, 45, "회원"),
                     keyVer,
                     now
             );

@@ -81,7 +81,7 @@ public class MockBankDto {
         private int txCount;
     }
 
-    /** 회비 이체 가능한 모임장 수취 계좌 (프론트 드롭다운/카드 표시용) */
+    /** 회비 이체 가능한 모임 계좌 (참여 중인 모임의 현재 모임 계좌 GYE_ACCOUNT(CURRENT)와 일치하는 가상은행 계좌) */
     @Getter @Setter
     public static class LeaderTargetView {
         private String fintechUseNum;
@@ -93,9 +93,11 @@ public class MockBankDto {
         private String groupTitle;
         private Long monthlyDuesAmt;
         private boolean myGroup;
+        private String accountVerifyStatus;   // GYE_ACCOUNT.VERIFY_STATUS (PENDING / VERIFIED / REVERIFY_REQUIRED)
+        private boolean accountVerified;
     }
 
-    /** 내부 MyBatis 조회용: 회원이 참여 중인 활성 모임 정보 */
+    /** 내부 MyBatis 조회용: 회원이 참여 중인 활성 모임 정보 + 현재 모임 계좌(GYE_ACCOUNT CURRENT) 식별값 */
     @Getter @Setter
     public static class MemberGroupInfo {
         private Long groupId;
@@ -104,6 +106,10 @@ public class MockBankDto {
         private Long amount;
         private Integer payDay;
         private String status;
+        private String accountBankName;
+        private String accountLast4;
+        private String accountNoHash;
+        private String accountVerifyStatus;
     }
 
     /** 프론트 오픈뱅킹 화면 원샷 초기 로딩 응답 (GET /api/openbanking/accounts/overview) */

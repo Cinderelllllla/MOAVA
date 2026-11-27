@@ -46,11 +46,19 @@ function fmtCountdown(sec) {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+function sanitizeReturnTo(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//')) return '';
+  return trimmed;
+}
+
 export default function OpenBankingBankAuth() {
   const { session: appSession, isAdmin, run, toast } = useApp();
   const [params] = useSearchParams();
   const nav = useNavigate();
   const sessionToken = params.get('session') || '';
+  const returnTo = sanitizeReturnTo(params.get('returnTo'));
 
   const [authSession, setAuthSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -134,7 +142,7 @@ export default function OpenBankingBankAuth() {
     );
     setSubmitting(false);
     if (r.ok) {
-      nav('/openbanking?tab=ledger', { replace: true });
+      nav(returnTo || '/openbanking?tab=ledger', { replace: true });
     }
   };
 
@@ -226,9 +234,9 @@ export default function OpenBankingBankAuth() {
                 type="button"
                 className="btn primary"
                 style={{ width: '100%' }}
-                onClick={() => nav('/openbanking')}
+                onClick={() => nav(returnTo || '/openbanking')}
               >
-                MOAVA 오픈뱅킹으로 돌아가기
+                {returnTo ? '이전 화면으로 돌아가기' : 'MOAVA 오픈뱅킹으로 돌아가기'}
               </button>
             </div>
           ) : (
@@ -392,9 +400,9 @@ export default function OpenBankingBankAuth() {
                   type="button"
                   className="btn"
                   style={{ width: '100%' }}
-                  onClick={() => nav('/openbanking')}
+                  onClick={() => nav(returnTo || '/openbanking')}
                 >
-                  취소하고 MOAVA로 돌아가기
+                  {returnTo ? '취소하고 이전 화면으로 돌아가기' : '취소하고 MOAVA로 돌아가기'}
                 </button>
               </div>
 

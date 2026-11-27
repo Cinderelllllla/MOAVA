@@ -121,15 +121,20 @@ class CodefAccountVerificationProviderTest {
 
         when(provisionService.deriveUserSeqNo(10L)).thenReturn("1000000010");
 
-        // 1) CODEF_CONNECTION에 없어도 가상은행 본인 소유 ACTIVE 계좌면 즉시 true
+        // 1) CODEF_CONNECTION에 없어도 가상은행 본인 소유 ACTIVE 계좌면 즉시 true + LEADER_YN='N'이면 자동 승격
         when(codefAccountMapper.findConnection(10L, "0090")).thenReturn(null);
         com.moava.openbanking.dto.KftcRecordDto.AccountRecord mockAcc = new com.moava.openbanking.dto.KftcRecordDto.AccountRecord();
+        mockAcc.setFintechUseNum("199090000010000000000001");
         mockAcc.setUserSeqNo("1000000010");
         mockAcc.setStatus("ACTIVE");
+        mockAcc.setLeaderYn("N");
         when(ledgerMapper.findAccountByBankAndDigits("090", "3333012345678")).thenReturn(mockAcc);
+        when(ledgerMapper.updateAccountLeaderYn(eq("199090000010000000000001"), eq("1000000010"), eq("Y"), any()))
+                .thenReturn(1);
 
         assertTrue(fullProvider.verifyAccount(10L, "카카오뱅크", "3333-01-2345678"));
         verify(codefBankService, never()).verifyRealAccount(any(), any(), any());
+        verify(ledgerMapper).updateAccountLeaderYn(eq("199090000010000000000001"), eq("1000000010"), eq("Y"), any());
 
         // 2) QUICK_OAUTH 마커 연결이지만 다른 미등록 계좌 조회 시 외부 CODEF 호출 없이 false
         CodefDto.ConnectionRecord quickConn = new CodefDto.ConnectionRecord();

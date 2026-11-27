@@ -19,15 +19,42 @@ function fmtYm(ym) {
   return `${ym.slice(0, 4)}년 ${Number(ym.slice(4, 6))}월`;
 }
 
+function sanitizeReturnTo(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//')) return '';
+  return trimmed;
+}
+
+function resolveBankOrgFromQuery(banks, rawBank) {
+  if (!rawBank || !Array.isArray(banks) || banks.length === 0) return '';
+  const q = rawBank.trim().toLowerCase().replace(/\s+/g, '');
+  if (!q) return '';
+  const exact = banks.find(
+    b =>
+      b.organization === rawBank.trim()
+      || b.kftcCode === rawBank.trim()
+      || (b.bankName || '').toLowerCase().replace(/\s+/g, '') === q,
+  );
+  if (exact) return exact.organization;
+  const partial = banks.find(b => {
+    const name = (b.bankName || '').toLowerCase().replace(/\s+/g, '');
+    return name && (q.includes(name) || name.includes(q));
+  });
+  return partial ? partial.organization : '';
+}
+
 export default function OpenBanking() {
   const { user, run, toast } = useApp();
   const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const initialTab = ['quick', 'ledger', 'transfer'].includes(searchParams.get('tab'))
-    ? searchParams.get('tab')
-    : 'quick';
-  const [tab, setTab] = useState(initialTab);
+  const returnTo = sanitizeReturnTo(searchParams.get('returnTo'));
+  const bankQuery = (searchParams.get('bank') || '').trim();
+  const paramTab = searchParams.get('tab');
+  const resolvedTab = ['quick', 'ledger', 'transfer'].includes(paramTab) ? paramTab : 'quick';
+
+  const [tab, setTab] = useState(resolvedTab);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [banks, setBanks] = useState([]);
@@ -66,9 +93,19 @@ export default function OpenBanking() {
   });
   const [transferReceipt, setTransferReceipt] = useState(null);
 
+  useEffect(() => {
+    setTab(resolvedTab);
+  }, [resolvedTab]);
+
   const changeTab = nextTab => {
     setTab(nextTab);
-    setSearchParams(nextTab === 'quick' ? {} : { tab: nextTab }, { replace: true });
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextTab === 'quick') {
+      nextParams.delete('tab');
+    } else {
+      nextParams.set('tab', nextTab);
+    }
+    setSearchParams(nextParams, { replace: true });
   };
 
   const loadAll = useCallback(async () => {
@@ -83,9 +120,12 @@ export default function OpenBanking() {
       setBanks(safeBanks);
       setOverview(ov);
 
-      if (ov?.memberName) {
-        setQuickForm(f => (f.holderName ? f : { ...f, holderName: ov.memberName }));
-      }
+      const prefillOrg = resolveBankOrgFromQuery(safeBanks, bankQuery);
+      setQuickForm(f => ({
+        ...f,
+        ...(ov?.memberName && !f.holderName ? { holderName: ov.memberName } : {}),
+        ...(prefillOrg ? { organization: prefillOrg } : {}),
+      }));
 
       const firstConnOrg = ov?.connections?.[0]?.organization || safeBanks[0]?.organization || '0004';
       const verifiedConnOrg = ov?.connections?.find(c => c.verified)?.organization || firstConnOrg;
@@ -121,7 +161,7 @@ export default function OpenBanking() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [bankQuery]);
 
   useEffect(() => {
     loadAll();
@@ -282,7 +322,10 @@ export default function OpenBanking() {
     );
     setBusyKey('');
     if (r.ok && r.value?.bankAuthUrl) {
-      nav(r.value.bankAuthUrl);
+      const nextUrl = returnTo
+        ? `${r.value.bankAuthUrl}${r.value.bankAuthUrl.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(returnTo)}`
+        : r.value.bankAuthUrl;
+      nav(nextUrl);
     }
   };
 
@@ -299,6 +342,11 @@ export default function OpenBanking() {
         title="오픈뱅킹 · 내 계좌 연결 & 가상은행"
         sub="은행명·계좌번호·소유주·전화번호만 입력하면 선택한 은행의 1원 인증 화면으로 바로 이동해 4자리 인증번호 확인 후 계좌를 연결할 수 있어요."
       >
+        {returnTo && (
+          <button type="button" className="btn" onClick={() => nav(returnTo)}>
+            ← 이전 화면으로
+          </button>
+        )}
         <button type="button" className="btn soft" onClick={loadAll} disabled={loading}>
           {loading ? '불러오는 중…' : '새로고침'}
         </button>
@@ -876,20 +924,27 @@ export default function OpenBanking() {
           <div className="grid cols2">
             <Card>
               <div className="section-title">
-                <h2>이체 가능한 모임장 수취 계좌</h2>
+                <h2>이체 가능한 내 참여 모임 계좌</h2>
                 <Pill>{leaderTargets.length}개</Pill>
               </div>
               <p className="info mini">
-                보안 정책상 <code>LEADER_YN = 'Y'</code>로 등록된 모임장 수취 계좌로만 이체할 수 있어요. 계좌를 클릭하면 우측 이체 폼에 자동 입력됩니다.
+                내가 참여 중인 모임의 <strong>현재 모임 계좌</strong>(모임장 1원 인증·수취 계좌 연동 완료)만 표시됩니다. 계좌를 클릭하면 우측 이체 폼에 자동 입력됩니다.
               </p>
               {leaderTargets.length === 0 ? (
                 <Empty>
-                  이체 가능한 다른 모임장 수취 계좌가 없어요. 본인 계좌로의 자기 이체는 차단되며, 다른 계정의 <strong>2. 가상은행 계좌 · 거래원장</strong> 탭에서 <em>모임장 계좌</em>를 지정하면 목록에 표시됩니다.
+                  참여 중인 모임의 현재 모임 계좌(모임장 1원 인증 완료)가 있어야 이체할 수 있어요. 본인 계좌로의 자기 이체는 차단되며, 모임장이 계좌 1원 인증과 소유 확인을 마치면 자동으로 목록에 표시됩니다.
                 </Empty>
               ) : (
                 <div className="list" style={{ marginTop: 12 }}>
                   {leaderTargets.map((t, idx) => {
                     const selected = transferForm.toFintechUseNum === t.fintechUseNum;
+                    const verifyPill = t.accountVerified
+                      ? <Pill>계좌 인증완료</Pill>
+                      : (
+                        <Pill kind="warn">
+                          {t.accountVerifyStatus === 'REVERIFY_REQUIRED' ? '재인증 필요' : '계좌 인증대기'}
+                        </Pill>
+                      );
                     return (
                       <button
                         key={`${t.fintechUseNum}-${t.groupId ?? idx}`}
@@ -907,7 +962,10 @@ export default function OpenBanking() {
                           <div>
                             <b>{t.bankName} {t.accountMasked}</b> · {t.holderNameMasked}
                           </div>
-                          {t.myGroup ? <Pill>내 참여 모임</Pill> : <Pill kind="warn">기타 모임장</Pill>}
+                          <div className="actions" style={{ gap: 6 }}>
+                            <Pill>내 참여 모임</Pill>
+                            {verifyPill}
+                          </div>
                         </div>
                         <div className="mini muted" style={{ marginTop: 6 }}>
                           {t.groupTitle ? (

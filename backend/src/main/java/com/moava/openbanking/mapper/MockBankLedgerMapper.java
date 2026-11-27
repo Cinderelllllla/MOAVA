@@ -87,7 +87,7 @@ public interface MockBankLedgerMapper {
                 USER_SEQ_NO = #{userSeqNo},
                 BALANCE     = #{balance},
                 LEADER_YN   = #{leaderYn},
-                STATUS      = 'ACTIVE',
+                STATUS      = CASE WHEN STATUS = 'FROZEN' THEN 'FROZEN' ELSE 'ACTIVE' END,
                 UPDATED_AT  = #{updatedAt, jdbcType=TIMESTAMP}
             WHERE FINTECH_USE_NUM = #{fintechUseNum}
             """)
@@ -162,12 +162,16 @@ public interface MockBankLedgerMapper {
                 CREATED_AT      AS createdAt,
                 UPDATED_AT      AS updatedAt
             FROM MOCK_KFTC_ACCOUNT
-            WHERE LEADER_YN = 'Y'
+            WHERE BANK_CODE = #{bankCode}
+              AND LEADER_YN = 'Y'
               AND STATUS = 'ACTIVE'
+              AND SUBSTR(REPLACE(ACCOUNT_NO, '-', ''), -4) = #{last4}
             ORDER BY UPDATED_AT DESC
-            FETCH FIRST #{limit} ROWS ONLY
             """)
-    List<KftcRecordDto.AccountRecord> findActiveLeaderAccounts(@Param("limit") int limit);
+    List<KftcRecordDto.AccountRecord> findActiveLeaderAccountsByBankAndLast4(
+            @Param("bankCode") String bankCode,
+            @Param("last4") String last4
+    );
 
     @Select("""
             SELECT COUNT(*)
@@ -222,10 +226,17 @@ public interface MockBankLedgerMapper {
                 g.OWNER_ID AS ownerId,
                 g.AMOUNT   AS amount,
                 g.PAY_DAY  AS payDay,
-                g.STATUS   AS status
+                g.STATUS   AS status,
+                ga.BANK_NAME              AS accountBankName,
+                TRIM(ga.ACCOUNT_NO_LAST4) AS accountLast4,
+                TRIM(ga.ACCOUNT_NO_HASH)  AS accountNoHash,
+                ga.VERIFY_STATUS          AS accountVerifyStatus
             FROM GYE_GROUP g
             INNER JOIN GYE_MEMBER gm
               ON gm.GROUP_ID = g.GROUP_ID
+            LEFT JOIN GYE_ACCOUNT ga
+              ON ga.GROUP_ID = g.GROUP_ID
+             AND ga.ACCOUNT_STATUS = 'CURRENT'
             WHERE gm.MEMBER_ID = #{memberId}
               AND gm.STATUS = 'ACTIVE'
               AND g.STATUS IN ('RECRUITING', 'ACTIVE')
