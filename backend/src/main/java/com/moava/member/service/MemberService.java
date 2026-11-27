@@ -77,11 +77,11 @@ public class MemberService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 가입된 이메일입니다. 기존 계정으로 로그인해주세요.");
         }
 
-        int ketVer = phoneCryptoService.currentKeyVersion();
+        int keyVer = phoneCryptoService.currentKeyVersion();
 
-        String phoneEnc = phoneCryptoService.encrypt(profile.phone(), ketVer);
+        String phoneEnc = phoneCryptoService.encrypt(profile.phone(), keyVer);
 
-        int result = memberMapper.insertSocialUser(profile.name(), profile.email(), phoneEnc, ketVer, profile.regionSido(), profile.regionSigungu(), provider);
+        int result = memberMapper.insertSocialUser(profile.name(), profile.email(), phoneEnc, keyVer, profile.regionSido(), profile.regionSigungu(), profile.regionDong(), provider);
 
         if(result != 1){
             throw new IllegalStateException("소셜 회원가입에 실패했습니다.");

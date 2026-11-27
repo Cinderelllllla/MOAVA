@@ -177,6 +177,7 @@
             PHONE_ENC,
             REGION_SIDO,
             REGION_SIGUNGU,
+            REGION_DONG,
             STATUS,
             BANNED_YN,
             KEY_VER
@@ -190,6 +191,7 @@
             #{phoneEnc},
             #{regionSido},
             #{regionSigungu},
+            #{regionDong, jdbcType=VARCHAR},
             'ACTIVE',
             'N',
             #{keyVer}
