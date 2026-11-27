@@ -131,7 +131,7 @@ public class SocialFlowService {
             email = request.email();
         }
 
-        SocialSignupRequest signupRequest = new SocialSignupRequest(request.signupToken(), request.name(), email, request.phone(), request.regionSido(), request.regionSigungu(), request.agreedTermsIds());
+        SocialSignupRequest signupRequest = new SocialSignupRequest(request.signupToken(), request.name(), email, request.phone(), request.regionSido(), request.regionSigungu(), request.regionDong(), request.agreedTermsIds());
 
         Long memberId = memberService.signupSocial(signupRequest, user.provider());
 
