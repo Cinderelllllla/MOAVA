@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -358,6 +359,26 @@ class ProceduresWorkflowTest {
                     () -> service.submitMemberConsent(GROUP_ID, REQUEST_ID, 30L, form));
             assertEquals(HttpStatus.CONFLICT, conflict.getStatusCode());
         }
+
+        @Test
+        void submitConsentRecordsOrderConsentAuditLog() {
+            when(mapper.lockGroupForOrderUpdate(GROUP_ID)).thenReturn(GROUP_ID);
+            when(mapper.selectGroupInfo(GROUP_ID)).thenReturn(groupInfo(OWNER_ID, "ACTIVE", 3));
+            when(mapper.countActiveMember(GROUP_ID, 30L)).thenReturn(1);
+            when(mapper.selectPayoutRequestForUpdate(GROUP_ID, REQUEST_ID))
+                    .thenReturn(payoutRequest("CONSENT_PENDING"));
+            when(mapper.selectMemberConsentStatus(GROUP_ID, REQUEST_ID, 30L)).thenReturn("P");
+            when(mapper.updateMemberConsent(GROUP_ID, REQUEST_ID, 30L, "Y")).thenReturn(1);
+
+            PayoutOrderDTO.ConsentForm form = new PayoutOrderDTO.ConsentForm();
+            form.setAgreedYn("Y");
+
+            service.submitMemberConsent(GROUP_ID, REQUEST_ID, 30L, form);
+
+            verify(mapper).insertAuditLog(
+                    eq(GROUP_ID), eq(30L), eq("ORDER_CONSENT"),
+                    eq("수령 순서 변경 동의 응답: Y (신청번호: " + REQUEST_ID + ")"));
+        }
     }
 
     @Nested
@@ -415,6 +436,9 @@ class ProceduresWorkflowTest {
                     OWNER_ID, "WITHDRAW_REQUEST", "중도 탈퇴 재확인 요청",
                     "탈퇴 신청 회원이 정산 및 탈퇴 처리 재확인을 요청했습니다.",
                     "/procedures?groupId=" + GROUP_ID, REQUEST_ID);
+            verify(mapper).insertAuditLog(
+                    GROUP_ID, MEMBER_ID, MEMBER_ID, "WITHDRAW_RECONFIRM",
+                    "중도 탈퇴 재확인 요청 (신청번호: " + REQUEST_ID + ")");
         }
 
         @Test

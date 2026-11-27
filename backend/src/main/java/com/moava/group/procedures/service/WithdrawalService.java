@@ -375,6 +375,15 @@ public class WithdrawalService {
                 "/procedures?groupId=" + groupId,
                 withdrawalRequestId
         );
+
+        // 감사 로그 기록 (WITHDRAW_RECONFIRM)
+        withdrawalMapper.insertAuditLog(
+                groupId,
+                memberId,
+                memberId,
+                "WITHDRAW_RECONFIRM",
+                "중도 탈퇴 재확인 요청 (신청번호: " + withdrawalRequestId + ")"
+        );
     }
 
     /**

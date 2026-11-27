@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- F28 곗돈 수령 완료 표시. GYE_MEMBER 수령 완료 갱신 + NOTIFICATION + AUDIT_LOG(PAYOUT_RECEIVED) -->
+<mapper namespace="com.moava.group.payout.mapper.PayoutReceiptMapper">
+
+    <resultMap id="targetMap" type="com.moava.group.payout.dto.PayoutReceiptTarget">
+        <constructor>
+            <arg column="GROUP_ID"           javaType="_long"/>
+            <arg column="GROUP_TITLE"        javaType="java.lang.String"/>
+            <arg column="GROUP_STATUS"       javaType="java.lang.String"/>
+            <arg column="OWNER_ID"           javaType="_long"/>
+            <arg column="ORDER_CONFIRMED_YN" javaType="java.lang.String"/>
+            <arg column="MEMBER_STATUS"      javaType="java.lang.String"/>
+            <arg column="MEMBER_NAME"        javaType="java.lang.String"/>
+            <arg column="PAYOUT_RECEIVED_YN" javaType="java.lang.String"/>
+            <arg column="PAYOUT_RECEIVED_AT" javaType="java.lang.String"/>
+            <arg column="CONFIRMED_ROUND_NO" javaType="java.lang.Integer"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="memberRowMap" type="com.moava.group.payout.dto.PayoutReceiptMemberRow">
+        <constructor>
+            <arg column="MEMBER_ID"          javaType="_long"/>
+            <arg column="MEMBER_NAME"        javaType="java.lang.String"/>
+            <arg column="ROLE"               javaType="java.lang.String"/>
+            <arg column="CONFIRMED_ROUND_NO" javaType="java.lang.Integer"/>
+            <arg column="PAYOUT_RECEIVED_YN" javaType="java.lang.String"/>
+            <arg column="PAYOUT_RECEIVED_AT" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <!-- F29 WithdrawalMapper / F30 GroupWarningMapper 와 동일하게 GYE_GROUP 행 잠금 -->
+    <select id="lockGroup" resultType="long">
+        SELECT GROUP_ID
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        FOR UPDATE
+    </select>
+
+    <!-- LEFT JOIN: 모임이 없으면 null, 대상이 이 모임 회원이 아니면 MEMBER_STATUS 가 null -->
+    <select id="selectTarget" resultMap="targetMap">
+        SELECT g.GROUP_ID,
+               g.TITLE                                              AS GROUP_TITLE,
+               g.STATUS                                             AS GROUP_STATUS,
+               g.OWNER_ID,
+               g.ORDER_CONFIRMED_YN,
+               gm.STATUS                                            AS MEMBER_STATUS,
+               m.NAME                                               AS MEMBER_NAME,
+               gm.PAYOUT_RECEIVED_YN,
+               TO_CHAR(gm.PAYOUT_RECEIVED_AT, 'YYYY-MM-DD HH24:MI') AS PAYOUT_RECEIVED_AT,
+               pr.ROUND_NO                                          AS CONFIRMED_ROUND_NO
+        FROM GYE_GROUP g
+        LEFT JOIN GYE_MEMBER gm
+               ON gm.GROUP_ID = g.GROUP_ID
+              AND gm.MEMBER_ID = #{targetMemberId}
+        LEFT JOIN MEMBER m
+               ON m.MEMBER_ID = gm.MEMBER_ID
+        LEFT JOIN (
+            SELECT GROUP_ID, MEMBER_ID, MIN(ROUND_NO) AS ROUND_NO
+            FROM PAYOUT_REQUEST
+            WHERE STATUS = 'CONFIRMED'
+            GROUP BY GROUP_ID, MEMBER_ID
+        ) pr
+               ON pr.GROUP_ID = g.GROUP_ID
+              AND pr.MEMBER_ID = gm.MEMBER_ID
+        WHERE g.GROUP_ID = #{groupId}
+    </select>
+
+    <!-- 모임 내 ACTIVE 회원별 곗돈 수령 현황 목록 (확정 회차 오름차순 → 모임장 → 가입 순) -->
+    <select id="selectMemberReceipts" resultMap="memberRowMap">
+        SELECT gm.MEMBER_ID,
+               m.NAME                                               AS MEMBER_NAME,
+               CASE
+                   WHEN g.OWNER_ID = gm.MEMBER_ID THEN 'OWNER'
+                   ELSE 'MEMBER'
+               END                                                  AS ROLE,
+               pr.ROUND_NO                                          AS CONFIRMED_ROUND_NO,
+               gm.PAYOUT_RECEIVED_YN,
+               TO_CHAR(gm.PAYOUT_RECEIVED_AT, 'YYYY-MM-DD HH24:MI') AS PAYOUT_RECEIVED_AT
+        FROM GYE_MEMBER gm
+        JOIN GYE_GROUP g
+          ON g.GROUP_ID = gm.GROUP_ID
+        JOIN MEMBER m
+          ON m.MEMBER_ID = gm.MEMBER_ID
+        LEFT JOIN (
+            SELECT GROUP_ID, MEMBER_ID, MIN(ROUND_NO) AS ROUND_NO
+            FROM PAYOUT_REQUEST
+            WHERE STATUS = 'CONFIRMED'
+            GROUP BY GROUP_ID, MEMBER_ID
+        ) pr
+               ON pr.GROUP_ID = gm.GROUP_ID
+              AND pr.MEMBER_ID = gm.MEMBER_ID
+        WHERE gm.GROUP_ID = #{groupId}
+          AND gm.STATUS = 'ACTIVE'
+        ORDER BY pr.ROUND_NO ASC NULLS LAST,
+                 CASE WHEN gm.MEMBER_ID = g.OWNER_ID THEN 0 ELSE 1 END,
+                 gm.JOINED_AT ASC,
+                 gm.GYE_MEMBER_ID ASC
+    </select>
+
+    <!-- 조건부 갱신: 동시 요청 시 중복 표시 방지 -->
+    <update id="markPayoutReceived">
+        UPDATE GYE_MEMBER
+        SET PAYOUT_RECEIVED_YN = 'Y',
+            PAYOUT_RECEIVED_AT = SYSDATE
+        WHERE GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{targetMemberId}
+          AND STATUS = 'ACTIVE'
+          AND PAYOUT_RECEIVED_YN = 'N'
+    </update>
+
+    <!-- AUDIT_LOG(PAYOUT_RECEIVED) 기록 (CK_AUDIT_LOG_1: 회원 행위 → ACTOR_ADMIN_ID NULL) -->
+    <insert id="insertAuditLog">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            ACTOR_ADMIN_ID,
+            TARGET_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        ) VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId},
+            #{actorMemberId},
+            NULL,
+            #{targetMemberId},
+            #{eventType},
+            #{description},
+            SYSDATE
+        )
+    </insert>
+
+</mapper>

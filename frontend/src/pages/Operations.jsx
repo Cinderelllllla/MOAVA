@@ -1,10 +1,13 @@
 /* S10 운영 홈 — /operations · F16 F18 F19 F20 F28 F33 */
 
+import { useState } from 'react';
 import PaymentStatusPanel from '../components/PaymentStatusPanel';
 import GroupManagementPanel from '../components/GroupManagementPanel';
 import GroupAccountPanel from '../components/GroupAccountPanel';
 import GroupAccountChangePanel from '../components/GroupAccountChangePanel';
 import GroupAccountConsentPanel from '../components/GroupAccountConsentPanel';
+import GroupPayoutReceiptPanel from '../components/GroupPayoutReceiptPanel';
+import GroupAuditLogPanel from '../components/GroupAuditLogPanel';
 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import useMyGroups from '../common/useMyGroups';
@@ -45,6 +48,7 @@ export default function Operations() {
 function ServerOperations() {
   const nav = useNavigate();
   const [params] = useSearchParams();
+  const [auditRefreshKey, setAuditRefreshKey] = useState(0);
 
   const myGroups = useMyGroups();
   const items = myGroups.items || [];
@@ -276,11 +280,30 @@ function ServerOperations() {
                   groupId={g.groupId}
                 />
 
+                {/* F28 곗돈 수령 완료 표시 */}
+                <GroupPayoutReceiptPanel
+                  key={`payout-receipt-${g.groupId}`}
+                  groupId={g.groupId}
+                  onMarked={() => setAuditRefreshKey(k => k + 1)}
+                />
+
               </Card>
             </div>
 
             {/* ========================================= */}
-            {/* 3. 모임 정보 */}
+            {/* 3. 모임 운영 기록 (F33 감사 로그) */}
+            {/* ========================================= */}
+
+            <div className="section">
+              <GroupAuditLogPanel
+                key={`audit-log-${g.groupId}`}
+                groupId={g.groupId}
+                refreshKey={auditRefreshKey}
+              />
+            </div>
+
+            {/* ========================================= */}
+            {/* 4. 모임 정보 */}
             {/* ========================================= */}
 
             <div className="section">
