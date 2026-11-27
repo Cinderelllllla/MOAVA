@@ -32,6 +32,7 @@ import {
   onUnauthorized,
   NETWORK_ERROR
 } from './client';
+import { encodeRegionForServer } from '../common/regions';
 
 // ========================================
 // 1. Spring Boot 인증 API 공통 함수
@@ -132,13 +133,24 @@ export async function signupWithServer(f) {
     throw new Error('필수 약관에 동의해 주세요.');
   }
 
+  const encodedRegion = encodeRegionForServer({
+    sido: f.regionSido,
+    sigungu: f.regionSigungu,
+    dong: f.regionDong
+  });
+
+  if (!encodedRegion.regionSido || !encodedRegion.regionSigungu || !encodedRegion.regionDong) {
+    throw new Error('활동 지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
+  }
+
   const result = await requestAuth('signup', {
     name: f.name.trim(),
     email: f.email.trim(),
     password: f.password,
     phone: f.phone.trim(),
-    regionSido: f.regionSido.trim(),
-    regionSigungu: f.regionSigungu.trim(),
+    regionSido: encodedRegion.regionSido,
+    regionSigungu: encodedRegion.regionSigungu,
+    regionDong: encodedRegion.regionDong,
     termsAgreed: f.termsAgreed,
     privacyAgreed: f.privacyAgreed
   });
@@ -182,7 +194,7 @@ export async function logout() {
 }
 
 // ========================================
-// 7. 회원정보 수정 (서버 API 없음 → 화면에서 "준비 중")
+// 7. 회원정보 수정
 // ========================================
 
 export async function updateAccount(f) {
@@ -196,14 +208,25 @@ export async function updateAccount(f) {
     fail('서버 회원 정보만 수정할 수 있습니다.');
   }
 
+  const encodedRegion = encodeRegionForServer({
+    sido: f.regionSido,
+    sigungu: f.regionSigungu,
+    dong: f.regionDong
+  });
+
+  if (!encodedRegion.regionSido || !encodedRegion.regionSigungu || !encodedRegion.regionDong) {
+    fail('활동 지역을 시/도, 시/군/구, 읍/면/동까지 선택해 주세요.');
+  }
+
   const updatedUser = await apiFetch('/api/auth/me', {
     method: 'PUT',
     body: JSON.stringify({
-      name:f.name.trim(),
+      name: f.name.trim(),
       email: f.email.trim(),
       phone: f.phone.trim(),
-      regionSido: f.regionSido.trim(),
-      regionSigungu: f.regionSigungu.trim()
+      regionSido: encodedRegion.regionSido,
+      regionSigungu: encodedRegion.regionSigungu,
+      regionDong: encodedRegion.regionDong
     })
   });
   setServerMember(updatedUser);

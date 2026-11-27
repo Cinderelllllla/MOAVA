@@ -4,7 +4,10 @@ package com.moava.group.create.service;
 import com.moava.group.create.dto.GroupJoinRequestResponse;
 import com.moava.group.create.dto.GroupPendingJoinRequestResponse;
 import com.moava.group.create.mapper.GroupJoinRequestMapper;
+import com.moava.group.search.event.GroupSearchSyncEvent;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,13 +22,24 @@ public class GroupJoinRequestService {
 
     private final GroupJoinRequestMapper mapper;
     private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    public GroupJoinRequestService(
+            GroupJoinRequestMapper mapper,
+            NotificationService notificationService,
+            ApplicationEventPublisher eventPublisher
+    ) {
+        this.mapper = mapper;
+        this.notificationService = notificationService;
+        this.eventPublisher = eventPublisher;
+    }
 
     public GroupJoinRequestService(
             GroupJoinRequestMapper mapper,
             NotificationService notificationService
     ) {
-        this.mapper = mapper;
-        this.notificationService = notificationService;
+        this(mapper, notificationService, null);
     }
 
     // ==================================================
@@ -472,6 +486,11 @@ public class GroupJoinRequestService {
                         "result", "승인"
                 )
         );
+
+        // 16. F12 - 커밋 후 ES 공개 모임 검색 인덱스 동기화 (참여 인원 갱신)
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+        }
     }
 
     // ==================================================

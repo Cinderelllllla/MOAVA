@@ -21,7 +21,8 @@ public interface MemberMapper {
         @Param("phoneEnc") String phoneEnc, 
         @Param("keyVer") int keyVer, 
         @Param("regionSido") String regionSido, 
-        @Param("regionSigungu") String regionSigungu);
+        @Param("regionSigungu") String regionSigungu,
+        @Param("regionDong") String regionDong);
     
     String findPasswordHashById(@Param("memberId") Long memberId);
     int updateProfile(
@@ -31,7 +32,8 @@ public interface MemberMapper {
         @Param("phoneEnc") String phoneEnc,
         @Param("keyVer") int keyVer,
         @Param("regionSido") String regionSido,
-        @Param("regionSigungu") String regionSigungu);
+        @Param("regionSigungu") String regionSigungu,
+        @Param("regionDong") String regionDong);
     int updatePassword(@Param("memberId") Long memberId, @Param("passwordHash") String passwordHash);
     int withdraw(@Param("memberId") Long memberId);
 

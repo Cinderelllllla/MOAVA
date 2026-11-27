@@ -39,6 +39,7 @@ public interface GroupCreateMapper {
             @Param("purpose") String purpose,
             @Param("regionSido") String regionSido,
             @Param("regionSigungu") String regionSigungu,
+            @Param("regionDong") String regionDong,
             @Param("lat") BigDecimal lat,
             @Param("lng") BigDecimal lng,
             @Param("amount") Long amount,

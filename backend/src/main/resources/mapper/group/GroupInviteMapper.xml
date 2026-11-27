@@ -14,6 +14,7 @@
             PURPOSE AS "purpose",
             REGION_SIDO AS "regionSido",
             REGION_SIGUNGU AS "regionSigungu",
+            REGION_DONG AS "regionDong",
             VISIBILITY AS "visibility"
         FROM GYE_GROUP
         WHERE INVITE_CODE = #{inviteCode}

@@ -6,6 +6,7 @@ public record GroupInviteResponse(
         String purpose,
         String regionSido,
         String regionSigungu,
+        String regionDong,
         String visibility
 ) {
 }

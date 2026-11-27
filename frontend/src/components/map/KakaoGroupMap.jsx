@@ -1,49 +1,141 @@
-/* F13 지역 계모임 지도 — Kakao Maps 인터랙티브 지도 + 시/군/구 구름 핀 */
+/* F13 지역 계모임 지도 — Kakao Maps 인터랙티브 지도 + 읍/면/동(또는 시/군/구) 구름 핀 */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadKakaoMaps } from './loadKakaoMaps';
+import {
+  formatRegionLabel,
+  getRegionCoords,
+  parseRegionFromServer,
+  shortSidoName,
+} from '../../common/regions';
 
 const DEFAULT_CENTER = { lat: 37.5665, lng: 126.978 }; // 서울 시청
 const DEFAULT_LEVEL = 7;
 
-/* 좌표(LAT/LNG)가 아직 없는 목업·기존 데이터용 대표 시/군/구 폴백 좌표 */
-const REGION_FALLBACK_COORDS = {
-  마포구: { lat: 37.5663, lng: 126.9018 },
-  서대문구: { lat: 37.5791, lng: 126.9368 },
-  강남구: { lat: 37.5172, lng: 127.0473 },
-  성동구: { lat: 37.5634, lng: 127.0369 },
-  송파구: { lat: 37.5145, lng: 127.1059 },
-  영등포구: { lat: 37.5264, lng: 126.8963 },
-  용산구: { lat: 37.5326, lng: 126.9905 },
-  종로구: { lat: 37.573, lng: 126.9794 },
-  중구: { lat: 37.5641, lng: 126.9979 },
-  관악구: { lat: 37.4784, lng: 126.9516 },
-};
+const METROPOLITAN_SIDOS = new Set([
+  '서울특별시',
+  '부산광역시',
+  '대구광역시',
+  '인천광역시',
+  '광주광역시',
+  '대전광역시',
+  '울산광역시',
+  '세종특별자치시',
+]);
 
-function resolveRegionKey(group) {
-  if (group.regionSigungu?.trim()) {
-    return group.regionSigungu.trim();
-  }
-  const tokens = String(group.region || '').trim().split(/\s+/).filter(Boolean);
-  return tokens.length ? tokens[tokens.length - 1] : '기타';
+const regionGeocodeCache = new Map();
+
+function cleanFilterPart(value) {
+  const s = String(value || '').trim();
+  return !s || s === '전체' ? '' : s;
 }
 
-function resolvePinCoords(regionKey, regionGroups) {
-  const valid = regionGroups.filter(
-    (g) => Number.isFinite(Number(g.lat)) && Number.isFinite(Number(g.lng))
-  );
+function resolveRegionZoomLevel(sido, sigungu, dong) {
+  if (dong) return 5;
+  if (sigungu) return 7;
+  if (sido) return METROPOLITAN_SIDOS.has(sido) ? 8 : 10;
+  return DEFAULT_LEVEL;
+}
+
+function resolveRegionCenter(kakao, sido, sigungu, dong) {
+  const fallback = getRegionCoords(sido, sigungu, dong) || DEFAULT_CENTER;
+  const query = formatRegionLabel({ sido, sigungu, dong });
+  if (!query) return Promise.resolve(DEFAULT_CENTER);
+
+  if (regionGeocodeCache.has(query)) {
+    return Promise.resolve(regionGeocodeCache.get(query));
+  }
+
+  const Geocoder = kakao?.maps?.services?.Geocoder;
+  const okStatus = kakao?.maps?.services?.Status?.OK;
+  if (!Geocoder || !okStatus) {
+    return Promise.resolve(fallback);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const geocoder = new Geocoder();
+      geocoder.addressSearch(query, (result, status) => {
+        if (status === okStatus && Array.isArray(result) && result.length > 0) {
+          const lat = Number(result[0].y);
+          const lng = Number(result[0].x);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            const coords = { lat, lng };
+            regionGeocodeCache.set(query, coords);
+            resolve(coords);
+            return;
+          }
+        }
+        resolve(fallback);
+      });
+    } catch {
+      resolve(fallback);
+    }
+  });
+}
+
+export function normalizeSido(sido) {
+  return shortSidoName(sido);
+}
+
+/**
+ * 모임을 지도 핀 단위로 분류
+ * - 읍/면/동 정보가 있으면 동 단위 핀 (key: "시도::시군구::동", label: "합정동", title: "마포구 합정동")
+ * - 구형 데이터처럼 동 정보가 없으면 시/군/구 단위 핀 (key: "시도::시군구", label: "마포구", title: "마포구")
+ */
+export function resolvePinMeta(group) {
+  const sidoRaw =
+    group.regionSido?.trim() ||
+    String(group.region || '').trim().split(/\s+/)[0] ||
+    '';
+  const sigunguRaw =
+    group.regionSigungu?.trim() ||
+    String(group.region || '').trim().split(/\s+/).slice(1).join(' ');
+  const parsed = parseRegionFromServer(sidoRaw, sigunguRaw, group.regionDong || '');
+
+  const sido = parsed.sido || sidoRaw;
+  const sigungu = parsed.sigungu || sigunguRaw || '기타';
+  const dong = parsed.dong || '';
+  const sidoShort = shortSidoName(sido);
+
+  if (dong) {
+    const key = `${sido}::${sigungu}::${dong}`;
+    const title =
+      sigungu && sigungu !== '세종시'
+        ? `${sigungu} ${dong}`
+        : `${sidoShort} ${dong}`.trim();
+    return { key, sido, sigungu, dong, label: dong, title, level: 'dong' };
+  }
+
+  const key = sido ? `${sido}::${sigungu}` : sigungu;
+  const label = sigungu || sidoShort || '기타';
+  return { key, sido, sigungu, dong: '', label, title: label, level: 'sigungu' };
+}
+
+function hasValidCoords(g) {
+  if (g.lat == null || g.lng == null || g.lat === '' || g.lng === '') {
+    return false;
+  }
+  const lat = Number(g.lat);
+  const lng = Number(g.lng);
+  return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+}
+
+function resolvePinCoords(meta, regionGroups) {
+  const valid = regionGroups.filter(hasValidCoords);
   if (valid.length > 0) {
     const lat = valid.reduce((sum, g) => sum + Number(g.lat), 0) / valid.length;
     const lng = valid.reduce((sum, g) => sum + Number(g.lng), 0) / valid.length;
     return { lat, lng };
   }
-  return REGION_FALLBACK_COORDS[regionKey] || null;
+  return getRegionCoords(meta.sido, meta.sigungu, meta.dong);
 }
 
 function createPinElement(pin, active, onClick) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = `kakao-map-pin${active ? ' active' : ''}`;
-  btn.setAttribute('aria-label', `${pin.region} 지역 모임 ${pin.groups.length}개 목록 열기`);
+  btn.setAttribute('aria-label', `${pin.title} 지역 모임 ${pin.groups.length}개 목록 열기`);
+  btn.title = `${pin.title} (${pin.groups.length}개)`;
 
   const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   icon.setAttribute('viewBox', '0 0 24 24');
@@ -61,7 +153,7 @@ function createPinElement(pin, active, onClick) {
 
   const label = document.createElement('span');
   label.className = 'kakao-pin-label';
-  label.textContent = pin.region;
+  label.textContent = pin.label;
 
   const badge = document.createElement('span');
   badge.className = 'pin-count';
@@ -70,36 +162,60 @@ function createPinElement(pin, active, onClick) {
   btn.append(icon, label, badge);
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    onClick(pin.region, pin.groups);
+    onClick(pin.title, pin.groups, pin.key);
   });
 
   return btn;
 }
 
-export default function KakaoGroupMap({ groups = [], focusId = null, onSelectRegion }) {
+export default function KakaoGroupMap({
+  groups = [],
+  focusId = null,
+  regionFilter = null,
+  onSelectRegion,
+}) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
-  const overlaysRef = useRef([]);
+  const overlaysRef = useRef([]); // Array<{ overlay, button, pin }>
+  const focusIdRef = useRef(focusId);
+  focusIdRef.current = focusId;
   const onSelectRegionRef = useRef(onSelectRegion);
   onSelectRegionRef.current = onSelectRegion;
 
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [errorMsg, setErrorMsg] = useState('');
 
-  // 동일 시/군/구 모임을 하나의 핀으로 집계 (핀 수 = 지역 수, 배지 수 = 모임 수)
+  const selectedSido = cleanFilterPart(regionFilter?.sido);
+  const selectedSigungu = cleanFilterPart(regionFilter?.sigungu);
+  const selectedDong = cleanFilterPart(regionFilter?.dong);
+
+  // 동일 읍/면/동(또는 시/군/구) 모임을 하나의 핀으로 집계 (핀 수 = 지역 수, 배지 수 = 모임 수)
   const regionPins = useMemo(() => {
     const grouped = new Map();
     groups.forEach((g) => {
-      const key = resolveRegionKey(g);
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(g);
+      const meta = resolvePinMeta(g);
+      if (!grouped.has(meta.key)) {
+        grouped.set(meta.key, { ...meta, groups: [] });
+      }
+      grouped.get(meta.key).groups.push(g);
     });
 
     const pins = [];
-    grouped.forEach((regionGroups, region) => {
-      const coords = resolvePinCoords(region, regionGroups);
+    grouped.forEach((entry) => {
+      const coords = resolvePinCoords(entry, entry.groups);
       if (!coords) return;
-      pins.push({ region, groups: regionGroups, ...coords });
+      pins.push({
+        key: entry.key,
+        label: entry.label,
+        title: entry.title,
+        region: entry.title,
+        sido: entry.sido,
+        sigungu: entry.sigungu,
+        dong: entry.dong,
+        level: entry.level,
+        groups: entry.groups,
+        ...coords,
+      });
     });
     return pins;
   }, [groups]);
@@ -144,55 +260,83 @@ export default function KakaoGroupMap({ groups = [], focusId = null, onSelectReg
     return () => {
       cancelled = true;
       resizeObserver?.disconnect();
-      overlaysRef.current.forEach((ov) => ov.setMap(null));
+      overlaysRef.current.forEach(({ overlay }) => overlay.setMap(null));
       overlaysRef.current = [];
       mapRef.current = null;
     };
   }, []);
 
-  // 2) 지역 핀 오버레이 동기화
+  // 2) 지역 핀 오버레이 동기화 및 선택 지역/핀 기준 지도 뷰포트 이동
   useEffect(() => {
     const map = mapRef.current;
     const kakao = window.kakao;
-    if (status !== 'ready' || !map || !kakao?.maps) return;
+    if (status !== 'ready' || !map || !kakao?.maps) return undefined;
 
-    overlaysRef.current.forEach((ov) => ov.setMap(null));
+    let cancelled = false;
+
+    overlaysRef.current.forEach(({ overlay }) => overlay.setMap(null));
     overlaysRef.current = [];
 
     if (regionPins.length === 0) {
-      map.setCenter(new kakao.maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
-      map.setLevel(DEFAULT_LEVEL);
-      return;
+      if (selectedSido) {
+        const targetLevel = resolveRegionZoomLevel(selectedSido, selectedSigungu, selectedDong);
+        resolveRegionCenter(kakao, selectedSido, selectedSigungu, selectedDong).then((coords) => {
+          if (cancelled || mapRef.current !== map) return;
+          map.setLevel(targetLevel);
+          map.setCenter(new kakao.maps.LatLng(coords.lat, coords.lng));
+        });
+      } else {
+        map.setLevel(DEFAULT_LEVEL);
+        map.setCenter(new kakao.maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng));
+      }
+      return () => {
+        cancelled = true;
+      };
     }
 
     const bounds = new kakao.maps.LatLngBounds();
+    const currentFocusId = focusIdRef.current;
 
     regionPins.forEach((pin) => {
       const pos = new kakao.maps.LatLng(pin.lat, pin.lng);
       bounds.extend(pos);
 
-      const active = pin.groups.some((g) => g.id === focusId);
-      const content = createPinElement(pin, active, (region, regionGroups) => {
-        onSelectRegionRef.current?.(region, regionGroups);
+      const active = pin.groups.some((g) => g.id === currentFocusId);
+      const button = createPinElement(pin, active, (regionTitle, regionGroups, pinKey) => {
+        onSelectRegionRef.current?.(regionTitle, regionGroups, pinKey);
       });
 
       const overlay = new kakao.maps.CustomOverlay({
         position: pos,
-        content,
+        content: button,
         yAnchor: 1,
         zIndex: active ? 10 : 5,
       });
       overlay.setMap(map);
-      overlaysRef.current.push(overlay);
+      overlaysRef.current.push({ overlay, button, pin });
     });
 
     if (regionPins.length === 1) {
+      map.setLevel(regionPins[0].level === 'dong' || selectedDong ? 5 : 6);
       map.setCenter(new kakao.maps.LatLng(regionPins[0].lat, regionPins[0].lng));
-      map.setLevel(6);
     } else {
       map.setBounds(bounds, 56, 56, 72, 56);
     }
-  }, [status, regionPins, focusId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, regionPins, selectedSido, selectedSigungu, selectedDong]);
+
+  // 3) 선택 모임(focusId) 변경 시에는 지도 줌·위치를 유지한 채 활성 핀 스타일만 갱신
+  useEffect(() => {
+    if (status !== 'ready') return;
+    overlaysRef.current.forEach(({ overlay, button, pin }) => {
+      const active = pin.groups.some((g) => g.id === focusId);
+      button.classList.toggle('active', active);
+      overlay.setZIndex(active ? 10 : 5);
+    });
+  }, [status, focusId]);
 
   return (
     <div className="map kakao-map-wrap">
@@ -219,7 +363,7 @@ export default function KakaoGroupMap({ groups = [], focusId = null, onSelectReg
       )}
 
       <div className="map-hint">
-        같은 지역은 하나의 핀으로 표시됩니다. 핀을 누르면 해당 지역의 모임 목록이 열립니다.
+        같은 동(또는 시/군/구)의 모임은 하나의 핀으로 표시됩니다. 핀을 누르면 해당 지역의 모임 목록이 열립니다.
       </div>
     </div>
   );

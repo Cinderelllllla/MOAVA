@@ -2,6 +2,9 @@ package com.moava.group.procedures.service;
 
 import com.moava.group.procedures.dto.PayoutOrderDTO;
 import com.moava.group.procedures.mapper.PayoutOrderMapper;
+import com.moava.group.search.event.GroupSearchSyncEvent;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,9 +18,16 @@ import java.util.Map;
 public class PayoutOrderService {
 
     private final PayoutOrderMapper payoutOrderMapper;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    public PayoutOrderService(PayoutOrderMapper payoutOrderMapper, ApplicationEventPublisher eventPublisher) {
+        this.payoutOrderMapper = payoutOrderMapper;
+        this.eventPublisher = eventPublisher;
+    }
 
     public PayoutOrderService(PayoutOrderMapper payoutOrderMapper) {
-        this.payoutOrderMapper = payoutOrderMapper;
+        this(payoutOrderMapper, null);
     }
     /**
      * 신청·동의 현황 목록 조회 (AI 제안 회차 포함)
@@ -297,6 +307,9 @@ public class PayoutOrderService {
         int unconfirmedCount = payoutOrderMapper.countUnconfirmedActiveMembers(groupId);
         if (unconfirmedCount == 0) {
             payoutOrderMapper.updateGroupOrderConfirmedYn(groupId, "Y");
+            if (eventPublisher != null) {
+                eventPublisher.publishEvent(new GroupSearchSyncEvent(groupId));
+            }
         }
 
         // 6. AUDIT_LOG (ORDER_CONFIRM) 기록
