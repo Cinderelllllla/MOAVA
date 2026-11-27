@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC
+        "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.account.mapper.GroupAccountTransferExecutionMapper">
+
+    <!-- F20: 잠긴 기존 계좌 잔액 전액 차감 -->
+    <update id="debit">
+        UPDATE MOCK_KFTC_ACCOUNT
+        SET BALANCE = #{newBalance},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE FINTECH_USE_NUM = #{fintechUseNum}
+          AND BALANCE = #{expectedBalance}
+          AND STATUS = 'ACTIVE'
+          AND LEADER_YN = 'Y'
+          AND #{newBalance} = 0
+          AND #{expectedBalance} > 0
+    </update>
+
+    <!-- F20: 잠긴 신규 계좌 잔액 증가 -->
+    <update id="credit">
+        UPDATE MOCK_KFTC_ACCOUNT
+        SET BALANCE = #{newBalance},
+            UPDATED_AT = SYSTIMESTAMP
+        WHERE FINTECH_USE_NUM = #{fintechUseNum}
+          AND BALANCE = #{expectedBalance}
+          AND STATUS = 'ACTIVE'
+          AND LEADER_YN = 'Y'
+          AND #{newBalance} >= #{expectedBalance}
+    </update>
+
+    <!-- F20: 출금·입금 원장 기록 -->
+    <insert id="insertTransferRecord">
+        INSERT INTO MOCK_KFTC_TRANSACTION (
+            BANK_TRAN_ID,
+            FINTECH_USE_NUM,
+            INOUT_TYPE,
+            TRAN_AMT,
+            AFTER_BALANCE_AMT,
+            PRINT_CONTENT,
+            COUNTERPARTY_NAME,
+            COUNTERPARTY_FIN_NUM
+        )
+        VALUES (
+            #{bankTranId},
+            #{fintechUseNum},
+            #{inoutType},
+            #{amount},
+            #{afterBalance},
+            '모임 계좌 변경',
+            '모아바 모의 계좌',
+            #{counterpartyFinNum}
+        )
+    </insert>
+
+    <!-- F20: 기존 CURRENT 계좌 종료 -->
+    <update id="retireCurrentAccount">
+        UPDATE GYE_ACCOUNT
+        SET ACCOUNT_STATUS = 'RETIRED'
+        WHERE GROUP_ID = #{groupId}
+        AND GYE_ACCOUNT_ID = #{currentAccountId}
+        AND ACCOUNT_STATUS = 'CURRENT'
+    </update>
+
+    <!-- F20: 새 계좌를 CURRENT로 확정 -->
+    <update id="activatePendingAccount">
+        UPDATE GYE_ACCOUNT
+        SET ACCOUNT_STATUS = 'CURRENT',
+            CONFIRMED_AT = SYSDATE
+        WHERE GROUP_ID = #{groupId}
+          AND GYE_ACCOUNT_ID = #{accountId}
+          AND ACCOUNT_STATUS = 'PENDING'
+          AND VERIFY_STATUS = 'VERIFIED'
+          AND REQUESTED_AT IS NOT NULL
+          AND CONFIRMED_AT IS NULL
+    </update>
+
+</mapper>

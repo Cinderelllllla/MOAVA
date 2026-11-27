@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.account.mapper.GroupAccountChangeMapper">
+
+    <!-- F20 - 모임 단위 동시 신청 방지 -->
+    <select id="lockGroup" resultType="java.lang.Long">
+        SELECT GROUP_ID
+        FROM GYE_GROUP
+        WHERE GROUP_ID = #{groupId}
+        FOR UPDATE
+    </select>
+
+    <!-- 활성 회원이면서 해당 모임의 모임장인지 확인 -->
+    <select id="findActiveOwnerName"
+            resultType="java.lang.String">
+        SELECT M.NAME
+        FROM GYE_GROUP G
+        INNER JOIN GYE_MEMBER GM
+            ON GM.GROUP_ID = G.GROUP_ID
+           AND GM.MEMBER_ID = G.OWNER_ID
+        INNER JOIN MEMBER M
+            ON M.MEMBER_ID = G.OWNER_ID
+        WHERE G.GROUP_ID = #{groupId}
+          AND G.OWNER_ID = #{memberId}
+          AND GM.STATUS = 'ACTIVE'
+          AND M.STATUS = 'ACTIVE'
+          AND M.BANNED_YN = 'N'
+    </select>
+
+    <!-- 현재 사용 중인 계좌 확인 -->
+    <select id="countCurrentAccount" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_ACCOUNT
+        WHERE GROUP_ID = #{groupId}
+          AND ACCOUNT_STATUS = 'CURRENT'
+    </select>
+
+    <!-- 진행 중 변경 신청 확인 -->
+    <select id="countPendingChange" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_ACCOUNT
+        WHERE GROUP_ID = #{groupId}
+          AND ACCOUNT_STATUS = 'PENDING'
+    </select>
+
+    <!-- F19 유일 인덱스와 동일한 계좌 중복 검사 -->
+    <select id="countDuplicateAccount" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_ACCOUNT
+        WHERE ACCOUNT_NO_HASH = #{accountHash}
+          AND ACCOUNT_STATUS IN ('CURRENT', 'PENDING')
+    </select>
+
+    <!-- 변경 신청 계좌 ID 생성 -->
+    <select id="nextAccountId" resultType="java.lang.Long">
+        SELECT SEQ_GYE_ACCOUNT.NEXTVAL
+        FROM DUAL
+    </select>
+
+    <!-- 새 계좌는 인증 및 변경 확정 전까지 PENDING -->
+    <insert id="insertPendingAccount">
+        INSERT INTO GYE_ACCOUNT (
+            GYE_ACCOUNT_ID,
+            GROUP_ID,
+            BANK_NAME,
+            HOLDER_NAME_ENC,
+            ACCOUNT_NO_ENC,
+            ACCOUNT_NO_LAST4,
+            ACCOUNT_NO_HASH,
+            KEY_VER,
+            VERIFY_STATUS,
+            VERIFIED_BY,
+            VERIFIED_AT,
+            REGISTERED_BY,
+            ACCOUNT_STATUS,
+            REQUESTED_AT,
+            CONFIRMED_AT,
+            CREATED_AT
+        )
+        VALUES (
+            #{accountId},
+            #{groupId},
+            #{bankName},
+            #{holderNameEnc},
+            #{accountNoEnc},
+            #{last4},
+            #{accountHash},
+            #{keyVer},
+            'PENDING',
+            NULL,
+            NULL,
+            #{memberId},
+            'PENDING',
+            SYSDATE,
+            NULL,
+            SYSDATE
+        )
+    </insert>
+
+    <!-- F20 - 계좌 변경 신청 감사 로그 -->
+    <insert id="insertChangeAudit">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            ACTOR_ADMIN_ID,
+            TARGET_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        )
+        VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId},
+            #{memberId},
+            NULL,
+            #{memberId},
+            'ACCOUNT_CHANGE',
+            #{description},
+            SYSDATE
+        )
+    </insert>
+
+
+    <!-- F20 - 활성 모임원 조회 권한 -->
+    <select id="countActiveGroupMember" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_MEMBER GM
+        INNER JOIN MEMBER M
+            ON M.MEMBER_ID = GM.MEMBER_ID
+        WHERE GM.GROUP_ID = #{groupId}
+          AND GM.MEMBER_ID = #{memberId}
+          AND GM.STATUS = 'ACTIVE'
+          AND M.STATUS = 'ACTIVE'
+          AND M.BANNED_YN = 'N'
+    </select>
+
+    <!-- F20 - 진행 중인 변경 신청 ID -->
+    <select id="findPendingAccountId"
+            resultType="java.lang.Long">
+        SELECT MIN(GYE_ACCOUNT_ID)
+        FROM GYE_ACCOUNT
+        WHERE GROUP_ID = #{groupId}
+          AND ACCOUNT_STATUS = 'PENDING'
+    </select>
+
+    <!-- F20 - 활성 모임원 수 -->
+    <select id="countActiveGroupMembers" resultType="int">
+        SELECT COUNT(*)
+        FROM GYE_MEMBER GM
+        INNER JOIN MEMBER M
+            ON M.MEMBER_ID = GM.MEMBER_ID
+        WHERE GM.GROUP_ID = #{groupId}
+          AND GM.STATUS = 'ACTIVE'
+          AND M.STATUS = 'ACTIVE'
+          AND M.BANNED_YN = 'N'
+    </select>
+
+    <!-- F20 - 동의한 활성 모임원 수 -->
+    <select id="countAgreedMembers" resultType="int">
+        SELECT COUNT(*)
+        FROM CONSENT C
+        INNER JOIN GYE_MEMBER GM
+            ON GM.GROUP_ID = C.GROUP_ID
+           AND GM.MEMBER_ID = C.MEMBER_ID
+        INNER JOIN MEMBER M
+            ON M.MEMBER_ID = C.MEMBER_ID
+        WHERE C.CONSENT_TYPE = 'ACCOUNT'
+          AND C.TARGET_ID = #{accountId}
+          AND C.GROUP_ID = #{groupId}
+          AND C.AGREED_YN = 'Y'
+          AND GM.STATUS = 'ACTIVE'
+          AND M.STATUS = 'ACTIVE'
+          AND M.BANNED_YN = 'N'
+    </select>
+
+    <!-- F20 - 거절한 활성 모임원 수 -->
+    <select id="countRejectedMembers" resultType="int">
+        SELECT COUNT(*)
+        FROM CONSENT C
+        INNER JOIN GYE_MEMBER GM
+            ON GM.GROUP_ID = C.GROUP_ID
+           AND GM.MEMBER_ID = C.MEMBER_ID
+        INNER JOIN MEMBER M
+            ON M.MEMBER_ID = C.MEMBER_ID
+        WHERE C.CONSENT_TYPE = 'ACCOUNT'
+          AND C.TARGET_ID = #{accountId}
+          AND C.GROUP_ID = #{groupId}
+          AND C.AGREED_YN = 'N'
+          AND GM.STATUS = 'ACTIVE'
+          AND M.STATUS = 'ACTIVE'
+          AND M.BANNED_YN = 'N'
+    </select>
+
+
+    <!-- F20 - 동일 회원 중복 동의 확인 -->
+    <select id="countExistingAccountConsent"
+            resultType="int">
+        SELECT COUNT(*)
+        FROM CONSENT
+        WHERE CONSENT_TYPE = 'ACCOUNT'
+          AND TARGET_ID = #{accountId}
+          AND GROUP_ID = #{groupId}
+          AND MEMBER_ID = #{memberId}
+    </select>
+
+    <!-- F20 - 회원 동의 또는 거절 저장 -->
+    <insert id="insertAccountConsent">
+        INSERT INTO CONSENT (
+            CONSENT_ID,
+            CONSENT_TYPE,
+            TARGET_ID,
+            GROUP_ID,
+            MEMBER_ID,
+            AGREED_YN,
+            AGREED_AT
+        )
+        VALUES (
+            SEQ_CONSENT.NEXTVAL,
+            'ACCOUNT',
+            #{accountId},
+            #{groupId},
+            #{memberId},
+            #{agreedYn},
+            SYSDATE
+        )
+    </insert>
+
+    <!-- F20 - 회원 동의·거절 감사 로그 -->
+    <insert id="insertConsentAudit">
+        INSERT INTO AUDIT_LOG (
+            AUDIT_LOG_ID,
+            GROUP_ID,
+            ACTOR_MEMBER_ID,
+            ACTOR_ADMIN_ID,
+            TARGET_MEMBER_ID,
+            EVENT_TYPE,
+            DESCRIPTION,
+            CREATED_AT
+        )
+        VALUES (
+            SEQ_AUDIT_LOG.NEXTVAL,
+            #{groupId},
+            #{memberId},
+            NULL,
+            #{memberId},
+            'ACCOUNT_CHANGE',
+            #{description},
+            SYSDATE
+        )
+    </insert>
+
+
+    <!--
+      F20 - 취소 또는 거절된 변경 신청 종료
+      기존 CURRENT 계좌는 변경하지 않는다.
+    -->
+    <update id="retirePendingAccount">
+        UPDATE GYE_ACCOUNT
+        SET ACCOUNT_STATUS = 'RETIRED'
+        WHERE GROUP_ID = #{groupId}
+          AND GYE_ACCOUNT_ID = #{accountId}
+          AND ACCOUNT_STATUS = 'PENDING'
+          AND REQUESTED_AT IS NOT NULL
+          AND CONFIRMED_AT IS NULL
+    </update>
+
+
+    <!-- F20 - PENDING 변경 신청 계좌 인증 대상 -->
+    <resultMap id="pendingVerificationTargetMap"
+        type="com.moava.group.account.dto.GroupAccountVerificationTarget">
+        <constructor>
+            <idArg column="GYE_ACCOUNT_ID"
+                   javaType="java.lang.Long"/>
+            <arg column="GROUP_ID"
+                 javaType="java.lang.Long"/>
+            <arg column="OWNER_ID"
+                 javaType="java.lang.Long"/>
+            <arg column="BANK_NAME"
+                 javaType="java.lang.String"/>
+            <arg column="ACCOUNT_NO_ENC"
+                 javaType="java.lang.String"/>
+            <arg column="ACCOUNT_NO_LAST4"
+                 javaType="java.lang.String"/>
+            <arg column="KEY_VER"
+                 javaType="java.lang.Integer"/>
+            <arg column="VERIFY_STATUS"
+                 javaType="java.lang.String"/>
+            <arg column="ACCOUNT_STATUS"
+                 javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findPendingVerificationTarget"
+            resultMap="pendingVerificationTargetMap">
+        SELECT A.GYE_ACCOUNT_ID,
+               A.GROUP_ID,
+               G.OWNER_ID,
+               A.BANK_NAME,
+               A.ACCOUNT_NO_ENC,
+               A.ACCOUNT_NO_LAST4,
+               A.KEY_VER,
+               A.VERIFY_STATUS,
+               A.ACCOUNT_STATUS
+        FROM GYE_ACCOUNT A
+        JOIN GYE_GROUP G
+          ON G.GROUP_ID = A.GROUP_ID
+        WHERE A.GROUP_ID = #{groupId}
+          AND A.GYE_ACCOUNT_ID = #{accountId}
+          AND A.ACCOUNT_STATUS = 'PENDING'
+          AND A.REQUESTED_AT IS NOT NULL
+          AND A.CONFIRMED_AT IS NULL
+    </select>
+
+    <update id="updatePendingAccountVerified">
+        UPDATE GYE_ACCOUNT
+        SET VERIFY_STATUS = 'VERIFIED',
+            VERIFIED_BY = NULL,
+            VERIFIED_AT = SYSDATE
+        WHERE GROUP_ID = #{groupId}
+          AND GYE_ACCOUNT_ID = #{accountId}
+          AND ACCOUNT_STATUS = 'PENDING'
+          AND REQUESTED_AT IS NOT NULL
+          AND CONFIRMED_AT IS NULL
+          AND VERIFY_STATUS IN ('PENDING', 'REVERIFY_REQUIRED')
+          AND ACCOUNT_NO_ENC = #{accountNoEnc}
+          AND BANK_NAME = #{bankName}
+          AND KEY_VER = #{keyVer}
+    </update>
+
+
+    <!-- F20: 동의 대상 계좌 및 본인 동의 상태 -->
+
+    <resultMap
+        id="consentTargetInfoMap"
+        type="com.moava.group.account.dto.GroupAccountConsentTargetInfo">
+
+        <constructor>
+            <arg
+                column="BANK_NAME"
+                javaType="java.lang.String"/>
+            <arg
+                column="ACCOUNT_MASKED"
+                javaType="java.lang.String"/>
+            <arg
+                column="MY_AGREED_YN"
+                javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select
+        id="findConsentTargetInfo"
+        resultMap="consentTargetInfoMap">
+
+        SELECT
+            A.BANK_NAME,
+
+            CASE
+                WHEN REGEXP_LIKE(
+                    A.ACCOUNT_NO_LAST4,
+                    '^[0-9]{4}$'
+                )
+                THEN '*****' || A.ACCOUNT_NO_LAST4
+                ELSE NULL
+            END AS ACCOUNT_MASKED,
+
+            C.AGREED_YN AS MY_AGREED_YN
+
+        FROM GYE_ACCOUNT A
+
+        LEFT JOIN CONSENT C
+            ON C.CONSENT_TYPE = 'ACCOUNT'
+        AND C.TARGET_ID = A.GYE_ACCOUNT_ID
+        AND C.GROUP_ID = A.GROUP_ID
+        AND C.MEMBER_ID = #{memberId}
+
+        WHERE A.GROUP_ID = #{groupId}
+        AND A.GYE_ACCOUNT_ID = #{accountId}
+        AND A.ACCOUNT_STATUS = 'PENDING'
+        AND A.REQUESTED_AT IS NOT NULL
+        AND A.CONFIRMED_AT IS NULL
+
+    </select>
+
+
+</mapper>
