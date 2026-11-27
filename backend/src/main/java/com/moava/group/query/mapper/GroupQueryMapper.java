@@ -43,6 +43,13 @@ public interface GroupQueryMapper {
             @Param("regionSigungu") String regionSigungu
     );
 
+    // F11 MOA-100: 추천에서 뺄 모임 번호 (내가 모임장 · 회원(ACTIVE·EXPELLED) · 가입 신청 중(PENDING)).
+    // Elasticsearch 경로에서 쓴다. DB 경로는 findRecruitingGroupsForRecommendation 의 같은 조건으로 걸러진다
+    List<Long> findGroupIdsExcludedFromRecommendation(
+            @Param("memberId") Long memberId,
+            @Param("groupIds") List<Long> groupIds
+    );
+
     // F11: 모임별 건강도 점수 조회 (GYE_MEMBER + 최신 RISK_SCORE.PROB 기반)
     List<GroupHealthRow> findGroupHealthScoresByIds(
             @Param("groupIds") List<Long> groupIds

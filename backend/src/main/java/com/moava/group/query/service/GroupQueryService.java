@@ -24,12 +24,14 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -261,8 +263,13 @@ public class GroupQueryService {
                     return List.of();
                 }
                 List<PublicGroupRow> hydrated = groupQueryMapper.findPublicGroupsByIds(memberId, ids);
+                // MOA-100: 내가 만든·가입한(강제 탈퇴 포함)·가입 신청 중인 모임은 추천하지 않는다 (DB 경로 SQL 과 같은 조건)
+                Set<Long> excluded = memberId == null
+                        ? Set.of()
+                        : new HashSet<>(groupQueryMapper.findGroupIdsExcludedFromRecommendation(memberId, ids));
                 return hydrated.stream()
                         .filter(row -> isEligibleForRecommendation(row, maxAmount))
+                        .filter(row -> !excluded.contains(row.groupId()))
                         .toList();
             }
         }
