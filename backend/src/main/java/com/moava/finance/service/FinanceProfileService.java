@@ -26,9 +26,7 @@ import java.util.Set;
 public class FinanceProfileService {
 
     private static final Logger log = LoggerFactory.getLogger(FinanceProfileService.class);
-    private static final BigDecimal INCOME_CAP_RATIO = new BigDecimal("0.12");
-    private static final BigDecimal ROUND_UNIT = new BigDecimal("50000");
-    private static final Set<String> VALID_TIERS = Set.of("STABLE", "CAUTION", "RISK");
+    private static final Set<String> VALID_TIERS = RiskPolicy.TIERS;
 
     private final FinanceProfileMapper mapper;
 
@@ -125,41 +123,40 @@ public class FinanceProfileService {
         }
     }
 
-    static FinanceProfileResponse.SavedAssessment buildAssessment(FinanceProfileRow profile, RiskScoreRow risk) {
-        long available = profile.income() - profile.fixedExp() - profile.variableExp() - profile.saving() - profile.reserve();
-        BigDecimal safetyK = risk.safetyK() != null ? risk.safetyK() : defaultSafetyK(risk.tier());
-        long recommended = 0L;
-        boolean capped = false;
-        if (available > 0) {
-            BigDecimal byRisk = BigDecimal.valueOf(available).multiply(safetyK);
-            BigDecimal cap = BigDecimal.valueOf(profile.income()).multiply(INCOME_CAP_RATIO);
-            capped = byRisk.compareTo(cap) > 0;
-            BigDecimal raw = capped ? cap : byRisk;
-            BigDecimal units = raw.divide(ROUND_UNIT, 0, RoundingMode.FLOOR);
-            recommended = Math.max(0L, units.multiply(ROUND_UNIT).longValue());
+    /** 회원의 최신 RISK_SCORE (없으면 null). ML 장애 시 대체값(PREVIOUS)에 쓴다. 연체 확률은 담겨 있지 않다. */
+    @Transactional(readOnly = true)
+    public RiskScoreRow latestRiskScore(long memberId) {
+        return mapper.selectLatestRiskScore(memberId);
+    }
+
+    /**
+     * F09 ML 장애 시(PREVIOUS): 직전 RISK_SCORE 행의 PROB·TIER·SAFETY_K 를 그대로 복사해 FALLBACK_YN='Y' 로 한 줄 더 쌓는다.
+     * 복사는 DB 안에서 INSERT ... SELECT 로 해서 연체 확률이 자바 코드·응답을 거치지 않는다.
+     * 저장 실패가 추천 응답을 막지 않도록 경고만 남긴다.
+     */
+    @Transactional
+    public void recordFallbackCopy(long memberId) {
+        try {
+            mapper.insertRiskScoreCopyOfLatest(memberId);
+        } catch (Exception e) {
+            log.warn("RISK_SCORE 대체값 저장 실패 memberId={} cause={}", memberId, e.getClass().getSimpleName());
         }
-        String tier = risk.tier() == null ? "CAUTION" : risk.tier().trim().toUpperCase();
+    }
+
+    static FinanceProfileResponse.SavedAssessment buildAssessment(FinanceProfileRow profile, RiskScoreRow risk) {
+        String tier = RiskPolicy.normalizeTier(risk.tier());
+        BigDecimal safetyK = risk.safetyK() != null ? risk.safetyK() : RiskPolicy.safetyKOf(tier);
+        RiskPolicy.Recommendation r = RiskPolicy.recommend(
+                profile.income(), profile.fixedExp() + profile.variableExp(), profile.saving(), profile.reserve(), safetyK);
         return new FinanceProfileResponse.SavedAssessment(
-                available,
-                recommended,
-                capped,
+                r.available(),
+                r.recommended(),
+                r.capped(),
                 tier,
-                labelOf(tier),
+                RiskPolicy.labelOf(tier),
                 safetyK.doubleValue(),
                 risk.scoredAt()
         );
-    }
-
-    private static BigDecimal defaultSafetyK(String tier) {
-        if ("STABLE".equalsIgnoreCase(tier)) return new BigDecimal("0.50");
-        if ("RISK".equalsIgnoreCase(tier)) return new BigDecimal("0.20");
-        return new BigDecimal("0.35");
-    }
-
-    private static String labelOf(String tier) {
-        if ("STABLE".equalsIgnoreCase(tier)) return "안정";
-        if ("RISK".equalsIgnoreCase(tier)) return "위험";
-        return "주의";
     }
 
     private static long requireNonNegative(Long value) {

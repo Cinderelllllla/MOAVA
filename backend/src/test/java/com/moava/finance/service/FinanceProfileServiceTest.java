@@ -7,6 +7,7 @@ import com.moava.finance.dto.RiskScoreRow;
 import com.moava.finance.mapper.AiPayoutMapper;
 import com.moava.finance.mapper.FinanceProfileMapper;
 import com.moava.finance.dto.AiContributionRequest;
+import com.moava.finance.dto.SelfReportRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -131,13 +132,14 @@ class FinanceProfileServiceTest {
                         "risk_level", "STABLE",
                         "risk_label", "안정",
                         "safety_factor", 0.5,
-                        "source", "persona"
+                        "source", "self_report"
                 )
         ));
 
         AiFinanceService aiService = new AiFinanceService(ml, payoutMapper, service);
         Map<String, Object> result = aiService.contribution(7L,
-                new AiContributionRequest(3_200_000L, 2_080_000L, 350_000L, 250_000L));
+                new AiContributionRequest(3_200_000L, 2_080_000L, 350_000L, 250_000L,
+                        new SelfReportRequest("0", "NONE", "2", "UNDER_30")));
 
         verify(mapper).insertRiskScore(
                 eq(7L),

@@ -69,6 +69,7 @@ public class PayoutOrderDTO {
         private Integer roundNo;
         private String reason;
         private Integer aiSuggestedRound;
+        private Boolean aiAnalyzed;      // 신청자에게 AI 분석 기록(RISK_SCORE)이 있는지. 없으면 화면에 "AI 분석 전" (MOA-98)
         private String status;           // DB 코드: REQUESTED, CONSENT_PENDING, CONFIRMED, REJECTED
         private Integer agreedCount;
         private Integer targetCount;
@@ -105,6 +106,8 @@ public class PayoutOrderDTO {
         public void setReason(String reason) { this.reason = reason; }
         public Integer getAiSuggestedRound() { return aiSuggestedRound; }
         public void setAiSuggestedRound(Integer aiSuggestedRound) { this.aiSuggestedRound = aiSuggestedRound; }
+        public Boolean getAiAnalyzed() { return aiAnalyzed; }
+        public void setAiAnalyzed(Boolean aiAnalyzed) { this.aiAnalyzed = aiAnalyzed; }
         public String getStatus() { return status; }
         public void setStatus(String status) { this.status = status; }
         public Integer getAgreedCount() { return agreedCount; }

@@ -79,4 +79,18 @@
         INSERT INTO RISK_SCORE (RISK_SCORE_ID, MEMBER_ID, PROB, TIER, SAFETY_K, FALLBACK_YN, SCORED_AT)
         VALUES (SEQ_RISK_SCORE.NEXTVAL, #{memberId}, #{prob}, #{tier}, #{safetyK}, #{fallbackYn}, SYSDATE)
     </insert>
+
+    <!-- F09 ML 장애 대체값(PREVIOUS): 최신 1건의 PROB·TIER·SAFETY_K 를 그대로 복사, FALLBACK_YN='Y'.
+         확률을 자바로 꺼내지 않고 DB 안에서 복사한다. 기록이 없으면 0건 INSERT.
+         (NEXTVAL 과 ORDER BY 를 한 쿼리에 같이 쓰면 ORA-02287 이라 최신 행은 KEEP(DENSE_RANK LAST) 로 고른다) -->
+    <insert id="insertRiskScoreCopyOfLatest">
+        INSERT INTO RISK_SCORE (RISK_SCORE_ID, MEMBER_ID, PROB, TIER, SAFETY_K, FALLBACK_YN, SCORED_AT)
+        SELECT SEQ_RISK_SCORE.NEXTVAL, MEMBER_ID, PROB, TIER, SAFETY_K, 'Y', SYSDATE
+          FROM RISK_SCORE
+         WHERE RISK_SCORE_ID = (
+                SELECT MAX(RISK_SCORE_ID) KEEP (DENSE_RANK LAST ORDER BY SCORED_AT, RISK_SCORE_ID)
+                  FROM RISK_SCORE
+                 WHERE MEMBER_ID = #{memberId}
+               )
+    </insert>
 </mapper>

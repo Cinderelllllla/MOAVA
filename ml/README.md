@@ -43,13 +43,15 @@ Spring 은 모든 요청에 `X-Internal-Key` 헤더로 공유 키를 붙이고, 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
 | GET | `/health` | 상태 확인 (키 불필요) |
-| GET | `/risk/model` | 입력 지표 목록, 위험 구간, 안전계수 |
+| GET | `/risk/model` | 입력 지표 목록, 위험 구간, 안전계수, 자가 응답 4문항·구간·test_auc |
 | POST | `/risk/score` | 연체 확률 + 위험 배지 + 안전계수 |
 | POST | `/risk/contribution` | 추천 납입액 |
 | POST | `/risk/payout-order` | 곗돈 수령 순서 추천 |
 
-평가 대상은 세 방식 중 **하나**로 보냅니다. 백엔드는 `member_id` 만 쓰면 됩니다.
+평가 대상은 네 방식 중 **하나**로 보냅니다.
+맞춤 추천(F09, `/risk/contribution`)은 `self_report`, 수령 순서 추천(`/risk/payout-order`)은 아직 `member_id` 를 씁니다.
 
+- `self_report`: 자가 응답 4문항 선택지 코드 (아래 "자가 응답 모델"). 응답 `source` 는 `"self_report"`
 - `member_id`: 서비스 회원 번호(숫자). 가상 인물로 자동 연결됩니다.
 - `persona_id`: 데이터셋 가상 인물 ID (`SYN000000001` 형식)
 - `features`: 신용 지표 `{컬럼명: 값}`. 빠진 지표는 결측으로 처리
@@ -62,7 +64,8 @@ Spring 은 모든 요청에 `X-Internal-Key` 헤더로 공유 키를 붙이고, 
   "safety_factor": 0.35, "source": "persona", "features_used": null }
 
 // POST /risk/contribution   — 금액 단위는 "원" (프론트 화면은 만원 단위이므로 변환 필요)
-{ "member_id": 2, "monthly_income": 3200000, "monthly_expense": 2080000,
+{ "self_report": { "late_count_12m": "0", "max_late_period": "NONE", "loan_count": "2", "card_usage": "UNDER_30" },
+  "monthly_income": 3200000, "monthly_expense": 2080000,
   "monthly_saving": 350000, "emergency_fund": 250000 }
 // 응답
 { "available_amount": 520000, "recommended_amount": 150000, "capped": false,
@@ -74,7 +77,44 @@ Spring 은 모든 요청에 `X-Internal-Key` 헤더로 공유 키를 붙이고, 
 { "order": [ { "order": 1, "member_id": 3, "risk": { ... } }, ... ], "rule": "..." }
 ```
 
-오류: 없는 `persona_id` 는 404, 형식이 잘못된 요청(필수값 누락, 음수 금액, 0 이하 회원 번호 등)은 422.
+오류: 없는 `persona_id` 는 404, 형식이 잘못된 요청(필수값 누락, 음수 금액, 0 이하 회원 번호, 목록에 없는 자가 응답 선택지 등)은 422.
+
+## 자가 응답 모델 (F09 맞춤 추천 위험 등급, MOA-98)
+
+회원이 직접 답할 수 있는 4문항으로 따로 학습한 작은 모델입니다. 위 189개 지표 모델은 `CB`(교육용 위험등급) 컬럼에
+약 70% 의존하는데, `CB` 는 사용자에게 물어볼 수 없고 일부 지표만 넣으면 전원이 '안정'으로 나와 재사용할 수 없었습니다.
+
+| 문항 (`self_report` 키) | 학습 컬럼 | 선택지 코드 → 모델 입력값 |
+| --- | --- | --- |
+| 최근 1년간 30일 이상 연체 횟수 (`late_count_12m`) | `DQ1200001` | `0`→0, `1`→1, `2`→2, `3_PLUS`→3 (원본 clip 3) |
+| 최근 6개월 가장 길게 연체한 기간 (`max_late_period`) | `KC5000017` | `NONE`→0, `UNDER_1M`→15, `M1_2`→45, `M2_3`→75, `OVER_3M`→120 (원본 일수 (-1,0],(0,29],(29,59],(59,89],(89,∞)) |
+| 갚고 있는 대출 수 (`loan_count`) | `L00000001` | `0`~`4`→그대로, `5_PLUS`→5 (원본 clip 5) |
+| 카드 한도 중 쓰는 비율 (`card_usage`) | `CL0631905` | `NO_CARD`→0, `UNDER_30`→15, `P30_50`→40, `P50_70`→60, `P70_90`→80, `OVER_90`→100 (원본 0 = 카드 없음, 0 초과는 (0,30],(30,50],(50,70],(70,90],(90,∞)) |
+
+- 선택지 정의는 `src/common/self_report.py` 한 곳에 있고 학습·서버가 같이 씁니다. 화면(`frontend/src/api/finance.js`)과 Spring(`SelfReportRequest`)도 같은 코드값을 씁니다.
+- 알고리즘: `HistGradientBoostingClassifier(random_state=0, monotonic_cst=[1,1,1,1])` — 답이 나빠질수록 확률이 내려가지 않게 단조 제약.
+  `class_weight` 는 쓰지 않습니다(확률이 실제 연체율에 맞아야 10% / 25% 경계가 의미 있음).
+- 학습/테스트 분할은 `models/persona_scores.csv` 의 `split` 을 그대로 써서 기존 모델과 같은 사람들로 비교합니다.
+- 등급 경계·안전계수는 위 "규칙" 표와 같습니다.
+- 답변은 Spring·DB 어디에도 저장하지 않습니다(저장은 `RISK_SCORE` 의 확률·등급·안전계수만).
+
+학습: `python -m src.train_self --data <CSV 경로>` → `models/self_model.joblib`, `models/self_metrics.json`
+
+### 성능 (테스트 31,150명, `models/self_metrics.json`)
+
+| | 자가 응답 4문항 | 기존 189개 지표 |
+| --- | --- | --- |
+| ROC-AUC | 0.622 | 0.664 |
+| PR-AUC (기준선 0.099) | 0.187 | 0.229 |
+
+| 위험도 | 비중 | 실제 연체율 |
+| --- | --- | --- |
+| 안정 | 74.3% | 7.4% |
+| 주의 | 22.5% | 14.4% |
+| 위험 | 3.2% | 35.1% |
+
+예시 응답 → 등급: 아주 좋음(0회·없음·대출 0·30% 미만) 6.5% 안정 / 보통(0회·없음·대출 3·50~70%) 7.7% 안정 /
+나쁨(1회·1개월 미만·대출 4·70~90%) 19.1% 주의 / 아주 나쁨(3회 이상·3개월 이상·5개 이상·90% 이상) 54.2% 위험
 
 ### 회원과 가상 인물 연결
 
@@ -135,8 +175,11 @@ src/service/risk_service.py   모델 로딩, 예측·추천 로직
 src/common/config.py          위험 구간·안전계수 설정
 src/common/security.py        내부 공유 키(X-Internal-Key) 확인
 src/common/preprocess.py      데이터 로딩, 입력 지표 선택
-src/train.py                  학습 스크립트
-models/                       model.joblib, metrics.json, persona_scores.csv, demo_members.json
+src/common/self_report.py     자가 응답 4문항 선택지·구간 (학습·서버 공용)
+src/train.py                  학습 스크립트 (189개 지표 모델)
+src/train_self.py             자가 응답 4문항 모델 학습 스크립트
+models/                       model.joblib, metrics.json, persona_scores.csv, demo_members.json,
+                              self_model.joblib, self_metrics.json
 data/                         학습용 CSV 를 두는 곳 (git 제외)
 ```
 

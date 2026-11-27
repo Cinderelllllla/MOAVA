@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class SelfReport(BaseModel):
+    """자가 응답 4문항 선택지 코드 (src/common/self_report.py 와 같은 값). 목록에 없는 값이면 422."""
+    model_config = ConfigDict(extra="forbid")
+
+    late_count_12m: Literal["0", "1", "2", "3_PLUS"] = Field(description="최근 1년간 30일 이상 연체 횟수")
+    max_late_period: Literal["NONE", "UNDER_1M", "M1_2", "M2_3", "OVER_3M"] = Field(description="최근 6개월 가장 길게 연체한 기간")
+    loan_count: Literal["0", "1", "2", "3", "4", "5_PLUS"] = Field(description="갚고 있는 대출 수")
+    card_usage: Literal["NO_CARD", "UNDER_30", "P30_50", "P50_70", "P70_90", "OVER_90"] = Field(description="카드 한도 중 쓰는 비율")
+
+
 class Subject(BaseModel):
-    """평가 대상. persona_id(데이터셋 가상 인물 ID) 또는 features(신용 지표) 중 정확히 하나."""
+    """평가 대상. self_report(자가 응답 4문항) · member_id · persona_id · features 중 정확히 하나.
+    맞춤 추천(F09)은 self_report, 곗돈 수령 순서(/payout-order)는 아직 member_id 를 쓴다."""
     model_config = ConfigDict(extra="forbid")
 
     member_id: Optional[int] = Field(None, ge=1, description="서비스 회원 번호. 가상 인물로 자동 연결된다.", examples=[37])
@@ -15,12 +26,13 @@ class Subject(BaseModel):
     features: Optional[dict[str, float]] = Field(
         None, description="신용 지표 {컬럼명: 값}. 빠진 지표는 결측으로 처리된다. 컬럼명은 GET /risk/model 참고.",
     )
+    self_report: Optional[SelfReport] = Field(None, description="자가 응답 4문항 (맞춤 추천 1단계)")
 
     @model_validator(mode="after")
     def _exactly_one(self):
-        given = [v for v in (self.member_id, self.persona_id, self.features) if v is not None]
+        given = [v for v in (self.member_id, self.persona_id, self.features, self.self_report) if v is not None]
         if len(given) != 1:
-            raise ValueError("member_id, persona_id, features 중 정확히 하나만 보내야 합니다.")
+            raise ValueError("self_report, member_id, persona_id, features 중 정확히 하나만 보내야 합니다.")
         if self.features is not None:
             if not self.features:
                 raise ValueError("features 가 비어 있습니다.")
@@ -35,7 +47,7 @@ class RiskResult(BaseModel):
     risk_level: str = Field(description="STABLE / CAUTION / RISK (DB RISK_SCORE.TIER 와 같은 코드)")
     risk_label: str = Field(description="안정 / 주의 / 위험")
     safety_factor: float = Field(description="추천 납입액 계산에 쓰는 안전계수")
-    source: str = Field(description="persona(사전 계산 점수) 또는 features(실시간 예측)")
+    source: str = Field(description="self_report(자가 응답 모델) / persona(사전 계산 점수) / features(실시간 예측)")
     features_used: Optional[int] = Field(None, description="features 로 예측했을 때 모델이 인식한 지표 수")
 
 

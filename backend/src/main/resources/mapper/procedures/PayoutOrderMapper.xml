@@ -61,16 +61,22 @@
           AND STATUS = 'CONFIRMED'
     </select>
 
-    <!-- [수정 1] RISK_SCORE: PROB, SCORED_AT 컬럼 적용 -->
+    <!-- [수정 1] RISK_SCORE: PROB, SCORED_AT 컬럼 적용
+         MOA-98: 연체 확률 높은 회원부터 앞 회차. AI 분석 기록(RISK_SCORE)이 없는 회원은 맨 뒤 회차로 보낸다.
+         (예전 NVL(PROB, 0.35) 의 0.35 는 '주의' 안전계수라 연체 확률 자리에 맞지 않았음) -->
     <select id="selectAiSuggestedRound" resultType="int">
         SELECT SUGGESTED_ROUND
         FROM (
                  SELECT gm.MEMBER_ID,
-                        ROW_NUMBER() OVER (ORDER BY NVL(rs.PROB, 0.35) DESC, gm.MEMBER_ID ASC) AS SUGGESTED_ROUND
+                        ROW_NUMBER() OVER (
+                            ORDER BY CASE WHEN rs.PROB IS NULL THEN 1 ELSE 0 END ASC,
+                                     rs.PROB DESC,
+                                     gm.MEMBER_ID ASC
+                        ) AS SUGGESTED_ROUND
                  FROM GYE_MEMBER gm
                           LEFT JOIN (
                      SELECT MEMBER_ID, PROB,
-                            ROW_NUMBER() OVER (PARTITION BY MEMBER_ID ORDER BY SCORED_AT DESC) AS RN
+                            ROW_NUMBER() OVER (PARTITION BY MEMBER_ID ORDER BY SCORED_AT DESC, RISK_SCORE_ID DESC) AS RN
                      FROM RISK_SCORE
                  ) rs ON gm.MEMBER_ID = rs.MEMBER_ID AND rs.RN = 1
                  WHERE gm.GROUP_ID = #{groupId}
@@ -288,6 +294,8 @@
                pr.ROUND_NO           AS roundNo,
                pr.REASON             AS reason,
                pr.AI_SUGGESTED_ROUND AS aiSuggestedRound,
+               CASE WHEN EXISTS (SELECT 1 FROM RISK_SCORE rs WHERE rs.MEMBER_ID = pr.MEMBER_ID)
+                    THEN 1 ELSE 0 END AS aiAnalyzed,
                pr.STATUS             AS status,
                (SELECT COUNT(*) FROM CONSENT c
                 WHERE c.CONSENT_TYPE = 'ORDER' AND c.GROUP_ID = pr.GROUP_ID

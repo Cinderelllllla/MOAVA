@@ -5,7 +5,7 @@ import { useApp } from '../common/store';
 import useMlFinanceAssessment from '../common/useMlFinanceAssessment';
 import { finance } from '../api';
 import { PageHead, Card, Input, Select } from '../components/ui';
-import { BarChart, FinanceAssessmentStatus, LoadState, MonthlyChart, RiskPanel } from '../components/shared';
+import { BarChart, FallbackNotice, FinanceAssessmentStatus, LoadState, MonthlyChart, RiskPanel } from '../components/shared';
 import { won, MONTHS } from '../common/format';
 
 export function Finance() {
@@ -16,10 +16,10 @@ export function Finance() {
   return <><PageHead kicker="AI FINANCIAL ANALYSIS" title="금융 분석 · AI 추천" sub="현재 금융정보를 확인하고 월별 입력 데이터를 관리해 보세요."><button className="btn primary" onClick={() => nav('/finance/monthly')}>월별 데이터 저장 →</button></PageHead>
     <FinanceAssessmentStatus {...mlAssessment} />
     <div className="grid cols3">{[['월수입', show(f.income)], ['월지출', hasProfile ? won(Number(f.fixed) + Number(f.variable)) : '-'], ['추천 납입액', a ? (a.rec > 0 ? won(a.rec) : '추천 없음') : '-']].map(([t, v]) => <Card key={t}><small>{t}</small><div className="metric">{v}</div></Card>)}</div>
-    <div className="section"><Card><RiskPanel /></Card></div>
+    <div className="section"><FallbackNotice /><Card><RiskPanel /></Card></div>
     <div className="grid cols2 section"><Card><h2>월별 수입 · 지출 추이</h2><MonthlyChart /></Card>
       <Card><h2>금융 요약</h2>{hasProfile
-        ? <div className="list"><div className="list-item">기존 저축 {won(f.saving)}</div><div className="list-item">비상 예비금 {won(f.reserve)}</div><div className="list-item">매달 남는 돈(수입 − 지출 − 저축 − 비상금) {a ? finance.freeText(a.free) : '분석 전'}</div><div className="list-item">희망 월 납입액 {won(f.goal)} {a && (a.rec <= 0 ? <span className="pill warn">지금은 추천 없음</span> : Number(f.goal) > a.rec ? <span className="pill warn">추천액 초과</span> : <span className="pill">추천 범위</span>)}</div></div>
+        ? <div className="list"><div className="list-item">월 저축 {won(f.saving)}</div><div className="list-item">비상 예비금 {won(f.reserve)}</div><div className="list-item">매달 남는 돈(수입 − 지출 − 저축 − 비상금) {a ? finance.freeText(a.free) : '분석 전'}</div><div className="list-item">희망 월 납입액 {won(f.goal)} {a && (a.rec <= 0 ? <span className="pill warn">지금은 추천 없음</span> : Number(f.goal) > a.rec ? <span className="pill warn">추천액 초과</span> : <span className="pill">추천 범위</span>)}</div></div>
         : <div className="empty">아직 입력한 금융정보가 없어요. <button type="button" className="btn small soft" onClick={() => nav('/journey')}>맞춤 추천에서 입력하기</button></div>}
         <p className="info mini">{a ? '위험도와 추천액은 입력한 금융정보를 AI가 분석한 참고 결과예요.' : '금융정보를 입력하고 이용에 동의하면 AI 분석 결과를 볼 수 있어요.'} 입력한 금융정보와 AI 분석 결과는 계정에 저장되어 다시 로그인해도 유지돼요.</p></Card></div></>;
 }
