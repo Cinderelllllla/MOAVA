@@ -10,8 +10,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import java.util.UUID;
 
-/** 채팅 REST 컨트롤러 전용 오류 변환. 다른 패키지에는 영향을 주지 않는다. */
-@RestControllerAdvice(assignableTypes = ChatRestController.class)
+/** 채팅 REST 컨트롤러(회원용·관리자 열람용) 전용 오류 변환. 다른 패키지에는 영향을 주지 않는다. */
+@RestControllerAdvice(assignableTypes = {ChatRestController.class, AdminChatViewController.class})
 public class ChatExceptionHandler {
 
     @ExceptionHandler(ChatException.class)

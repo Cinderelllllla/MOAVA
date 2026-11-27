@@ -1,6 +1,7 @@
 package com.moava.group.create.controller;
 
 import com.moava.group.account.controller.GroupAccountController;
+import com.moava.group.account.controller.GroupAccountChangeController;
 
 import java.util.Map;
 
@@ -16,7 +17,8 @@ import org.springframework.web.server.ResponseStatusException;
         GroupCreateController.class,
         GroupJoinCodeController.class,
         GroupInviteLinkController.class,
-        GroupAccountController.class
+        GroupAccountController.class,
+        GroupAccountChangeController.class
 })
 public class GroupCreateExceptionHandler {
 

@@ -3,6 +3,9 @@
 import PaymentStatusPanel from '../components/PaymentStatusPanel';
 import GroupManagementPanel from '../components/GroupManagementPanel';
 import GroupAccountPanel from '../components/GroupAccountPanel';
+import GroupAccountChangePanel from '../components/GroupAccountChangePanel';
+import GroupAccountConsentPanel from '../components/GroupAccountConsentPanel';
+
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import useMyGroups from '../common/useMyGroups';
 import { useApp } from '../common/store';
@@ -247,6 +250,22 @@ function ServerOperations() {
                 {g.role === 'OWNER' && (
                   <GroupAccountPanel
                     key={`account-${g.groupId}`}
+                    g={g}
+                  />
+                )}
+
+                {/* F20 모임장 전용 계좌 변경 상태 확인 */}
+                {g.role === 'OWNER' && (
+                  <GroupAccountChangePanel
+                    key={`account-change-${g.groupId}`}
+                    g={g}
+                  />
+                )}
+
+                {/* F20 계좌 변경 동의 — 일반 회원 전용 화면 */}
+                {g.role === 'MEMBER' && (
+                  <GroupAccountConsentPanel
+                    key={`account-consent-${g.groupId}`}
                     g={g}
                   />
                 )}

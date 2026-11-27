@@ -9,6 +9,8 @@ import {
 } from '../../api/supportReports';
 import { PageHead, Card, Empty } from '../../components/ui';
 import { LoadState } from '../../components/shared';
+import { chat } from '../../api';
+import AdminReportChatViewer from '../../components/chat/AdminReportChatViewer';
 
 const MAX_ADMIN_MEMO_LENGTH = 260;
 
@@ -43,6 +45,8 @@ export default function AdminSupportReportsPage() {
   // 신고별 상태 변경 초안 { [reportId]: { baseStatus, status, memo } }
   const [drafts, setDrafts] = useState({});
   const [savingId, setSavingId] = useState(null);
+  // MOA-96 대상 모임 채팅 열람(읽기 전용): 펼친 신고 번호 하나
+  const [chatOpenId, setChatOpenId] = useState(null);
 
   const reload = useCallback(() => setReloadKey(k => k + 1), []);
 
@@ -280,6 +284,21 @@ export default function AdminSupportReportsPage() {
                           </button>
                         </div>
                       </div>
+
+                      {/* MOA-96 대상 모임 채팅 열람 (처리 중 신고만, 읽기 전용) */}
+                      {chat.canViewReportChat(item) && (
+                        <div style={{ marginTop: 10 }}>
+                          <button
+                            type="button"
+                            className="btn small soft"
+                            aria-expanded={chatOpenId === item.reportId}
+                            onClick={() => setChatOpenId(id => (id === item.reportId ? null : item.reportId))}
+                          >
+                            {chatOpenId === item.reportId ? '채팅 닫기' : '모임 채팅 열람'}
+                          </button>
+                          {chatOpenId === item.reportId && <AdminReportChatViewer reportId={item.reportId} />}
+                        </div>
+                      )}
 
                       {/* 처리 이력 */}
                       {Array.isArray(item.history) && item.history.length > 0 && (

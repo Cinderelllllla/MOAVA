@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC
+        "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.account.mapper.GroupAccountTransferLockMapper">
+
+    <resultMap id="lockedMockAccountMap"
+               type="com.moava.group.account.dto.MockAccountLookupRow">
+        <constructor>
+            <idArg column="FINTECH_USE_NUM" javaType="java.lang.String"/>
+            <arg column="BANK_CODE" javaType="java.lang.String"/>
+            <arg column="BANK_NAME" javaType="java.lang.String"/>
+            <arg column="ACCOUNT_NO" javaType="java.lang.String"/>
+            <arg column="BALANCE" javaType="java.math.BigDecimal"/>
+            <arg column="STATUS" javaType="java.lang.String"/>
+            <arg column="LEADER_YN" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <!-- F20: 모의 은행 계좌 행 잠금 -->
+    <select id="lockMockAccount"
+            resultMap="lockedMockAccountMap">
+        SELECT FINTECH_USE_NUM,
+               BANK_CODE,
+               BANK_NAME,
+               ACCOUNT_NO,
+               BALANCE,
+               STATUS,
+               LEADER_YN
+        FROM MOCK_KFTC_ACCOUNT
+        WHERE FINTECH_USE_NUM = #{fintechUseNum}
+        FOR UPDATE
+    </select>
+
+    <!-- F20: 이체 기록 중복 여부 -->
+    <select id="countTransferRecords"
+            resultType="int">
+        SELECT COUNT(*)
+        FROM MOCK_KFTC_TRANSACTION
+        WHERE BANK_TRAN_ID = #{bankTranId}
+    </select>
+
+</mapper>
