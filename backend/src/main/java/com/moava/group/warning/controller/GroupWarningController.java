@@ -16,7 +16,7 @@ import java.util.UUID;
  * <pre>
  * POST /api/v1/groups/{groupId}/members/{memberId}/warnings    경고 (모임장) body {reason}
  * POST /api/v1/groups/{groupId}/members/{memberId}/expulsion   강제 탈퇴 (모임장, 경고 2회 회원) body {reason}
- *  * GET  /api/v1/groups/{groupId}/warnings/me                    나의 누적 경고 (본인)
+ * GET  /api/v1/groups/{groupId}/warnings/me                    나의 누적 경고 (본인)
  * </pre>
  * SecurityConfig 가 /api/v1/groups/** 를 ROLE_MEMBER 로 막고 있다. 여기서도 회원 토큰인지 한 번 더 확인한다.
  */

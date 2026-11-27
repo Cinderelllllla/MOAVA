@@ -80,7 +80,6 @@ public class GroupWarningService {
         if (mapper.expel(groupId, targetId) == 0) {
             throw notEnoughWarnings();
         }
-        // ↓ 아래(insertSanction부터)는 그대로
 
         mapper.insertSanction("EXPEL", targetId, groupId, leaderId, reason);
         mapper.insertAuditLog(groupId, leaderId, targetId, "EXPEL", "강제 탈퇴: " + reason);

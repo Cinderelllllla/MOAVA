@@ -1069,6 +1069,7 @@ export async function fetchMyWarnings(groupId) {
   return apiFetch(`/api/v1/groups/${encodeURIComponent(groupId)}/warnings/me`);
 }
 
+// TODO(MOA76): 목업 전용. 화면은 fetchRules / updateRules 를 쓴다. 다른 목업 화면 정리 때 함께 삭제 예정.
 export async function editRule(id, title, body) {
   const g = D.group(id);
 
