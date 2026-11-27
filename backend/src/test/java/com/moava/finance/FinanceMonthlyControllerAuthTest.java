@@ -15,8 +15,10 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -44,6 +46,28 @@ class FinanceMonthlyControllerAuthTest {
         mvc.perform(get("/api/v1/finance/monthly").principal(auth("7", "ROLE_MEMBER")))
                 .andExpect(status().isOk());
         verify(service).list(7L, null);
+    }
+
+    @Test
+    void 관리자_토큰은_일괄_저장도_403() throws Exception {
+        mvc.perform(put("/api/v1/finance/monthly/batch").principal(auth("7", "ROLE_ADMIN"))
+                        .contentType("application/json")
+                        .content("{\"items\":[{\"yearMonth\":\"202611\",\"income\":1,\"expense\":1}]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("MEMBER_ONLY"));
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void 회원은_일괄_저장된다() throws Exception {
+        when(service.upsertBatch(anyLong(), any())).thenReturn(new MonthlyListResponse(List.of(
+                new MonthlyListResponse.Item("202611", 1L, 1L, 0L))));
+        mvc.perform(put("/api/v1/finance/monthly/batch").principal(auth("7", "ROLE_MEMBER"))
+                        .contentType("application/json")
+                        .content("{\"items\":[{\"yearMonth\":\"202611\",\"income\":1,\"expense\":1}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].yearMonth").value("202611"));
+        verify(service).upsertBatch(eq(7L), any());
     }
 
     @Test
