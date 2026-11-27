@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC
+        "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.group.account.mapper.GroupAccountMockLinkMapper">
+
+    <resultMap id="mockAccountLookupMap"
+               type="com.moava.group.account.dto.MockAccountLookupRow">
+        <constructor>
+            <idArg column="FINTECH_USE_NUM"
+                   javaType="java.lang.String"/>
+            <arg column="BANK_CODE"
+                 javaType="java.lang.String"/>
+            <arg column="BANK_NAME"
+                 javaType="java.lang.String"/>
+            <arg column="ACCOUNT_NO"
+                 javaType="java.lang.String"/>
+            <arg column="BALANCE"
+                 javaType="java.math.BigDecimal"/>
+            <arg column="STATUS"
+                 javaType="java.lang.String"/>
+            <arg column="LEADER_YN"
+                 javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <!-- F20 - 은행명과 계좌번호가 정확히 일치하는 모의 계좌 -->
+    <select id="findMockAccounts"
+            resultMap="mockAccountLookupMap">
+        SELECT FINTECH_USE_NUM,
+               BANK_CODE,
+               BANK_NAME,
+               ACCOUNT_NO,
+               BALANCE,
+               STATUS,
+               LEADER_YN
+        FROM MOCK_KFTC_ACCOUNT
+        WHERE BANK_CODE = #{bankCode}
+          AND ACCOUNT_NO = #{accountNumber}
+    </select>
+
+</mapper>

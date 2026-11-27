@@ -259,7 +259,7 @@ public class GroupAccountService {
         if (!verified) {
 
             throw new ResponseStatusException(
-                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    HttpStatus.UNPROCESSABLE_CONTENT,
                     "계좌 소유 확인에 실패했습니다."
             );
         }
