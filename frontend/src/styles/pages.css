@@ -164,3 +164,45 @@ html[data-theme="v9meeting"] .ld-nav .btn:not(.primary){background:#1a3554!impor
 .region-selector-grid.region-selector-compact>.region-field-sido{grid-column:1 / -1}
 .field select:disabled{opacity:.6;cursor:not-allowed}
 @media(max-width:540px){.region-selector-grid,.region-selector-grid.region-selector-compact{grid-template-columns:1fr}}
+
+/* ---- 토스·카카오 스타일 약관 동의 팝업 모달 ---- */
+.terms-modal-backdrop{z-index:1100}
+.terms-detail-backdrop{z-index:1200}
+.terms-modal-panel{width:min(460px,94vw)!important;max-height:min(86vh,720px)!important;padding:24px!important;gap:0}
+.terms-detail-panel{width:min(540px,94vw)!important;max-height:min(84vh,760px)!important;padding:24px!important}
+.terms-modal-head{align-items:flex-start;padding-bottom:14px}
+.terms-modal-head h2{font-size:20px;font-weight:800;letter-spacing:-.025em;margin:0}
+.terms-modal-head .muted.mini{margin:4px 0 0;font-size:13px}
+.terms-close-btn{border:0;background:transparent;color:var(--t-text4,var(--muted));font-size:18px;line-height:1;width:32px;height:32px;border-radius:10px;cursor:pointer;display:grid;place-items:center;flex-shrink:0}
+.terms-close-btn:hover:not(:disabled){background:var(--t-fill,#eef3f8);color:var(--t-text,var(--ink))}
+.terms-modal-body{overflow-y:auto;padding:16px 2px 4px;display:flex;flex-direction:column;gap:12px;min-height:0}
+.terms-all-box{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;border:1.5px solid var(--t-line,var(--line));background:var(--t-fill,#f4f7fb);cursor:pointer;transition:border-color .15s,background .15s}
+.terms-all-box.checked{border-color:var(--t-blue,var(--blue));background:var(--t-blue-pale,#eaf4ff)}
+.terms-all-box input{margin:0!important;flex-shrink:0}
+.terms-all-text{display:flex;flex-direction:column;gap:2px}
+.terms-all-text strong{font-size:15px;font-weight:700;color:var(--t-text,var(--ink))}
+.terms-all-text small{font-size:12px;color:var(--t-text4,var(--muted))}
+.terms-list-group{display:flex;flex-direction:column;gap:2px}
+.terms-list-optional{padding-top:10px;border-top:1px dashed var(--t-line,var(--line))}
+.terms-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 6px;border-radius:10px}
+.terms-row:hover{background:var(--t-fill,#f5f8fc)}
+.terms-row-check{display:flex;align-items:center;gap:10px;min-width:0;flex:1;cursor:pointer;margin:0!important}
+.terms-row-check input{margin:0!important;flex-shrink:0}
+.terms-badge{display:inline-flex;align-items:center;justify-content:center;padding:2px 7px;border-radius:6px;font-size:11px;font-weight:700;flex-shrink:0}
+.terms-badge.req{background:var(--t-blue-pale,#e6f2ff);color:var(--t-blue-text,var(--blue))}
+.terms-badge.opt{background:var(--t-fill2,#edf1f6);color:var(--t-text4,var(--muted))}
+.terms-row-title{font-size:14px;font-weight:500;color:var(--t-text2,var(--ink));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.terms-view-btn{border:0;background:transparent;color:var(--t-text4,var(--muted));font:inherit;font-size:13px;font-weight:600;padding:4px 6px;border-radius:8px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.terms-view-btn:hover{color:var(--t-blue,var(--blue));background:var(--t-blue-pale,#eaf4ff)}
+.terms-error-msg{margin:4px 0 0;padding:10px 12px;border-radius:10px;background:var(--t-red-pale,#fff1f1);color:var(--t-red,#d93025);font-size:13px;font-weight:600}
+.terms-modal-actions{display:grid;grid-template-columns:1fr 2fr;gap:10px;padding-top:16px;margin-top:12px;border-top:1px solid var(--t-line-soft,var(--line))}
+.terms-modal-actions .btn{width:100%;min-height:48px;border-radius:14px;font-size:15px;font-weight:700}
+.terms-detail-meta{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.terms-detail-scroll{overflow-y:auto;min-height:0;flex:1;margin-top:14px;padding:16px;border-radius:14px;background:var(--t-fill,#f7f9fc);border:1px solid var(--t-line-soft,var(--line))}
+.terms-detail-body{margin:0;white-space:pre-wrap;word-break:keep-all;font-size:13.5px;line-height:1.7;color:var(--t-text2,var(--ink))}
+@media(max-width:640px){
+  .terms-modal-backdrop{align-items:flex-end!important;padding:0!important}
+  .terms-modal-panel{width:100%!important;max-height:88vh!important;border-radius:24px 24px 0 0!important;padding:22px 18px 20px!important}
+  .terms-detail-panel{width:96vw!important;padding:20px 16px!important}
+}
+

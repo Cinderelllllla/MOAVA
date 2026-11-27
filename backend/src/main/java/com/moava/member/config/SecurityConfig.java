@@ -63,7 +63,13 @@ public class SecurityConfig {
                     "/api/auth/signup",
                     "/api/auth/login",
                     "/api/auth/admin/login",
-                    "/api/auth/check-email"
+                    "/api/auth/check-email",
+                    "/api/auth/social/*/authorize",
+                    "/api/auth/social/*/callback",
+                    "/api/auth/social/exchange",
+                    "/api/auth/social/signup-info",
+                    "/api/auth/social/signup",
+                    "/api/auth/social/terms"
                 ).permitAll()
 
                 // 관리자 전용 API

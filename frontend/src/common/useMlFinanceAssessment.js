@@ -11,6 +11,9 @@ export default function useMlFinanceAssessment() {
   const memberId = serverMemberId ?? Number(session?.id);
   const [state, setState] = useState({ status: 'idle', error: '' });
   const [retryKey, setRetryKey] = useState(0);
+  // 금융정보를 다시 저장하면 saveFinance 가 분석 결과를 비운다. 희망 납입액(goal)처럼 분석에 안 쓰는 값만 바뀌어도
+  // 결과가 비워지므로, 결과가 없어지면 아래 effect 가 다시 돌아 분석을 새로 하도록 의존값에 넣는다.
+  const hasAssessment = Boolean(finance.getMlAssessment());
 
   useEffect(() => {
     if (!profile.consentAt) {
@@ -43,6 +46,7 @@ export default function useMlFinanceAssessment() {
     profile.reserve,
     token,
     retryKey,
+    hasAssessment,
   ]);
 
   return { ...state, retry: () => setRetryKey(value => value + 1) };
