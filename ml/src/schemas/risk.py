@@ -42,6 +42,14 @@ class Subject(BaseModel):
         return self
 
 
+class RiskFactor(BaseModel):
+    """위험 등급을 높인 요인 (자가 응답 문항 하나). impact 가 클수록 등급에 미친 영향이 크다."""
+    key: str = Field(description="문항 키 (late_count_12m / max_late_period / loan_count / card_usage)")
+    question: str = Field(description="화면 질문")
+    answer_label: str = Field(description="고른 답의 화면 라벨")
+    impact: float = Field(description="이 문항만 가장 좋은 답으로 바꿨을 때 줄어드는 연체 확률 (0~1, 소수 4자리)")
+
+
 class RiskResult(BaseModel):
     default_probability: float = Field(description="향후 12개월 내 연체 1회 이상 확률 (0~1)")
     risk_level: str = Field(description="STABLE / CAUTION / RISK (DB RISK_SCORE.TIER 와 같은 코드)")
@@ -49,6 +57,8 @@ class RiskResult(BaseModel):
     safety_factor: float = Field(description="추천 납입액 계산에 쓰는 안전계수")
     source: str = Field(description="self_report(자가 응답 모델) / persona(사전 계산 점수) / features(실시간 예측)")
     features_used: Optional[int] = Field(None, description="features 로 예측했을 때 모델이 인식한 지표 수")
+    factors: Optional[list[RiskFactor]] = Field(
+        None, description="self_report 로 계산했을 때만: 등급을 높인 요인 최대 2개(impact 큰 순). 없으면 []. 다른 방식이면 null")
 
 
 class ContributionRequest(Subject):

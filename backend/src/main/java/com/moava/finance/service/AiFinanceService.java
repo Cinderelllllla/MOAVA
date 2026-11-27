@@ -53,8 +53,9 @@ public class AiFinanceService {
     /**
      * 위험 정보 중 회원에게 보여도 되는 항목 (명세서 F09: 연체 확률은 관리자·등급 산출에만, 회원 API 는 등급만).
      * 안전계수는 등급마다 정해진 정책 값(/policy 에도 공개)이라 본인 화면에서 계산 근거로 보여 준다.
+     * factors(MOA-101)는 본인이 답한 자가 응답 중 등급을 높인 요인이라 본인 응답에만 준다(DB 에 저장하지 않음).
      */
-    static final List<String> OWN_RISK_KEYS = List.of("risk_level", "risk_label", "safety_factor");
+    static final List<String> OWN_RISK_KEYS = List.of("risk_level", "risk_label", "safety_factor", "factors");
     /** 다른 회원 위험 정보는 등급만 */
     static final List<String> OTHERS_RISK_KEYS = List.of("risk_level", "risk_label");
 
