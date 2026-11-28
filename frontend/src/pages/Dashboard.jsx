@@ -138,7 +138,7 @@ export default function Dashboard() {
         />
 
         <Stat
-          label="내가 만든 계모임"
+          label="내 계모임"
           val={groupCount}
           ico="☁"
           to="/my-groups"
@@ -175,7 +175,7 @@ export default function Dashboard() {
         <Card>
           <div className="section-title">
             <h2 style={{ margin: 0 }}>
-              내가 만든 계모임
+              내 계모임
               {' '}
               <small className="muted">
                 {groupCount}
@@ -216,7 +216,9 @@ export default function Dashboard() {
                       style={{ margin: 0 }}
                     >
                       <b>{g.title}</b>
-                      <span className="pill">모임장 · {groups.groupStatusLabel(g.status)}</span>
+                      <span className={`pill ${g.role === 'OWNER' ? 'mine' : ''}`}>
+                        {g.role === 'OWNER' ? '모임장' : '일반 멤버'} · {groups.groupStatusLabel(g.status, g.currentMembers, g.maxMembers)}
+                      </span>
                     </div>
 
                     <p
@@ -233,7 +235,7 @@ export default function Dashboard() {
                 ))
               ) : (
                 <div className="empty">
-                  아직 만든 계모임이 없어요.{' '}
+                  아직 참여 중인 계모임이 없어요.{' '}
                   <button type="button" className="btn small soft" onClick={() => nav('/groups/new')}>계모임 만들기</button>
                 </div>
               )}

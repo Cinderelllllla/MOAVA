@@ -60,6 +60,15 @@ function GroupManagement({ g, onReload }) {
   const [joinProcessingId, setJoinProcessingId] = useState(null);
   const [joinError, setJoinError] = useState('');
 
+  // 모집 마감 (RECRUITING -> ACTIVE) 상태
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState('');
+  const isRecruiting = g.status === 'RECRUITING';
+  const currentMembersCount = Number(g.currentMembers || 0);
+  const maxMembersCount = Number(g.maxMembers || 0);
+  const minCloseMembers = Math.max(2, Math.ceil((maxMembersCount || 2) / 2));
+  const canCloseRecruitment = isRecruiting && currentMembersCount >= minCloseMembers;
+
   // =========================================================
   // F18: 인증코드 발급 및 재발급
   // =========================================================
@@ -421,6 +430,68 @@ function GroupManagement({ g, onReload }) {
     }
   };
 
+  // =========================================================
+  // 모집 마감 (모임장 수동 마감: 정원 절반 이상 충족 시)
+  // =========================================================
+
+  const handleCloseRecruitment = async () => {
+    if (!isOwner || !isRecruiting || closing) return;
+
+    if (!canCloseRecruitment) {
+      setCloseError(
+        `모집 마감은 정원의 절반 이상(최소 ${minCloseMembers}명)이 모여야 가능합니다. ` +
+        `(현재 ${currentMembersCount}/${maxMembersCount}명)`
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `현재 ${currentMembersCount}/${maxMembersCount}명으로 모집을 마감하고 모임 운영을 시작할까요?\n\n` +
+      '• 대기 중인 가입 신청은 자동으로 거절됩니다.\n' +
+      '• 마감 후 월 납입 증빙 등록·승인 및 수령 순서 확정을 진행할 수 있습니다.'
+    );
+
+    if (!confirmed) return;
+
+    setClosing(true);
+    setCloseError('');
+
+    try {
+      const result = await groups.closeGroupRecruitment(groupId);
+
+      if (openJoin) {
+        try {
+          await loadJoinRequests();
+        } catch {
+          // 목록 갱신 실패 시에도 마감 완료 안내 유지
+        }
+      }
+
+      if (typeof onReload === 'function') {
+        try {
+          await onReload();
+        } catch {
+          // 상위 리로드 실패 시에도 마감 완료 안내 유지
+        }
+      }
+
+      const rejectedCount = Number(result?.rejectedPendingCount || 0);
+      const suffix = rejectedCount > 0
+        ? `\n(대기 중이던 가입 신청 ${rejectedCount}건은 자동 거절되었습니다.)`
+        : '';
+      window.alert(
+        (result?.message || '모집을 마감하고 모임 운영을 시작했어요.') + suffix
+      );
+    } catch (error) {
+      setCloseError(
+        error?.message ||
+        '모집 마감 처리에 실패했어요.'
+      );
+    } finally {
+      setClosing(false);
+    }
+  };
+
   // 모임장만 관리 패널 사용 가능
   if (!isOwner) return null;
 
@@ -442,6 +513,20 @@ function GroupManagement({ g, onReload }) {
       </div>
 
       <div className="actions">
+
+        {/* 모집 마감 (운영 시작) */}
+        {isRecruiting && (
+          <button
+            type="button"
+            className="btn primary"
+            disabled={closing || !canCloseRecruitment}
+            onClick={handleCloseRecruitment}
+          >
+            {closing
+              ? '모집 마감 처리 중...'
+              : '모집 마감 (운영 시작)'}
+          </button>
+        )}
 
         {/* 비공개 모임 인증코드 발급 */}
         {isPrivate && (
@@ -499,6 +584,28 @@ function GroupManagement({ g, onReload }) {
         </button>
 
       </div>
+
+      {/* 모집 마감 안내 */}
+      {isRecruiting && (
+        <p className="muted" style={{ marginTop: 10 }}>
+          {canCloseRecruitment
+            ? `현재 ${currentMembersCount}/${maxMembersCount}명 참여 중이에요. 최소 인원(${minCloseMembers}명)을 충족해 모집을 마감하고 운영을 시작할 수 있어요. (정원이 모두 차면 자동 마감)`
+            : `현재 ${currentMembersCount}/${maxMembersCount}명 참여 중이에요. 정원의 절반 이상(최소 ${minCloseMembers}명)이 모이면 모집을 마감할 수 있어요. (정원이 모두 차면 자동 마감)`}
+        </p>
+      )}
+
+      {/* 모집 마감 오류 */}
+      {isRecruiting && closeError && (
+        <p
+          role="alert"
+          style={{
+            color: '#c0392b',
+            marginTop: 8
+          }}
+        >
+          {closeError}
+        </p>
+      )}
 
       {/* 발급된 인증코드 표시 */}
       {isPrivate && issuedCode && (

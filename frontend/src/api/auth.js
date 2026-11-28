@@ -249,7 +249,11 @@ export async function updateAccount(f) {
       regionDong: encodedRegion.regionDong
     })
   });
-  setServerMember(updatedUser);
+  setServerMember({
+    ...updatedUser,
+    role: u.role || tokenRole() || 'MEMBER',
+    signupType: updatedUser?.signupType || u.signupType
+  });
   save();
   return updatedUser;
 }
@@ -269,14 +273,15 @@ export async function withdrawAccount(password) {
     fail('서버 회원만 탈퇴할 수 있습니다.');
   }
 
-  if(!password || !password.trim()){
+  const isSocialOnly = Boolean(u.signupType && u.signupType !== 'EMAIL');
+  if (!isSocialOnly && (!password || !password.trim())) {
     fail('탈퇴를 위해 비밀번호를 입력해주세요.');
   }
 
   await apiFetch('/api/auth/me', {
     method: 'DELETE',
     body: JSON.stringify({
-      password: password
+      password: isSocialOnly ? '' : password
     })
   });
   clearAccessToken();

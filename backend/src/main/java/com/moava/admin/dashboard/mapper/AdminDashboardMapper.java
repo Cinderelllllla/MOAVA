@@ -63,9 +63,16 @@ public interface AdminDashboardMapper {
     void deleteAllGyeMembers();
     void deleteAllGyeGroups();
 
+    void deleteAllMockKftcTransactions();
+    void deleteAllMockKftcAccounts();
+    void deleteAllMockKftcOauthCodes();
+    void deleteAllMockKftcOauthTokens();
+    void deleteAllCodefConnections();
+
     void deleteAllRiskScores();
     void deleteAllFinanceMonthly();
     void deleteAllFinanceProfiles();
     void deleteAllMemberConsents();
+    void deleteAllMemberSocialAccounts();
     void deleteAllMembers();
 }

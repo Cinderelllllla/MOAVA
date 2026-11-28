@@ -280,7 +280,7 @@ public class DissolutionService {
                 "DISSOLVE_REJECTED",
                 "계모임 해산 신청 반려 안내",
                 "해산 신청이 반려되어 모임이 운영 중 상태로 유지됩니다. (반려 사유: " + reasonText + ")",
-                "/operations?groupId=" + groupId,
+                "/procedures?groupId=" + groupId + "&tab=dissolve",
                 dissolutionRequestId
         );
 

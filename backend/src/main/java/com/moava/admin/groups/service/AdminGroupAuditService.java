@@ -4,8 +4,10 @@ import com.moava.admin.groups.dto.AdminGroupAuditDTO;
 import com.moava.admin.groups.mapper.AdminGroupAuditMapper;
 import com.moava.common.util.NameMasker;
 import com.moava.crypto.service.CryptoKeyService;
+import com.moava.group.create.service.GroupAccountCrypto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,10 +34,21 @@ public class AdminGroupAuditService {
 
     private final AdminGroupAuditMapper mapper;
     private final CryptoKeyService cryptoKeyService;
+    private final GroupAccountCrypto groupAccountCrypto;
 
-    public AdminGroupAuditService(AdminGroupAuditMapper mapper, CryptoKeyService cryptoKeyService) {
+    @Autowired
+    public AdminGroupAuditService(
+            AdminGroupAuditMapper mapper,
+            CryptoKeyService cryptoKeyService,
+            GroupAccountCrypto groupAccountCrypto
+    ) {
         this.mapper = mapper;
         this.cryptoKeyService = cryptoKeyService;
+        this.groupAccountCrypto = groupAccountCrypto;
+    }
+
+    public AdminGroupAuditService(AdminGroupAuditMapper mapper, CryptoKeyService cryptoKeyService) {
+        this(mapper, cryptoKeyService, null);
     }
 
     /** 전체 계모임 목록 조회 (모임장 마스킹·상태·활성 회원 수·납입일·계좌 인증 상태) */
@@ -250,6 +263,16 @@ public class AdminGroupAuditService {
                     return decrypted;
                 }
             } catch (RuntimeException e) {
+                if (groupAccountCrypto != null) {
+                    try {
+                        String legacyDecrypted = trimToNull(groupAccountCrypto.decrypt(holderEnc, keyVer));
+                        if (legacyDecrypted != null) {
+                            return legacyDecrypted;
+                        }
+                    } catch (RuntimeException ignored) {
+                        // 레거시 키 복호화도 실패하면 등록자명으로 대체
+                    }
+                }
                 log.warn("GYE_ACCOUNT 예금주 복호화 실패 (gyeAccountId={}, keyVer={}): 등록자명으로 대체",
                         row.getGyeAccountId(), keyVer);
             }

@@ -75,6 +75,13 @@ export default function MyGroups() {
       >
         <button
           type="button"
+          className="btn soft"
+          onClick={() => nav('/invite')}
+        >
+          초대코드로 가입
+        </button>
+        <button
+          type="button"
           className="btn primary"
           onClick={() => nav('/groups/new')}
         >

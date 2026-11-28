@@ -1459,3 +1459,23 @@ export async function rejectJoinRequest(groupId, requestId) {
     }
   );
 }
+
+/**
+ * 모임장 전용: 모집 마감 및 운영 시작 (정원의 절반 이상 충족 시)
+ *
+ * POST /api/groups/{groupId}/close-recruitment
+ */
+export async function closeGroupRecruitment(groupId) {
+  if (!getAccessToken()) {
+    throw new Error('로그인이 필요해요.');
+  }
+
+  const id = validateGroupId(groupId);
+
+  return apiFetch(
+    `/api/groups/${id}/close-recruitment`,
+    {
+      method: 'POST'
+    }
+  );
+}

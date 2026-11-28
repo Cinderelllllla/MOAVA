@@ -47,8 +47,11 @@ public class PaymentProofService {
         if (!req.getPayMonth().matches("^\\d{4}(0[1-9]|1[0-2])$")) {
             throw badRequest("납입 귀속 월 형식이 올바르지 않습니다. (YYYYMM)");
         }
-        // 2. 모임 존재 + 해산 완료 모임 차단
+        // 2. 모임 존재 + 모집 중·해산 완료 모임 차단
         ProofGroupDto group = proofAccessChecker.getGroupForUpdate(req.getGroupId());
+        if ("RECRUITING".equals(group.getStatus())) {
+            throw badRequest("모집이 마감되어 운영이 시작된 모임에서만 납입 증빙을 등록할 수 있습니다.");
+        }
         if ("DISSOLVED".equals(group.getStatus())) {
             throw badRequest("해산된 모임에는 증빙을 등록할 수 없습니다.");
         }
@@ -120,8 +123,11 @@ public class PaymentProofService {
             throw badRequest("필수 입력값이 누락되었습니다.");
         }
 
-        // 1-2. 모임 존재 + 해산 완료 모임 차단 + ACTIVE 구성원만 (등록과 같은 기준, REQ-SEC-04)
+        // 1-2. 모임 존재 + 모집 중·해산 완료 모임 차단 + ACTIVE 구성원만 (등록과 같은 기준, REQ-SEC-04)
         ProofGroupDto group = proofAccessChecker.getGroupForUpdate(groupId);
+        if ("RECRUITING".equals(group.getStatus())) {
+            throw badRequest("모집이 마감되어 운영이 시작된 모임에서만 납입 증빙을 재제출할 수 있습니다.");
+        }
         if ("DISSOLVED".equals(group.getStatus())) {
             throw badRequest("해산된 모임에는 증빙을 재제출할 수 없습니다.");
         }

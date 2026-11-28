@@ -18,6 +18,8 @@ import Chat from './pages/Chat';
 import Evidence from './pages/Evidence';
 import { Notifications, Account } from './pages/Misc';
 import SupportReportPage from './pages/SupportReportPage';
+import OpenBanking from './pages/OpenBanking';
+import OpenBankingBankAuth from './pages/OpenBankingBankAuth';
 import { AdminDashboard, AdminGroups, AdminSanctions, AdminDissolve, AdminRefs, AdminOverdue } from './pages/admin/AdminPages';
 import SocialCallback from './pages/SocialCallback';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -41,12 +43,14 @@ export default function App() {
     />
     <Route path="/invite" element={<InviteRoute />} />
     <Route path="/admin/login" element={<AdminLoginPage />} />
+    <Route path="/openbanking/bank-auth" element={<OpenBankingBankAuth />} />
     {/* 회원 (S02~S15) */}
     <Route element={<Shell role="MEMBER" />}>
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/journey" element={<Journey />} />
       <Route path="/finance" element={<Finance />} />
       <Route path="/finance/monthly" element={<FinanceMonthly />} />
+      <Route path="/openbanking" element={<OpenBanking />} />
       <Route path="/groups" element={<Groups />} />
       <Route path="/groups/new" element={<GroupNew />} />
       <Route path="/simulator" element={<Simulator />} />

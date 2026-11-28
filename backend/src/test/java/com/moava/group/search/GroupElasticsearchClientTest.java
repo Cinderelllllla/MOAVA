@@ -120,12 +120,12 @@ class GroupElasticsearchClientTest {
     }
 
     @Test
-    @DisplayName("공개 모임 검색은 PUBLIC 필터·DISSOLVED 제외·nori 질의 후 히트 순서를 보존해 ID 목록을 반환한다")
+    @DisplayName("공개 모임 검색은 PUBLIC·RECRUITING 필터·nori 질의 후 히트 순서를 보존해 ID 목록을 반환한다")
     void searchPublicGroupIdsPreservesHitOrder() {
         server.expect(requestTo("http://es.test:9200/moava_group/_search"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().string(containsString("\"visibility\":\"PUBLIC\"")))
-                .andExpect(content().string(containsString("\"status\":\"DISSOLVED\"")))
+                .andExpect(content().string(containsString("\"status\":\"RECRUITING\"")))
                 .andExpect(content().string(containsString("\"purpose\":\"SAVINGS\"")))
                 .andExpect(content().string(containsString("합정동")))
                 .andExpect(content().string(containsString("목돈")))

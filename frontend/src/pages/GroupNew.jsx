@@ -1,17 +1,25 @@
 /* S09 계모임 만들기 — /groups/new · F15 F19 (납입일 필수 · 5만 원 단위 · 2~30명 · 모임 계좌 필수) */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../common/store';
-import { groups } from '../api';
+import { groups, openbanking } from '../api';
 import { PageHead, Card, Input, Select, Field } from '../components/ui';
 import RegionSelector from '../components/RegionSelector';
 import { parseRegionFromServer } from '../common/regions';
+
+const FALLBACK_BANKS = [
+  '국민은행', '신한은행', '우리은행', '하나은행', '농협은행', '기업은행',
+  '카카오뱅크', '토스뱅크', '케이뱅크', 'SC제일은행', '씨티은행', '산업은행',
+  '수협은행', 'iM뱅크(대구)', '부산은행', '광주은행', '제주은행', '전북은행',
+  '경남은행', '새마을금고', '신협', '우체국',
+];
 
 export default function GroupNew() {
   const { user, run } = useApp();
   const nav = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [bankOptions, setBankOptions] = useState(FALLBACK_BANKS);
   const [f, setF] = useState(() => {
     const defaultRegion = parseRegionFromServer(
       user?.regionSido,
@@ -32,12 +40,28 @@ export default function GroupNew() {
       rulesTitle: '우리 모임 운영 규칙',
       description: '',
       rules: '',
-      bank: '',
+      bank: FALLBACK_BANKS[0],
       accountNo: '',
       visibility: 'PUBLIC',
       overduePolicy: '5일차 알림'
     };
   });
+
+  useEffect(() => {
+    let alive = true;
+    openbanking.fetchSupportedBanks()
+      .then((list) => {
+        if (!alive || !Array.isArray(list) || list.length === 0) return;
+        const names = list.map((b) => b?.bankName).filter(Boolean);
+        if (names.length > 0) {
+          setBankOptions(names);
+          setF((prev) => (names.includes(prev.bank) ? prev : { ...prev, bank: names[0] }));
+        }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const on = k => e => setF(prev => ({ ...prev, [k]: e.target.value }));
   const submit = async (e) => {
     e.preventDefault();
@@ -87,9 +111,8 @@ export default function GroupNew() {
         <Field label="모임 소개"><textarea required placeholder="모임 소개를 입력해 주세요." value={f.description} onChange={on('description')} /></Field>
       </div>
       <div className="field" style={{ marginTop: 16 }}><label>운영 규칙</label><textarea required placeholder="채팅에서 협의한 규칙을 정리해 주세요." value={f.rules} onChange={on('rules')} /></div>
-      {/* TODO(MOA-69): 서버 API 연결 시 준비 중 안내 제거 — 계좌 소유 확인(1원 인증) */}
-      <div className="policy-panel"><h3>모임 계좌 등록 · 모임장 전용</h3><p className="muted mini">본인 명의 계좌를 등록합니다. 계좌 소유 확인(1원 인증)은 아직 준비 중이라, 등록 후에는 '인증 대기' 상태로 표시돼요.</p>
-        <div className="policy-grid"><Field label="은행명"><input required placeholder="예: 카카오뱅크" value={f.bank} onChange={on('bank')} /></Field><Field label="예금주"><input value={user.name} readOnly /></Field><Field label="계좌번호"><input required inputMode="numeric" placeholder="숫자만 입력" value={f.accountNo} onChange={on('accountNo')} /></Field><Select label="모임 공개 설정" name="visibility" options={[['PUBLIC', '공개 모임 (지도·검색·추천 노출)'], ['PRIVATE', '비공개 모임 (초대 링크 + 인증코드)']]} value={f.visibility} onChange={on('visibility')} /><Select label="미납 대응 규칙" name="overduePolicy" options={['5일차 알림', '5일차 알림 + 채팅 제한·수령 후순위 검토']} value={f.overduePolicy} onChange={on('overduePolicy')} /></div></div>
+      <div className="policy-panel"><h3>모임 계좌 등록 · 모임장 전용</h3><p className="muted mini">본인 명의 계좌를 등록합니다. 모임 생성 후 오픈뱅킹에서 1원 인증을 완료하고 모임 관리 화면에서 '계좌 소유 인증하기'를 누르면 인증 완료 상태로 전환돼요.</p>
+        <div className="policy-grid"><Select label="은행명" name="bank" options={bankOptions} value={f.bank} onChange={on('bank')} /><Field label="예금주"><input value={user.name} readOnly /></Field><Field label="계좌번호"><input required inputMode="numeric" maxLength={20} placeholder="숫자 8~20자리 입력" value={f.accountNo} onChange={on('accountNo')} /></Field><Select label="모임 공개 설정" name="visibility" options={[['PUBLIC', '공개 모임 (지도·검색·추천 노출)'], ['PRIVATE', '비공개 모임 (초대 링크 + 인증코드)']]} value={f.visibility} onChange={on('visibility')} /><Select label="미납 대응 규칙" name="overduePolicy" options={['5일차 알림', '5일차 알림 + 채팅 제한·수령 후순위 검토']} value={f.overduePolicy} onChange={on('overduePolicy')} /></div></div>
       <div className="actions" style={{ marginTop: 18 }}>
         <button className="btn primary" disabled={isSubmitting}>
           {isSubmitting ? '만드는 중…' : '계모임 생성'}

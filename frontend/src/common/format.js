@@ -8,4 +8,4 @@ export function maskName(name) { name = String(name || '회원'); if (name.lengt
 export const maskAccount = a => { a = String(a || ''); return a ? a.replace(/.(?=.{4})/g, '*') : '미등록'; };
 export const MONTHS = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 export const todayStr = () => new Date().toISOString().slice(0, 10);
-export const VERIFY_LABEL = { PENDING: '인증 대기 · 관리자 확인 전', VERIFIED: '소유 확인 완료 (관리자 처리)', REVERIFY_REQUIRED: '재인증 필요 · 송금 보류 권고' };
+export const VERIFY_LABEL = { PENDING: '인증 대기 · 1원 소유 확인 전', VERIFIED: '계좌 소유 확인 완료', REVERIFY_REQUIRED: '재인증 필요 · 송금 보류 권고' };

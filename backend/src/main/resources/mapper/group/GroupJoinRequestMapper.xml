@@ -325,4 +325,38 @@
         )
     </insert>
 
+    <!-- ==========================================
+         모집 마감 (RECRUITING -> ACTIVE, STARTED_AT 설정)
+         ========================================== -->
+
+    <update id="closeRecruitment">
+        UPDATE GYE_GROUP
+        SET
+            STATUS = 'ACTIVE',
+            STARTED_AT = NVL(STARTED_AT, SYSDATE),
+            UPDATED_AT = SYSDATE
+        WHERE GROUP_ID = #{groupId}
+          AND STATUS = 'RECRUITING'
+    </update>
+
+    <select id="findPendingRequestsForClose" resultType="map">
+        SELECT
+            JOIN_REQUEST_ID,
+            MEMBER_ID
+        FROM JOIN_REQUEST
+        WHERE GROUP_ID = #{groupId}
+          AND STATUS = 'PENDING'
+        ORDER BY CREATED_AT ASC, JOIN_REQUEST_ID ASC
+    </select>
+
+    <update id="rejectAllPendingRequestsOnClose">
+        UPDATE JOIN_REQUEST
+        SET
+            STATUS = 'REJECTED',
+            DECIDED_BY = #{decidedBy, jdbcType=NUMERIC},
+            DECIDED_AT = SYSDATE
+        WHERE GROUP_ID = #{groupId}
+          AND STATUS = 'PENDING'
+    </update>
+
 </mapper>

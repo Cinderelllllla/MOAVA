@@ -3,11 +3,15 @@ package com.moava.admin.dashboard.service;
 import com.moava.admin.dashboard.dto.AdminDashboardDTO;
 import com.moava.admin.dashboard.mapper.AdminDashboardMapper;
 import com.moava.crypto.service.CryptoKeyService;
+import com.moava.group.search.GroupSearchSyncService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
@@ -31,14 +35,25 @@ public class AdminDemoService {
     private final AdminDashboardMapper dashboardMapper;
     private final CryptoKeyService cryptoKeyService;
     private final PasswordEncoder passwordEncoder;
+    private final GroupSearchSyncService groupSearchSyncService;
+
+    @Autowired
+    public AdminDemoService(
+            AdminDashboardMapper dashboardMapper,
+            CryptoKeyService cryptoKeyService,
+            PasswordEncoder passwordEncoder,
+            GroupSearchSyncService groupSearchSyncService) {
+        this.dashboardMapper = dashboardMapper;
+        this.cryptoKeyService = cryptoKeyService;
+        this.passwordEncoder = passwordEncoder;
+        this.groupSearchSyncService = groupSearchSyncService;
+    }
 
     public AdminDemoService(
             AdminDashboardMapper dashboardMapper,
             CryptoKeyService cryptoKeyService,
             PasswordEncoder passwordEncoder) {
-        this.dashboardMapper = dashboardMapper;
-        this.cryptoKeyService = cryptoKeyService;
-        this.passwordEncoder = passwordEncoder;
+        this(dashboardMapper, cryptoKeyService, passwordEncoder, null);
     }
 
     /**
@@ -106,7 +121,7 @@ public class AdminDemoService {
     }
 
     /**
-     * F37-4: 데모 데이터 일괄 초기화 (회원·모임·계좌·승계·제재·신고 전체 정리)
+     * F37-4: 데모 데이터 일괄 초기화 (회원·모임·계좌·승계·제재·신고·오픈뱅킹·ES 전체 정리)
      * ※ 마스터 테이블(ADMIN, CRYPTO_KEY, TERMS_POLICY, CREDIT_SNAPSHOT, KOSIS_HOUSEHOLD, PRODUCTS_SAVING)은 보존
      */
     @Transactional
@@ -140,11 +155,19 @@ public class AdminDemoService {
         dashboardMapper.deleteAllGyeMembers();
         dashboardMapper.deleteAllGyeGroups();
 
-        // 5. 위험도 · 금융 데이터 · 법적 동의 · 일반 회원
+        // 5. 오픈뱅킹 · 모의 가상은행 원장 (거래내역 → 계좌 FK 역순) · CODEF 연결
+        dashboardMapper.deleteAllMockKftcTransactions();
+        dashboardMapper.deleteAllMockKftcAccounts();
+        dashboardMapper.deleteAllMockKftcOauthCodes();
+        dashboardMapper.deleteAllMockKftcOauthTokens();
+        dashboardMapper.deleteAllCodefConnections();
+
+        // 6. 위험도 · 금융 데이터 · 법적 동의 · 소셜 계정 · 일반 회원 (MEMBER_SOCIAL_ACCOUNT 선삭제)
         dashboardMapper.deleteAllRiskScores();
         dashboardMapper.deleteAllFinanceMonthly();
         dashboardMapper.deleteAllFinanceProfiles();
         dashboardMapper.deleteAllMemberConsents();
+        dashboardMapper.deleteAllMemberSocialAccounts();
         dashboardMapper.deleteAllMembers();
 
         dashboardMapper.insertAdminAuditLog(
@@ -153,7 +176,19 @@ public class AdminDemoService {
                 "관리자 시연 데이터 일괄 초기화 실행"
         );
 
-        // TODO: Elasticsearch(moava_group) 연동 시 인덱스 문서 초기화 호출 추가
+        // 7. Elasticsearch(moava_group) 인덱스 초기화 (트랜잭션 커밋 이후 실행)
+        if (groupSearchSyncService != null) {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        groupSearchSyncService.resetIndex();
+                    }
+                });
+            } else {
+                groupSearchSyncService.resetIndex();
+            }
+        }
     }
 
     private void requireActiveAdmin(Long adminId) {

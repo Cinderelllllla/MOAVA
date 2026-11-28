@@ -103,13 +103,22 @@
           ON M.MEMBER_ID = G.OWNER_ID
     </sql>
 
-    <!-- F11~F14: 공개 모임 목록·지도 조회 (VISIBILITY = 'PUBLIC' 고정, 해산 완료 제외, ES 폴백 겸용) -->
+    <!-- F11~F14: 공개 모임 목록·지도 조회 (VISIBILITY = 'PUBLIC', 모집 중·정원 미달 고정, ES 폴백 겸용) -->
     <select id="findPublicGroups"
             resultMap="publicGroupRowMap">
 
         <include refid="publicGroupSelectColumns"/>
         WHERE G.VISIBILITY = 'PUBLIC'
-          AND G.STATUS != 'DISSOLVED'
+          AND G.STATUS = 'RECRUITING'
+          AND (
+              (
+                  SELECT COUNT(DISTINCT GM.MEMBER_ID)
+                  FROM GYE_MEMBER GM
+                  WHERE GM.GROUP_ID = G.GROUP_ID
+                    AND GM.STATUS = 'ACTIVE'
+                    AND GM.MEMBER_ID != G.OWNER_ID
+              ) + 1
+          ) &lt; G.MAX_MEMBERS
         <if test="region != null and region != ''">
           AND (
               G.REGION_SIDO LIKE '%' || #{region} || '%' ESCAPE '\'
@@ -129,13 +138,22 @@
 
     </select>
 
-    <!-- F12: Elasticsearch 검색 결과 ID 목록 기준 공개 모임 상세 조회 -->
+    <!-- F12: Elasticsearch 검색 결과 ID 목록 기준 공개·모집 중 모임 상세 조회 -->
     <select id="findPublicGroupsByIds"
             resultMap="publicGroupRowMap">
 
         <include refid="publicGroupSelectColumns"/>
         WHERE G.VISIBILITY = 'PUBLIC'
-          AND G.STATUS != 'DISSOLVED'
+          AND G.STATUS = 'RECRUITING'
+          AND (
+              (
+                  SELECT COUNT(DISTINCT GM.MEMBER_ID)
+                  FROM GYE_MEMBER GM
+                  WHERE GM.GROUP_ID = G.GROUP_ID
+                    AND GM.STATUS = 'ACTIVE'
+                    AND GM.MEMBER_ID != G.OWNER_ID
+              ) + 1
+          ) &lt; G.MAX_MEMBERS
           AND G.GROUP_ID IN
           <foreach collection="groupIds" item="id" open="(" separator="," close=")">
               #{id}

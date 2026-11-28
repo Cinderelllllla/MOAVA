@@ -138,6 +138,28 @@ class DissolutionServiceTest {
                 "계모임 해산 최종 승인 완료 (확인 납입 총액 참고치: 300,000원, 활성 회원 2명 — 실제 정산액 별도 확인)");
     }
 
+    @Test
+    void rejectSendsDissolveRejectedNotificationToProceduresTab() {
+        when(dissolutionMapper.countActiveAdmin(ADMIN_ID)).thenReturn(1);
+        when(dissolutionMapper.lockGroupForDissolution(GROUP_ID)).thenReturn(groupInfo("DISSOLVE_PENDING"));
+        when(dissolutionMapper.selectPendingDissolutionByGroup(GROUP_ID))
+                .thenReturn(Map.of("DISSOLUTION_REQUEST_ID", 100L, "REQUESTED_BY", OWNER_ID));
+        when(dissolutionMapper.updateDissolutionDecision(GROUP_ID, 100L, "REJECTED", ADMIN_ID)).thenReturn(1);
+        when(dissolutionMapper.updateGroupStatus(GROUP_ID, "DISSOLVE_PENDING", "ACTIVE")).thenReturn(1);
+
+        String message = dissolutionService.rejectDissolutionByAdmin(GROUP_ID, ADMIN_ID, "미정산 내역 확인 필요");
+
+        assertEquals("해산 신청을 반려했어요.", message);
+        verify(dissolutionMapper).insertNotification(
+                OWNER_ID,
+                "DISSOLVE_REJECTED",
+                "계모임 해산 신청 반려 안내",
+                "해산 신청이 반려되어 모임이 운영 중 상태로 유지됩니다. (반려 사유: 미정산 내역 확인 필요)",
+                "/procedures?groupId=" + GROUP_ID + "&tab=dissolve",
+                100L
+        );
+    }
+
     private DissolutionDTO.RequestForm validRequest() {
         DissolutionDTO.RequestForm form = new DissolutionDTO.RequestForm();
         form.setReason("해산 사유");

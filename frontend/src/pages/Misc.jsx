@@ -123,16 +123,25 @@ export function Notifications() {
   const open = async n => {
     if (!isInternalLink(n.linkPage)) return;
     if (!(await markRead(n))) return;
+    let targetPath = n.linkPage;
     const params = new URLSearchParams(
-      n.linkPage.split('?')[1] || ''
+      targetPath.split('?')[1] || ''
     );
     const gid = Number(params.get('groupId'));
 
     if (Number.isSafeInteger(gid) && gid > 0) {
       setUi({ selected: gid, focus: gid });
+      const isDissolveRejected =
+        n.notifType === 'DISSOLVE_REJECTED' ||
+        n.type === 'DISSOLVE_REJECTED' ||
+        String(n.title || '').includes('해산 신청 반려') ||
+        String(n.title || '').includes('해산 신청이 반려');
+      if (isDissolveRejected && targetPath.startsWith('/operations')) {
+        targetPath = `/procedures?groupId=${gid}&tab=dissolve`;
+      }
     }
-    // 서버에서 전달한 알림 이동 경로 사용
-    nav(n.linkPage);
+    // 서버에서 전달한 알림 이동 경로 사용 (구 해산 반려 링크는 모임 절차 해산 탭으로 보정)
+    nav(targetPath);
   };
   const readAll = async () => { const r = await run(() => markAllNotificationsRead(), '모두 읽음으로 표시했어요.'); if (r.ok) afterChange(); };
   const hide = async () => {
@@ -222,9 +231,11 @@ export function Account() {
     setEditing(false);
   };
 
+  const isSocialOnly = Boolean(user?.signupType && user.signupType !== 'EMAIL');
+
   const handleWithdraw = async () => {
     if (withdrawing) return;
-    if (!password.trim()) {
+    if (!isSocialOnly && !password.trim()) {
       alert('탈퇴를 위해 비밀번호를 입력해주세요.');
       return;
     }
@@ -234,7 +245,7 @@ export function Account() {
     setWithdrawing(true);
 
     try {
-      const result = await run(() => auth.withdrawAccount(password), '회원 탈퇴가 완료되었습니다.');
+      const result = await run(() => auth.withdrawAccount(isSocialOnly ? '' : password), '회원 탈퇴가 완료되었습니다.');
       if (result.ok) {
         navigate('/login', { replace: true });
       }
@@ -285,10 +296,14 @@ export function Account() {
     <div className="divider"/>
     <h2>회원 탈퇴</h2>
     <p className="muted mini">탈퇴 시 회원 계정이 비활성화되며, 기존 모임 참여 상태에 따라 탈퇴가 제한될 수 있습니다.</p>
-    <div className="field">
-      <label htmlFor="withdrawPassword">비밀번호 확인</label>
-      <input id="withdrawPassword" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="현재 비밀번호 입력" autoComplete="current-password"/>
-    </div>
+    {isSocialOnly ? (
+      <p className="info mini">간편 로그인({user.signupType})으로 가입한 계정이에요. 비밀번호 입력 없이 회원 탈퇴를 진행할 수 있어요.</p>
+    ) : (
+      <div className="field">
+        <label htmlFor="withdrawPassword">비밀번호 확인</label>
+        <input id="withdrawPassword" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="현재 비밀번호 입력" autoComplete="current-password"/>
+      </div>
+    )}
     <div className="actions">
       <button className="btn danger" type="button" onClick={handleWithdraw} disabled={withdrawing}>{withdrawing ? '탈퇴 처리 중...' : '회원 탈퇴'}</button>
     </div>

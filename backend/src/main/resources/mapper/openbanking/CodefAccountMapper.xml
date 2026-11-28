@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.moava.openbanking.codef.CodefAccountMapper">
+
+    <select id="findActiveMemberName" resultType="string">
+        SELECT NAME
+        FROM MEMBER
+        WHERE MEMBER_ID = #{memberId}
+          AND STATUS = 'ACTIVE'
+          AND BANNED_YN = 'N'
+    </select>
+
+    <sql id="connectionColumns">
+        CONN_ID                AS connId,
+        MEMBER_ID              AS memberId,
+        ORGANIZATION           AS organization,
+        CONNECTED_ID_ENC       AS connectedIdEnc,
+        KEY_VER                AS keyVer,
+        VERIFIED_YN            AS verifiedYn,
+        VERIFIED_ACCOUNT_ENC   AS verifiedAccountEnc,
+        VERIFIED_ACCOUNT_LAST4 AS verifiedAccountLast4,
+        VERIFIED_HOLDER_NAME   AS verifiedHolderName,
+        VERIFIED_AT            AS verifiedAt,
+        CREATED_AT             AS createdAt,
+        UPDATED_AT             AS updatedAt
+    </sql>
+
+    <select id="findConnection" resultType="com.moava.openbanking.codef.CodefDto$ConnectionRecord">
+        SELECT <include refid="connectionColumns"/>
+        FROM CODEF_CONNECTION
+        WHERE MEMBER_ID = #{memberId}
+          AND ORGANIZATION = #{organization}
+    </select>
+
+    <select id="findConnectionsByMember" resultType="com.moava.openbanking.codef.CodefDto$ConnectionRecord">
+        SELECT <include refid="connectionColumns"/>
+        FROM CODEF_CONNECTION
+        WHERE MEMBER_ID = #{memberId}
+        ORDER BY UPDATED_AT DESC
+    </select>
+
+    <update id="upsertConnection" parameterType="com.moava.openbanking.codef.CodefDto$ConnectionRecord">
+        MERGE INTO CODEF_CONNECTION T
+        USING (
+            SELECT #{memberId} AS MEMBER_ID, #{organization} AS ORGANIZATION FROM DUAL
+        ) S
+        ON (T.MEMBER_ID = S.MEMBER_ID AND T.ORGANIZATION = S.ORGANIZATION)
+        WHEN MATCHED THEN
+            UPDATE SET
+                T.CONNECTED_ID_ENC       = #{connectedIdEnc},
+                T.KEY_VER                = #{keyVer},
+                T.VERIFIED_YN            = 'N',
+                T.VERIFIED_ACCOUNT_ENC   = NULL,
+                T.VERIFIED_ACCOUNT_LAST4 = NULL,
+                T.VERIFIED_HOLDER_NAME   = NULL,
+                T.VERIFIED_AT            = NULL,
+                T.UPDATED_AT             = #{updatedAt, jdbcType=TIMESTAMP}
+        WHEN NOT MATCHED THEN
+            INSERT (
+                MEMBER_ID, ORGANIZATION, CONNECTED_ID_ENC, KEY_VER,
+                VERIFIED_YN, CREATED_AT, UPDATED_AT
+            ) VALUES (
+                #{memberId}, #{organization}, #{connectedIdEnc}, #{keyVer},
+                'N', #{createdAt, jdbcType=TIMESTAMP}, #{updatedAt, jdbcType=TIMESTAMP}
+            )
+    </update>
+
+    <update id="markAccountVerified">
+        UPDATE CODEF_CONNECTION
+        SET VERIFIED_YN            = 'Y',
+            VERIFIED_ACCOUNT_ENC   = #{verifiedAccountEnc},
+            VERIFIED_ACCOUNT_LAST4 = #{verifiedAccountLast4},
+            VERIFIED_HOLDER_NAME   = #{verifiedHolderName},
+            KEY_VER                = #{keyVer},
+            VERIFIED_AT            = #{verifiedAt, jdbcType=TIMESTAMP},
+            UPDATED_AT             = #{verifiedAt, jdbcType=TIMESTAMP}
+        WHERE MEMBER_ID = #{memberId}
+          AND ORGANIZATION = #{organization}
+    </update>
+
+    <update id="updateConnectedIdEncryption">
+        UPDATE CODEF_CONNECTION
+        SET CONNECTED_ID_ENC = #{connectedIdEnc},
+            KEY_VER          = #{keyVer},
+            UPDATED_AT       = #{updatedAt, jdbcType=TIMESTAMP}
+        WHERE MEMBER_ID = #{memberId}
+          AND ORGANIZATION = #{organization}
+    </update>
+
+    <delete id="deleteConnection">
+        DELETE FROM CODEF_CONNECTION
+        WHERE MEMBER_ID = #{memberId}
+          AND ORGANIZATION = #{organization}
+    </delete>
+
+</mapper>

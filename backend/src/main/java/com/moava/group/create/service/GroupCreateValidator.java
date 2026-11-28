@@ -144,13 +144,13 @@ public final class GroupCreateValidator {
 
         // 13. 모임 계좌
         // BANK_NAME: 50 BYTE
-        // 계좌번호: 숫자 8~30자리
+        // 계좌번호: 숫자 8~20자리 (오픈뱅킹·F19 계좌 소유 인증 규격 통일)
         if (blank(request.bankName())
                 || exceedsBytes(request.bankName(), 50)
                 || request.accountNumber() == null
-                || !request.accountNumber().matches("[0-9]{8,30}")) {
+                || !request.accountNumber().matches("[0-9]{8,20}")) {
             throw new IllegalArgumentException(
-                    "모임 계좌 정보를 확인해 주세요."
+                    "모임 계좌 정보를 확인해 주세요. (계좌번호는 숫자 8~20자리)"
             );
         }
     }

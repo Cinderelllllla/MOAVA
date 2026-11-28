@@ -222,9 +222,8 @@ public class GroupAccountService {
             );
         }
 
-        // 6. 암호화 키 버전 확인
-        if (target.keyVer() == null
-                || target.keyVer() != crypto.keyVersion()) {
+        // 6. 암호화 키 버전 확인 (키 로테이션 후 이전 RETIRED 버전도 복호화 허용)
+        if (target.keyVer() == null || target.keyVer() < 1) {
 
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
@@ -283,7 +282,7 @@ public class GroupAccountService {
         try {
 
             accountNumber =
-                    crypto.decrypt(target.accountNoEnc());
+                    crypto.decrypt(target.accountNoEnc(), target.keyVer());
 
         } catch (RuntimeException e) {
 
@@ -294,7 +293,7 @@ public class GroupAccountService {
         }
 
         if (accountNumber == null
-                || !accountNumber.matches("[0-9]{8,30}")
+                || !accountNumber.matches("[0-9]{8,20}")
                 || target.accountNoLast4() == null
                 || !target.accountNoLast4().matches("[0-9]{4}")
                 || !accountNumber.endsWith(

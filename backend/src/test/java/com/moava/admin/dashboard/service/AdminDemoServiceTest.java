@@ -3,6 +3,7 @@ package com.moava.admin.dashboard.service;
 import com.moava.admin.dashboard.dto.AdminDashboardDTO;
 import com.moava.admin.dashboard.mapper.AdminDashboardMapper;
 import com.moava.crypto.service.CryptoKeyService;
+import com.moava.group.search.GroupSearchSyncService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,11 +44,14 @@ class AdminDemoServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private GroupSearchSyncService groupSearchSyncService;
+
     private AdminDemoService service;
 
     @BeforeEach
     void setUp() {
-        service = new AdminDemoService(dashboardMapper, cryptoKeyService, passwordEncoder);
+        service = new AdminDemoService(dashboardMapper, cryptoKeyService, passwordEncoder, groupSearchSyncService);
     }
 
     @Test
@@ -90,13 +94,13 @@ class AdminDemoServiceTest {
     }
 
     @Test
-    @DisplayName("시연 데이터 초기화: FK 역순으로 24개 운영 테이블 삭제 후 DEMO_RESET 감사 로그 기록")
+    @DisplayName("시연 데이터 초기화: FK 역순으로 30개 운영·오픈뱅킹·소셜 테이블 삭제 후 감사 로그 및 ES 인덱스 초기화")
     void resetAllDemoData_deletesTablesInFkOrderAndLogsAudit() {
         when(dashboardMapper.countActiveAdmin(1L)).thenReturn(1);
 
         service.resetAllDemoData(1L);
 
-        InOrder order = inOrder(dashboardMapper);
+        InOrder order = inOrder(dashboardMapper, groupSearchSyncService);
         order.verify(dashboardMapper).deleteAllNotifications();
         order.verify(dashboardMapper).deleteAllChatMessages();
         order.verify(dashboardMapper).deleteAllSupportReports();
@@ -116,12 +120,19 @@ class AdminDemoServiceTest {
         order.verify(dashboardMapper).deleteAllGyeAccounts();
         order.verify(dashboardMapper).deleteAllGyeMembers();
         order.verify(dashboardMapper).deleteAllGyeGroups();
+        order.verify(dashboardMapper).deleteAllMockKftcTransactions();
+        order.verify(dashboardMapper).deleteAllMockKftcAccounts();
+        order.verify(dashboardMapper).deleteAllMockKftcOauthCodes();
+        order.verify(dashboardMapper).deleteAllMockKftcOauthTokens();
+        order.verify(dashboardMapper).deleteAllCodefConnections();
         order.verify(dashboardMapper).deleteAllRiskScores();
         order.verify(dashboardMapper).deleteAllFinanceMonthly();
         order.verify(dashboardMapper).deleteAllFinanceProfiles();
         order.verify(dashboardMapper).deleteAllMemberConsents();
+        order.verify(dashboardMapper).deleteAllMemberSocialAccounts();
         order.verify(dashboardMapper).deleteAllMembers();
         order.verify(dashboardMapper).insertAdminAuditLog(eq(1L), eq("DEMO_RESET"), anyString());
+        order.verify(groupSearchSyncService).resetIndex();
     }
 
     @Test
